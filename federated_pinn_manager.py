@@ -512,5 +512,7 @@ class FederatedPINNManager:
             return True
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"❌ Failed to load federated models: {e}")
             return False
