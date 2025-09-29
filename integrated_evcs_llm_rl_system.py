@@ -1139,46 +1139,46 @@ Provide detailed attack sequences with timing, coordination, and evasion strateg
         focus_areas = data.get('vulnerability_focus_areas', [])
         
         return f"""
-COMPREHENSIVE EVCS SYSTEM VULNERABILITY ANALYSIS REQUEST:
+                    COMPREHENSIVE EVCS SYSTEM VULNERABILITY ANALYSIS REQUEST:
 
-Current System State:
-- Distribution Systems: {cms_info.get('num_distribution_systems', 'Unknown')}
-- EVCS Stations: {cms_info.get('total_evcs_stations', 'Unknown')}
-- Active Charging Sessions: {cms_info.get('active_charging_sessions', 'Unknown')}
-- Grid Frequency: {cms_info.get('grid_frequency', 'Unknown')} Hz
-- System Load: {cms_info.get('system_load', 'Unknown')} MW
-- Federated PINN Active: {cms_info.get('pinn_models_active', False)}
-- Hierarchical Simulation Active: {cms_info.get('hierarchical_sim_active', False)}
+                    Current System State:
+                    - Distribution Systems: {cms_info.get('num_distribution_systems', 'Unknown')}
+                    - EVCS Stations: {cms_info.get('total_evcs_stations', 'Unknown')}
+                    - Active Charging Sessions: {cms_info.get('active_charging_sessions', 'Unknown')}
+                    - Grid Frequency: {cms_info.get('grid_frequency', 'Unknown')} Hz
+                    - System Load: {cms_info.get('system_load', 'Unknown')} MW
+                    - Federated PINN Active: {cms_info.get('pinn_models_active', False)}
+                    - Hierarchical Simulation Active: {cms_info.get('hierarchical_sim_active', False)}
 
-Focus Areas for Analysis:
-{chr(10).join([f"- {area}" for area in focus_areas])}
+                    Focus Areas for Analysis:
+                    {chr(10).join([f"- {area}" for area in focus_areas])}
 
-Based on the comprehensive system architecture provided in the system prompt, analyze this EVCS system and identify:
+                    Based on the comprehensive system architecture provided in the system prompt, analyze this EVCS system and identify:
 
-1. TOP 5 CRITICAL VULNERABILITIES with specific focus on:
-   - Federated PINN model poisoning attack vectors
-   - Hierarchical co-simulation layer vulnerabilities
-   - EVCS power electronics manipulation points
-   - Grid stability disruption vulnerabilities
-   - Real-time constraint exploitation opportunities
+                    1. TOP 5 CRITICAL VULNERABILITIES with specific focus on:
+                    - Federated PINN model poisoning attack vectors
+                    - Hierarchical co-simulation layer vulnerabilities
+                    - EVCS power electronics manipulation points
+                    - Grid stability disruption vulnerabilities
+                    - Real-time constraint exploitation opportunities
 
-2. ATTACK VECTOR MAPPING for each vulnerability:
-   - Entry points and attack paths
-   - Required privileges and access levels
-   - Technical exploitation methods
-   - Potential for lateral movement
+                    2. ATTACK VECTOR MAPPING for each vulnerability:
+                    - Entry points and attack paths
+                    - Required privileges and access levels
+                    - Technical exploitation methods
+                    - Potential for lateral movement
 
-3. MITRE ATT&CK technique mappings specific to:
-   - Industrial Control Systems (ICS)
-   - Machine Learning model attacks
-   - Power system operations
+                    3. MITRE ATT&CK technique mappings specific to:
+                    - Industrial Control Systems (ICS)
+                    - Machine Learning model attacks
+                    - Power system operations
 
-4. STRIDE threat categorization with impact assessment
+                    4. STRIDE threat categorization with impact assessment
 
-5. DETECTION AND MITIGATION recommendations
+                    5. DETECTION AND MITIGATION recommendations
 
-Format your response as structured analysis with specific technical details and actionable intelligence.
-"""
+                    Format your response as structured analysis with specific technical details and actionable intelligence.
+                    """
 
     def _create_attack_strategy_prompt(self, data: Dict) -> str:
         """Create attack strategy prompt with system context"""
@@ -1186,53 +1186,53 @@ Format your response as structured analysis with specific technical details and 
         system_state = data.get('current_system_state', {})
         
         return f"""
-COMPREHENSIVE ATTACK STRATEGY DEVELOPMENT REQUEST:
+                    COMPREHENSIVE ATTACK STRATEGY DEVELOPMENT REQUEST:
 
-Target Scenario:
-- ID: {scenario.get('id', 'Unknown')}
-- Name: {scenario.get('name', 'Unknown')}
-- Description: {scenario.get('description', 'Unknown')}
-- Target Systems: {scenario.get('target_systems', [])}
-- Stealth Requirement: {scenario.get('stealth_requirement', 'Unknown')}
-- Impact Goal: {scenario.get('impact_goal', 'Unknown')}
+                    Target Scenario:
+                    - ID: {scenario.get('id', 'Unknown')}
+                    - Name: {scenario.get('name', 'Unknown')}
+                    - Description: {scenario.get('description', 'Unknown')}
+                    - Target Systems: {scenario.get('target_systems', [])}
+                    - Stealth Requirement: {scenario.get('stealth_requirement', 'Unknown')}
+                    - Impact Goal: {scenario.get('impact_goal', 'Unknown')}
 
-Current System State:
-- Hierarchical Simulation Active: {system_state.get('hierarchical_sim_active', False)}
-- Federated PINN Active: {system_state.get('federated_pinn_active', False)}
-- Distribution Systems: {system_state.get('num_distribution_systems', 'Unknown')}
-- System Load: {system_state.get('system_load', 'Unknown')}
-- Grid Frequency: {system_state.get('grid_frequency', 'Unknown')}
-- EVCS Utilization: {system_state.get('evcs_utilization', 'Unknown')}
+                    Current System State:
+                    - Hierarchical Simulation Active: {system_state.get('hierarchical_sim_active', False)}
+                    - Federated PINN Active: {system_state.get('federated_pinn_active', False)}
+                    - Distribution Systems: {system_state.get('num_distribution_systems', 'Unknown')}
+                    - System Load: {system_state.get('system_load', 'Unknown')}
+                    - Grid Frequency: {system_state.get('grid_frequency', 'Unknown')}
+                    - EVCS Utilization: {system_state.get('evcs_utilization', 'Unknown')}
 
-Based on the comprehensive system architecture, develop a sophisticated multi-stage attack strategy that:
+                    Based on the comprehensive system architecture, develop a sophisticated multi-stage attack strategy that:
 
-1. INITIAL ACCESS STRATEGY:
-   - Identify optimal entry points in the hierarchical co-simulation layer
-   - Exploit federated PINN communication channels
-   - Target EVCS management interfaces
+                    1. INITIAL ACCESS STRATEGY:
+                    - Identify optimal entry points in the hierarchical co-simulation layer
+                    - Exploit federated PINN communication channels
+                    - Target EVCS management interfaces
 
-2. PERSISTENCE AND LATERAL MOVEMENT:
-   - Establish persistent access across distribution systems
-   - Move laterally through federated PINN network
-   - Compromise multiple EVCS controllers
+                    2. PERSISTENCE AND LATERAL MOVEMENT:
+                    - Establish persistent access across distribution systems
+                    - Move laterally through federated PINN network
+                    - Compromise multiple EVCS controllers
 
-3. FEDERATED LEARNING ATTACK SEQUENCE:
-   - Model poisoning injection points
-   - Gradual bias accumulation strategy
-   - Stealth techniques to avoid detection
+                    3. FEDERATED LEARNING ATTACK SEQUENCE:
+                    - Model poisoning injection points
+                    - Gradual bias accumulation strategy
+                    - Stealth techniques to avoid detection
 
-4. GRID DESTABILIZATION COORDINATION:
-   - Synchronized EVCS manipulation timing
-   - Power system stability attack vectors
-   - Cascading failure trigger mechanisms
+                    4. GRID DESTABILIZATION COORDINATION:
+                    - Synchronized EVCS manipulation timing
+                    - Power system stability attack vectors
+                    - Cascading failure trigger mechanisms
 
-5. STEALTH AND EVASION:
-   - Detection avoidance techniques
-   - Legitimate traffic mimicking
-   - Gradual escalation strategies
+                    5. STEALTH AND EVASION:
+                    - Detection avoidance techniques
+                    - Legitimate traffic mimicking
+                    - Gradual escalation strategies
 
-Provide detailed technical attack sequences with specific timing, coordination methods, and success probability assessments.
-"""
+                    Provide detailed technical attack sequences with specific timing, coordination methods, and success probability assessments.
+                    """
 
     def _parse_llm_response(self, response: str, analysis_type: str) -> Dict:
         """Parse LLM response into structured format"""
@@ -4367,7 +4367,7 @@ def main():
         print("\n Integrated simulation complete!")
         print(f"Average Reward: {results['performance_metrics']['average_reward']:.2f}")
         print(f"Success Rate: {results['performance_metrics']['average_success_rate']:.1%}")
-        print(f"Detection Rate: {results['performance_metrics']['average_detection_rate']:.1%}")
+        # print(f"Detection Rate: {results['performance_metrics']['average_detection_rate']:.1%}")
         
         # Print comprehensive training summary
         system.print_training_summary()
@@ -4391,6 +4391,8 @@ def main():
             print(f"  - {rec}")
             
     except Exception as e:
+        import traceback as traceback
+        traceback.print_exc()
         print(f"\n Simulation failed: {e}")
         print("   Please check the error messages above for details")
 

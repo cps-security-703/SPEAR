@@ -1095,7 +1095,7 @@ class LSTMPINNTrainer:
         # More aggressive learning rate scheduling
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 
                                                             patience=50, factor=0.5, 
-                                                            min_lr=1e-6, verbose=True)
+                                                            min_lr=1e-6)
         self.data_generator = PhysicsDataGenerator(config)
         
         self.training_history = {
