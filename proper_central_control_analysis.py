@@ -140,11 +140,12 @@ def run_simulation_without_central_control():
                 
                 # Update distribution systems (every 1 second)
                 dist_loads = {}
+                system_frequency = getattr(self.transmission_system, 'frequency', 60.0)
                 for sys_id, dist_info in self.distribution_systems.items():
                     dist_sys = dist_info['system']
                     
                     # Update EV loads based on LOCAL CMS control only
-                    dist_sys.update_ev_loads(self.simulation_time)
+                    dist_sys.update_ev_loads(self.simulation_time, system_frequency=system_frequency)
                     
                     # Get total load
                     load = dist_sys.get_total_load()

@@ -16,7 +16,7 @@ class FederatedPINNConfig:
     """Configuration for federated PINN training"""
     # Federated learning parameters
     num_distribution_systems: int = 6
-    local_epochs: int = 50  # Local training epochs per round
+    local_epochs: int = 200  # Local training epochs per round
     global_rounds: int = 20  # Number of federated rounds
     aggregation_method: str = 'fedavg'  # 'fedavg', 'weighted_avg', 'median'
     communication_rounds: int = 0  # Track completed communication rounds
@@ -411,7 +411,7 @@ class FederatedPINNManager:
         try:
             v_ref, i_ref, p_ref = local_model.optimize_references(sanitized_inputs)
             
-            # Validate output constraints
+            # Validate output constraints (original ideal ranges)
             if not (300.0 <= v_ref <= 500.0 and 50.0 <= i_ref <= 150.0 and 15.0 <= p_ref <= 75.0):
                 return {}, False, f"Output constraints violated: V={v_ref:.1f}V, I={i_ref:.1f}A, P={p_ref:.1f}kW"
             

@@ -59,17 +59,17 @@ class EVCSController:
         
         # References from CMS
         self.voltage_reference = 400.0  # V (DC side) - Updated to rated voltage
-        self.current_reference = 0.0    # A
-        self.power_reference = 0.0      # kW
+        self.current_reference = 100.0    # A
+        self.power_reference = 50.0      # kW
         
         # Measured values (simulated dynamics)
         self.voltage_measured = 400.0   # V - Updated to rated voltage
-        self.current_measured = 0.0     # A
-        self.power_measured = 0.0       # kW
+        self.current_measured = 100.0     # A
+        self.power_measured = 50.0       # kW
         
         # AC side measurements
         self.ac_voltage_rms = 7200.0    # V (line-neutral)
-        self.ac_current_rms = 0.0       # A
+        self.ac_current_rms = 100.0       # A
         self.grid_frequency = 60.0      # Hz
         self.pll_angle = 0.0           # radians
         
@@ -80,7 +80,7 @@ class EVCSController:
         
         # Power flow coupling variables
         self.dc_link_capacitance = 0.1  # F (DC link capacitor)
-        self.dc_link_power_demand = 0.0  # kW (power demanded by DC-DC converter)
+        self.dc_link_power_demand = 50.0  # kW (power demanded by DC-DC converter)
         self.ac_dc_efficiency = 0.98    # AC-DC converter efficiency
         self.dc_dc_efficiency = 0.96    # DC-DC converter efficiency
         
@@ -455,7 +455,8 @@ class EVCSController:
             if not np.isfinite(self.dc_link_voltage):
                 self.dc_link_voltage = 400.0  # Default to 400V
     
-    def update_dynamics_with_solve_ivp(self, grid_voltage_rms: float, dt: float) -> Dict:
+    def update_dynamics_with_solve_ivp(self, grid_voltage_rms: float, dt: float,
+                                       system_frequency: Optional[float] = None) -> Dict:
         """Enhanced dynamics update using solve_ivp for accurate integration"""
         
         # Pre-condition states to prevent numerical issues
@@ -506,7 +507,11 @@ class EVCSController:
                 # Map SOC to voltage range 300V-500V instead of just using rated_voltage
                 self.voltage_measured = self.params.min_voltage + self.soc * (self.params.max_voltage - self.params.min_voltage)
                 self.power_measured = self.voltage_measured * self.current_measured / 1000
-                self.grid_frequency = 60.0  # Updated within dynamics system
+                
+                if system_frequency is not None and np.isfinite(system_frequency):
+                    self.grid_frequency = float(system_frequency)
+                else:
+                    self.grid_frequency = getattr(self, 'grid_frequency', 60.0)
                 
                 # Calculate AC current from power and grid voltage
                 if grid_voltage_rms > 0 and self.power_reference > 0:
@@ -532,23 +537,25 @@ class EVCSController:
             else:
                 # Fallback to Euler method if solve_ivp fails
                 print(f"EVCS {self.evcs_id}: solve_ivp failed, using Euler fallback")
-                return self._update_dynamics_euler(grid_voltage_rms, dt)
+                return self._update_dynamics_euler(grid_voltage_rms, dt, system_frequency=system_frequency)
                 
         except Exception as e:
             print(f"EVCS {self.evcs_id}: solve_ivp error: {e}, using Euler fallback")
-            return self._update_dynamics_euler(grid_voltage_rms, dt)
+            return self._update_dynamics_euler(grid_voltage_rms, dt, system_frequency=system_frequency)
     
-    def update_dynamics(self, grid_voltage_rms: float, dt: float, use_solve_ivp: bool = True) -> Dict:
+    def update_dynamics(self, grid_voltage_rms: float, dt: float,
+                        use_solve_ivp: bool = True, system_frequency: float = None) -> Dict:
         """Update all EVCS dynamics with option for solve_ivp or Euler method"""
         
         if use_solve_ivp:
             # Use solve_ivp for accurate integration
-            return self.update_dynamics_with_solve_ivp(grid_voltage_rms, dt)
+            return self.update_dynamics_with_solve_ivp(grid_voltage_rms, dt, system_frequency=system_frequency)
         else:
             # Legacy Euler method for fallback
-            return self._update_dynamics_euler(grid_voltage_rms, dt)
+            return self._update_dynamics_euler(grid_voltage_rms, dt, system_frequency=system_frequency)
     
-    def _update_dynamics_euler(self, grid_voltage_rms: float, dt: float, simulation_time: float = 0.0) -> Dict:
+    def _update_dynamics_euler(self, grid_voltage_rms: float, dt: float,
+                               simulation_time: float = 0.0, system_frequency: float = None) -> Dict:
         """Update all EVCS dynamics with stable power flow coupling (Euler method)"""
         
         # Store simulation time for logging control
@@ -678,6 +685,13 @@ class EVCSController:
         # 7. Update SOC based on actual delivered power
         self.update_soc(actual_dc_power, dt)
         self.power_measured = actual_dc_power
+        
+        # Override local PLL frequency with system-level input when provided
+        if system_frequency is not None and np.isfinite(system_frequency):
+            self.grid_frequency = float(system_frequency)
+        else:
+            self.grid_frequency = ac_results.get('grid_frequency', self.grid_frequency)
+        ac_results['grid_frequency'] = self.grid_frequency
         
         return {
             # AC side results

@@ -1,4 +1,5 @@
 *.txt
+*.pth
 .env
 *.pdf
 *.png

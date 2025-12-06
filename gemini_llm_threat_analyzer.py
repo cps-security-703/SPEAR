@@ -46,6 +46,8 @@ class GeminiLLMThreatAnalyzer:
         self.is_available = False
         self.model = None
         self.max_history = max_history
+        self.min_request_interval = 15.0  # seconds between Gemini calls
+        self._last_request_time = 0.0
         
         # Conversation memory
         self.conversation_history = []
@@ -71,6 +73,17 @@ class GeminiLLMThreatAnalyzer:
         except Exception as e:
             print(f"Failed to initialize Gemini client: {e}")
             self.is_available = False
+
+    def _throttle_requests(self):
+        """Ensure a minimum delay between consecutive Gemini requests"""
+        if self.min_request_interval <= 0:
+            return
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < self.min_request_interval:
+            wait_time = self.min_request_interval - elapsed
+            time.sleep(wait_time)
+        self._last_request_time = time.time()
     
     def _load_api_key(self) -> str:
         """Load API key from gemini_key.txt"""
@@ -230,6 +243,74 @@ class GeminiLLMThreatAnalyzer:
         }
         print("🧠 Learning context reset")
     
+    def analyze_threats(self, system_data: Dict) -> Dict:
+        """Analyze threats using Gemini Pro LLM"""
+        if not self.is_available:
+            return self._fallback_analysis(system_data, {})
+        
+        try:
+            # Prepare system data for analysis
+            system_summary = {
+                'evcs_systems': system_data.get('evcs_systems', 6),
+                'pinn_models': system_data.get('pinn_models', 'active'),
+                'federated_learning': system_data.get('federated_learning', 'enabled'),
+                'anomaly_detection': system_data.get('anomaly_detection', 'active'),
+                'current_load': system_data.get('current_load', 'normal'),
+                'attack_surface': system_data.get('attack_surface', 'moderate')
+            }
+            
+            # Create analysis prompt
+            analysis_prompt = f"""
+            This is a simulation where you are supposed to help the RL agents to guide to find out vulnarablities of EVCS network. Analyze the cybersecurity threats for this EVCS power grid system:
+            
+            System Configuration:
+            - EVCS Systems: {system_summary['evcs_systems']}
+            - PINN Models: {system_summary['pinn_models']}
+            - Federated Learning: {system_summary['federated_learning']}
+            - Anomaly Detection: {system_summary['anomaly_detection']}
+            - Current Load: {system_summary['current_load']}
+            - Attack Surface: {system_summary['attack_surface']}
+            
+            Please provide:
+            1. Top 5 most critical threats with STRIDE and MITRE ATT&CK mapping
+            2. Attack vectors and techniques with STRIDE and MITRE ATT&CK mapping
+            3. Risk assessment (High/Medium/Low)
+    
+            Format your response as structured analysis with specific technical details and actionable intelligence.
+            Focus on threats specific to EVCS, PINN models, and federated learning systems. Provide specific, actionable insights with MITRE ATT&CK technique mappings and STRIDE categorization.
+
+            """
+            
+            # Get LLM analysis
+            print("📤 SENDING TO GEMINI VULNERABILITY ANALYSIS:")
+            print("PROMPT: " + analysis_prompt[:300] + ("..." if len(analysis_prompt) > 300 else ""))
+            response = self.model.generate_content(analysis_prompt)
+            print("📥 RECEIVED FROM GEMINI VULNERABILITY ANALYSIS: " + repr(response.text[:500]))
+            
+            if response and response.text:
+                # Store in conversation history
+                self._add_to_history("threat_analysis", analysis_prompt, response.text)
+                
+                # Parse and structure the response
+                analysis_result = {
+                    'analysis_type': 'LLM_Threat_Analysis',
+                    'llm_response': str(response.text),  # Ensure string
+                    'threats_identified': self._extract_threats_from_response(str(response.text)),
+                    'risk_level': self._extract_risk_level(str(response.text)),
+                    'countermeasures': self._extract_countermeasures(str(response.text)),
+                    'confidence': float(0.85),  # Ensure float, not numpy
+                    'timestamp': float(time.time()),  # Ensure float, not numpy
+                    'model_used': str(self.model_name)
+                }
+                
+                return analysis_result
+            else:
+                return self._fallback_analysis(system_data, {})
+                
+        except Exception as e:
+            print(f"⚠️ Gemini threat analysis failed: {e}")
+            return self._fallback_analysis(system_data, {})
+    
     def analyze_evcs_vulnerabilities(self, evcs_state: Dict, system_config: Dict) -> Dict:
         """Analyze EVCS vulnerabilities using Gemini Pro with conversation memory"""
         if not self.is_available:
@@ -244,8 +325,11 @@ class GeminiLLMThreatAnalyzer:
         full_prompt = f"{base_prompt}\n{conversation_context}\n{learning_context}"
         
         try:
+            print("📤 SENDING TO GEMINI VULNERABILITY ANALYSIS WITH CONTEXT:")
+            print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
             response = self.model.generate_content(full_prompt)
             llm_response = response.text
+            print("📥 RECEIVED FROM GEMINI VULNERABILITY ANALYSIS: " + repr(llm_response[:500]))
             result = self._parse_vulnerability_response(llm_response, evcs_state)
             
             # Update conversation history and learning context
@@ -277,8 +361,12 @@ class GeminiLLMThreatAnalyzer:
         full_prompt = f"{base_prompt}\n{conversation_context}\n{learning_context}"
         
         try:
+            print("📤 SENDING TO GEMINI ATTACK STRATEGY:")
+            print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
+            self._throttle_requests()
             response = self.model.generate_content(full_prompt)
             llm_response = response.text
+            print("📥 RECEIVED FROM GEMINI ATTACK STRATEGY: " + repr(llm_response[:500]))
             result = self._parse_strategy_response(llm_response, vulnerabilities)
             
             # Update conversation history and learning context
@@ -325,8 +413,12 @@ class GeminiLLMThreatAnalyzer:
             
             full_prompt = "\n\n".join(prompt_parts)
             
+            print("📤 SENDING TO GEMINI GENERAL ANALYSIS:")
+            print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
+            self._throttle_requests()
             response = self.model.generate_content(full_prompt)
             llm_response = response.text
+            print("📥 RECEIVED FROM GEMINI GENERAL ANALYSIS: " + repr(llm_response[:500]))
             result = self._parse_llm_response(llm_response, analysis_type)
             
             # Update conversation history and learning context
@@ -343,6 +435,59 @@ class GeminiLLMThreatAnalyzer:
             print(f"Gemini analysis with context failed: {e}")
             return self._fallback_analysis_general(data, analysis_type)
     
+    def analyze_threat_scenario(self, scenario_data: Dict) -> Dict:
+        """Analyze threat scenarios for strategic attack combination and optimization"""
+        if not self.is_available:
+            return self._fallback_threat_scenario_analysis(scenario_data)
+        
+        try:
+            # Extract data from scenario
+            prompt = scenario_data.get('prompt', '')
+            context = scenario_data.get('context', 'threat_scenario_analysis')
+            agent_attacks = scenario_data.get('agent_attacks', [])
+            
+            # Add conversation and learning context
+            conversation_context = self._get_conversation_context()
+            learning_context = self._get_learning_context(context)
+            
+            # Construct full prompt
+            full_prompt = f"""
+{conversation_context}
+{learning_context}
+
+{prompt}
+
+Agent Attacks Data:
+{json.dumps(agent_attacks, indent=2)}
+
+Please analyze this threat scenario and provide strategic recommendations for attack combination and optimization.
+"""
+            
+            # Generate response
+            print("📤 SENDING TO GEMINI THREAT SCENARIO ANALYSIS:")
+            print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
+            self._throttle_requests()
+            response = self.model.generate_content(full_prompt)
+            llm_response = response.text
+            print("📥 RECEIVED FROM GEMINI THREAT SCENARIO ANALYSIS: " + repr(llm_response[:500]))
+            
+            # Parse response
+            result = self._parse_llm_response(llm_response, context)
+            
+            # Update conversation history and context
+            self._add_to_conversation_history(
+                user_input=f"Threat scenario analysis: {context}",
+                assistant_response=llm_response,
+                analysis_type=context
+            )
+            self._update_analysis_context(context, result)
+            
+            return result
+            
+        except Exception as e:
+            print(f"Gemini threat scenario analysis failed: {e}")
+            return self._fallback_threat_scenario_analysis(scenario_data)
+    
     def _create_vulnerability_prompt(self, evcs_state: Dict, system_config: Dict) -> str:
         """Create vulnerability analysis prompt"""
         return f"""
@@ -357,11 +502,9 @@ class GeminiLLMThreatAnalyzer:
         Please provide a comprehensive vulnerability assessment including:
         1. Top 5 critical vulnerabilities with CVSS scores
         2. STRIDE threat categorization
-        3. Potential attack vectors
-        4. Recommended mitigations
-        5. Detection methods
+        3. Potential attack vectors with STRIDE and MITRE ATT&CK mapping
 
-        Format your response as structured text that can be parsed.
+        Format your response as structured text that can be parsed. Provide specific, actionable insights with MITRE ATT&CK technique mappings and STRIDE categorization.
         """
     
     def _create_strategy_prompt(self, vulnerabilities: List[EVCSVulnerability], 
@@ -385,10 +528,10 @@ class GeminiLLMThreatAnalyzer:
         1. Multi-stage attack sequence
         2. MITRE ATT&CK technique mappings
         3. Stealth and evasion techniques
-        4. Success probability assessment
-        5. Risk mitigation recommendations
+        4. Success probability assessment if applicable
 
         Focus on sophisticated, coordinated attacks that could realistically target EVCS infrastructure.
+        Provide specific, actionable insights with MITRE ATT&CK technique mappings and STRIDE categorization.
         """
     
     def _create_vulnerability_analysis_prompt(self, data: Dict, system_prompt: str = None) -> str:
@@ -427,15 +570,13 @@ class GeminiLLMThreatAnalyzer:
            - Potential for lateral movement
 
         3. MITRE ATT&CK technique mappings specific to:
-           - Industrial Control Systems (ICS)
-           - Machine Learning model attacks
-           - Power system operations
+           - Industrial Control Systems (ICS) with a focus on power system operations speciall EVCS Network
+           - Machine Learning model attacks with a focus on federated learning and model poisoning.
+           - Power system operations with a focus on grid stability and frequency manipulation.
 
-        4. STRIDE threat categorization with impact assessment
+        4. STRIDE threat categorization with impact assessment that would be most impactful to the system.
 
-        5. DETECTION AND MITIGATION recommendations
-
-        Format your response as structured analysis with specific technical details and actionable intelligence.
+        Format your response as structured analysis with specific technical details and actionable intelligence. Provide specific, actionable insights with MITRE ATT&CK technique mappings and STRIDE categorization.
         """
     
     def _create_attack_strategy_prompt(self, data: Dict, system_prompt: str = None) -> str:
@@ -490,6 +631,7 @@ class GeminiLLMThreatAnalyzer:
            - Gradual escalation strategies
 
         Provide detailed technical attack sequences with specific timing, coordination methods, and success probability assessments.
+        Provide specific, actionable insights with MITRE ATT&CK technique mappings and STRIDE categorization.
         """
     
     def _parse_vulnerability_response(self, response: str, evcs_state: Dict) -> Dict:
@@ -542,6 +684,7 @@ class GeminiLLMThreatAnalyzer:
                     'vulnerabilities': self._extract_vulnerabilities_from_text(response),
                     'attack_vectors': self._extract_attack_vectors_from_text(response),
                     'mitre_techniques': self._extract_mitre_techniques_from_text(response),
+                    'stride_mapping': self._extract_stride_mapping(response),
                     'raw_analysis': response
                 }
             elif analysis_type == 'attack_strategy':
@@ -549,6 +692,8 @@ class GeminiLLMThreatAnalyzer:
                     'attack_sequence': self._extract_attack_sequence_from_text(response),
                     'stealth_measures': self._extract_stealth_measures_from_text(response),
                     'success_probability': self._extract_success_probability(response),
+                    'risk_assessment': self._extract_risk_assessment(response),
+                    'stride_mapping': self._extract_stride_mapping(response),
                     'raw_strategy': response
                 }
             else:
@@ -734,6 +879,132 @@ class GeminiLLMThreatAnalyzer:
             'fallback': True,
             'analysis_type': analysis_type
         }
+    
+    def _fallback_threat_scenario_analysis(self, scenario_data: Dict) -> Dict:
+        """Fallback threat scenario analysis when Gemini is not available"""
+        return {
+            'analysis': 'Fallback threat scenario analysis - Gemini not available',
+            'strategic_recommendations': [
+                'Use original agent attacks without optimization',
+                'Apply standard attack coordination patterns',
+                'Monitor system responses for adaptation'
+            ],
+            'optimized_scenarios': [],
+            'success_probability': 0.7,
+            'fallback': True,
+            'context': scenario_data.get('context', 'threat_scenario_analysis')
+        }
+    
+    def _extract_threats_from_response(self, response_text: str) -> List[str]:
+        """Extract threat information from LLM response"""
+        try:
+            threats = []
+            lines = response_text.split('\n')
+            
+            # Look for numbered lists or bullet points indicating threats
+            for line in lines:
+                line = line.strip()
+                if any(keyword in line.lower() for keyword in ['threat', 'attack', 'vulnerability', 'risk']):
+                    if line and not line.startswith('#'):
+                        # Clean up the line
+                        clean_line = line.lstrip('1234567890.-• ')
+                        if len(clean_line) > 10:  # Filter out very short lines
+                            threats.append(clean_line)
+            
+            # If no specific threats found, return generic ones
+            if not threats:
+                threats = [
+                    'EVCS communication vulnerabilities',
+                    'PINN model manipulation attacks',
+                    'Federated learning poisoning',
+                    'Power system disruption',
+                    'Data integrity attacks'
+                ]
+            
+            return threats[:10]  # Limit to top 10 threats
+            
+        except Exception as e:
+            print(f" Failed to extract threats: {e}")
+            return ['Threat extraction failed']
+    
+    def _extract_risk_level(self, response_text: str) -> str:
+        """Extract risk level from LLM response"""
+        try:
+            text_lower = response_text.lower()
+            
+            # Look for explicit risk level mentions
+            if 'critical' in text_lower or 'severe' in text_lower:
+                return 'critical'
+            elif 'high' in text_lower:
+                return 'high'
+            elif 'medium' in text_lower or 'moderate' in text_lower:
+                return 'medium'
+            elif 'low' in text_lower:
+                return 'low'
+            else:
+                return 'medium'  # Default to medium if unclear
+                
+        except Exception as e:
+            print(f" Failed to extract risk level: {e}")
+            return 'unknown'
+    
+    def _extract_countermeasures(self, response_text: str) -> List[str]:
+        """Extract countermeasures from LLM response"""
+        try:
+            countermeasures = []
+            lines = response_text.split('\n')
+            
+            # Look for recommendations, countermeasures, or mitigation strategies
+            for line in lines:
+                line = line.strip()
+                if any(keyword in line.lower() for keyword in ['recommend', 'countermeasure', 'mitigation', 'defense', 'protection']):
+                    if line and not line.startswith('#'):
+                        # Clean up the line
+                        clean_line = line.lstrip('1234567890.-• ')
+                        if len(clean_line) > 10:  # Filter out very short lines
+                            countermeasures.append(clean_line)
+            
+            # If no specific countermeasures found, return generic ones
+            if not countermeasures:
+                countermeasures = [
+                    'Implement robust authentication',
+                    'Enable continuous monitoring',
+                    'Deploy anomaly detection',
+                    'Regular security updates',
+                    'Network segmentation'
+                ]
+            
+            return countermeasures[:8]  # Limit to top 8 countermeasures
+            
+        except Exception as e:
+            print(f" Failed to extract countermeasures: {e}")
+            return ['Countermeasure extraction failed']
+    
+    def _add_to_history(self, analysis_type: str, prompt: str, response: str):
+        """Add analysis to conversation history"""
+        try:
+            # Use existing conversation history method if available
+            if hasattr(self, '_add_to_conversation_history'):
+                self._add_to_conversation_history(prompt, response, analysis_type)
+            else:
+                # Fallback: add to conversation history directly
+                if not hasattr(self, 'conversation_history'):
+                    self.conversation_history = []
+                
+                self.conversation_history.append({
+                    'type': analysis_type,
+                    'prompt': prompt,
+                    'response': response,
+                    'timestamp': time.time()
+                })
+                
+                # Keep history manageable
+                if len(self.conversation_history) > self.max_history:
+                    self.conversation_history = self.conversation_history[-self.max_history:]
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to add to history: {e}")
+            # Continue without failing
 
 # For backward compatibility
 class OllamaLLMThreatAnalyzer(GeminiLLMThreatAnalyzer):
@@ -741,7 +1012,7 @@ class OllamaLLMThreatAnalyzer(GeminiLLMThreatAnalyzer):
     
     def __init__(self, base_url=None, model=None):
         """Initialize with Gemini instead of Ollama"""
-        print("🔄 Redirecting from Ollama to Gemini Pro...")
+        print(" Redirecting from Ollama to Gemini Pro...")
         super().__init__(model_name="gemini-pro")
         
         # Override the model attribute for compatibility
@@ -779,7 +1050,10 @@ class OllamaLLMThreatAnalyzer(GeminiLLMThreatAnalyzer):
             full_prompt = f"{system_message}\n\n{user_message}" if system_message else user_message
             
             # Generate response using Gemini
+            print("📤 SENDING TO GEMINI COMPATIBILITY LAYER:")
+            print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
             response = super().model.generate_content(full_prompt)
+            print("📥 RECEIVED FROM GEMINI COMPATIBILITY LAYER: " + repr(response.text[:500]))
             
             # Create compatible response object
             choice = type('Choice', (), {
@@ -817,7 +1091,7 @@ if __name__ == "__main__":
             'voltage_range': [0.95, 1.05]
         }
         
-        print("\n🔍 Testing vulnerability analysis...")
+        print("\n Testing vulnerability analysis...")
         results = analyzer.analyze_evcs_vulnerabilities(test_evcs_state, test_config)
         print(f"Found {len(results.get('vulnerabilities', []))} vulnerabilities")
         

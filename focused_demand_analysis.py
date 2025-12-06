@@ -44,7 +44,7 @@ sys.stdout = PrintLogger(log_filename)
 
 
 
-def generate_daily_load_profile(total_duration=240.0, time_step=1.0, constant_load=True):
+def generate_daily_load_profile(total_duration=3600.0, time_step=1.0, constant_load=True):
     """
     Generate load profile - either constant or realistic daily EV charging load profile
     Returns load multiplier for each time step
@@ -60,7 +60,7 @@ def generate_daily_load_profile(total_duration=240.0, time_step=1.0, constant_lo
         load_multipliers = np.zeros_like(times)
         
         # Base load that never goes to zero (always some background charging)
-        base_load_level = 0.20  # 20% minimum load at all times
+        base_load_level = 0.30  # 30% minimum load at all times
         
         # Create continuous load profile using overlapping smooth functions
         for i, t in enumerate(times):
@@ -77,61 +77,61 @@ def generate_daily_load_profile(total_duration=240.0, time_step=1.0, constant_lo
                 night_hour = hour_of_day - 24  # Convert to negative for smooth transition
             else:
                 night_hour = hour_of_day
-            night_contribution = 0.15 * np.exp(-((night_hour - night_center)**2) / (2 * 3**2))
+            night_contribution = 0.06 * np.exp(-((night_hour - night_center)**2) / (2 * 3.2**2))
             total_load += night_contribution
             
             # Early morning ramp (5-9 AM): Gradual increase for commuter charging
             morning_center = 7.5  # 7:30 AM peak
-            morning_contribution = 0.45 * np.exp(-((hour_of_day - morning_center)**2) / (2 * 2.5**2))
+            morning_contribution = 0.25 * np.exp(-((hour_of_day - morning_center)**2) / (2 * 2.7**2))
             total_load += morning_contribution
             
             # Mid-morning workplace (9 AM - 1 PM): Sustained workplace charging
             workplace_center = 11  # 11 AM center
-            workplace_contribution = 0.35 * np.exp(-((hour_of_day - workplace_center)**2) / (2 * 3**2))
+            workplace_contribution = 0.20 * np.exp(-((hour_of_day - workplace_center)**2) / (2 * 3.2**2))
             total_load += workplace_contribution
             
             # Afternoon moderate (1-5 PM): Shopping and opportunity charging
             afternoon_center = 15  # 3 PM center
-            afternoon_contribution = 0.25 * np.exp(-((hour_of_day - afternoon_center)**2) / (2 * 2.5**2))
+            afternoon_contribution = 0.15 * np.exp(-((hour_of_day - afternoon_center)**2) / (2 * 2.7**2))
             total_load += afternoon_contribution
             
             # Evening peak (5-9 PM): Major residential charging peak
             evening_center = 19  # 7 PM peak
-            evening_contribution = 0.65 * np.exp(-((hour_of_day - evening_center)**2) / (2 * 2.8**2))
+            evening_contribution = 0.40 * np.exp(-((hour_of_day - evening_center)**2) / (2 * 3.0**2))
             total_load += evening_contribution
             
             # Late evening taper (9-11 PM): Gradual decrease
             late_evening_center = 22  # 10 PM center
-            late_evening_contribution = 0.30 * np.exp(-((hour_of_day - late_evening_center)**2) / (2 * 1.8**2))
+            late_evening_contribution = 0.15 * np.exp(-((hour_of_day - late_evening_center)**2) / (2 * 2.0**2))
             total_load += late_evening_contribution
             
             # Add realistic temporal variations
             # Intraday variability (15-minute fluctuations)
             time_minutes = (hour_of_day * 60) % 60
-            intraday_variation = 0.03 * np.sin(2 * np.pi * time_minutes / 15)
+            intraday_variation = 0.015 * np.sin(2 * np.pi * time_minutes / 20)
             total_load += intraday_variation
             
             # Weekly pattern (slightly higher on weekdays)
-            weekday_factor = 1.08  # 8% higher on weekdays
+            weekday_factor = 1.04  # 4% higher on weekdays
             total_load *= weekday_factor
             
             # Weather/seasonal effects (correlated noise for realism)
             # Use time-correlated noise instead of pure random
             weather_base = np.sin(2 * np.pi * hour_of_day / 24 + np.pi/3)
-            weather_noise = 0.04 * weather_base * (1 + 0.3 * np.random.normal(0, 1))
+            weather_noise = 0.02 * weather_base * (1 + 0.2 * np.random.normal(0, 1))
             total_load += weather_noise
             
             # Demand response events (more realistic probability based on peak hours)
-            dr_probability = 0.01 if 17 <= hour_of_day <= 21 else 0.005  # Higher during peak
+            dr_probability = 0.008 if 17 <= hour_of_day <= 21 else 0.003  # Higher during peak
             if np.random.random() < dr_probability:
-                total_load *= 0.85  # 15% reduction during DR events
+                total_load *= 0.9  # 10% reduction during DR events
             
             # Grid-friendly charging incentives (slight load shifting)
             if 23 <= hour_of_day or hour_of_day <= 6:  # Off-peak hours
-                total_load *= 1.05  # 5% incentive for off-peak charging
+                total_load *= 1.03  # 3% incentive for off-peak charging
             
             # Ensure realistic bounds with smoother clamping
-            total_load = np.clip(total_load, 0.20, 7.0)  # 20% min, 1400% max (25MW peak instead of 5MW)
+            total_load = np.clip(total_load, 0.30, 2.0)  # keep between 30% and 200% of base load
             
             load_multipliers[i] = total_load
         
@@ -819,7 +819,7 @@ def optimize_pinn_with_electrical_attacks(pinn_optimizer, enhanced_system_state)
     return optimized_references
 
 
-def create_intelligent_attack_scenarios(load_periods, total_duration=240.0, pinn_optimizer=None, use_rl=True, federated_manager=None, use_dqn_sac=True):
+def create_intelligent_attack_scenarios(load_periods, total_duration=3600.0, pinn_optimizer=None, use_rl=True, federated_manager=None, use_dqn_sac=True):
 
     # NEW: Try DQN/SAC Security Evasion System first
     if use_dqn_sac and use_rl and federated_manager is not None:
@@ -1190,7 +1190,7 @@ def run_training_phase():
     
     federated_config = FederatedPINNConfig(
         num_distribution_systems=6,
-        local_epochs=1000,  # Reduced for faster training
+        local_epochs=200,  # Reduced for faster training
         global_rounds=10,   # Reduced for faster training
         aggregation_method='fedavg'
     )
@@ -1369,7 +1369,7 @@ def load_pretrained_models():
     try:
         federated_config = FederatedPINNConfig(
             num_distribution_systems=6,
-            local_epochs=1000,
+            local_epochs=200,
             global_rounds=10,
             aggregation_method='fedavg'
         )
@@ -2268,6 +2268,7 @@ def analyze_focused_results(results):
         # axes[1, i].set_title('Frequency Response (vs Baseline)', fontsize=18)
         axes[1, i].set_ylabel('Frequency (Hz)', fontsize=18)
         axes[1, i].grid(True, alpha=0.3)
+        axes[1, i].set_ylim(59.8, 60.2)
         max_dfreq = float(np.max(np.abs(dfreq))) if len(dfreq) else 0.0
         axes[1, i].text(0.01, 0.92, f"max Δf = {max_dfreq:.3f} Hz", transform=axes[1, i].transAxes,
                         bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
@@ -2364,6 +2365,7 @@ def analyze_focused_results(results):
         ax_2.set_ylabel('Frequency (Hz)', fontsize=18)
         ax_2.set_xlabel('Time (s)', fontsize=18)
         ax_2.grid(True, alpha=0.3)
+        ax_2.set_ylim(59.8, 60.2)
         max_dfreq = float(np.max(np.abs(dfreq))) if len(dfreq) else 0.0
         ax_2.text(0.01, 0.92, f"max Δf = {max_dfreq:.3f} Hz", transform=ax_2.transAxes,
                  bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))

@@ -36,6 +36,10 @@ from dss_function_qsts import get_loads, get_BusDistance
 import warnings
 warnings.filterwarnings('ignore')
 
+# Additional imports for enhanced PINN training
+from torch.nn.utils import clip_grad_norm_
+from torch.optim.lr_scheduler import CosineAnnealingLR, OneCycleLR
+
 @dataclass
 class PINNConfig:
     """Basic PINN configuration for compatibility"""
@@ -97,7 +101,7 @@ class LSTMPINNConfig:
     # Base Reference Values
     rated_voltage: float = 400.0  # V (base reference voltage)
     rated_current: float = 100.0  # A (base reference current)
-    rated_power: float = 40.0     # kW (400V × 100A = 40kW base power)
+    rated_power: float = 50.0     # kW (400V × 100A = 40kW base power)
     
     # Voltage Constraints
     max_voltage: float = 500.0    # V (maximum voltage limit)
@@ -125,6 +129,111 @@ class LSTMPINNConfig:
     def __post_init__(self):
         if self.hidden_layers is None:
             self.hidden_layers = [128, 256, 128, 64]  # Simplified architecture
+
+class DifferentiableEVCSDynamics(nn.Module):
+    """Differentiable surrogate of EVCS dynamics for PINN training"""
+    
+    def __init__(self, config: LSTMPINNConfig):
+        super().__init__()
+        self.config = config
+        
+        # Neural network to approximate EVCS dynamics
+        self.dynamics_net = nn.Sequential(
+            nn.Linear(6, 64),  # soc, grid_voltage, grid_freq, demand, urgency, time
+            nn.ReLU(),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 4)   # voltage, current, power, soc_dot
+        )
+        
+        # Physics parameters (learnable)
+        self.efficiency = nn.Parameter(torch.tensor(0.95))
+        self.thermal_resistance = nn.Parameter(torch.tensor(0.1))
+        self.dc_link_voltage = nn.Parameter(torch.tensor(400.0))
+        
+    def forward(self, soc, grid_voltage, grid_frequency, demand_factor, 
+                urgency_factor, time_hours, voltage_ref, current_ref, power_ref):
+        """Forward pass through differentiable dynamics"""
+        
+        # Prepare inputs
+        inputs = torch.stack([soc, grid_voltage, grid_frequency, 
+                            demand_factor, urgency_factor, time_hours], dim=-1)
+        
+        # Get dynamics predictions
+        dynamics_out = self.dynamics_net(inputs)
+        v_pred, i_pred, p_pred, soc_dot_pred = dynamics_out[:, 0], dynamics_out[:, 1], dynamics_out[:, 2], dynamics_out[:, 3]
+        
+        # Apply physics constraints
+        v_pred = torch.clamp(v_pred, self.config.min_voltage, self.config.max_voltage)
+        i_pred = torch.clamp(i_pred, self.config.min_current, self.config.max_current)
+        p_pred = torch.clamp(p_pred, self.config.min_power, self.config.max_power)
+        
+        # Calculate residuals for physics loss
+        residuals = {
+            'voltage_residual': v_pred - voltage_ref,
+            'current_residual': i_pred - current_ref,
+            'power_residual': p_pred - power_ref,
+            'soc_dot_residual': soc_dot_pred - (p_pred / (3600.0 * 50.0)),  # SOC dynamics
+            'power_balance': p_pred - (v_pred * i_pred / 1000.0),  # P = V*I
+            'efficiency_constraint': torch.abs(p_pred - (grid_voltage * 7200.0 * i_pred / 1000.0) * self.efficiency)
+        }
+        
+        return residuals, v_pred, i_pred, p_pred, soc_dot_pred
+
+class DynamicWeightAveraging:
+    """Dynamic weight averaging for balancing multiple loss terms"""
+    
+    def __init__(self, num_losses: int, alpha: float = 0.16):
+        self.num_losses = num_losses
+        self.alpha = alpha
+        self.log_vars = nn.Parameter(torch.zeros(num_losses))
+        self.initial_losses = None
+        
+    def get_weights(self, losses: List[torch.Tensor]) -> List[torch.Tensor]:
+        """Calculate dynamic weights for loss terms"""
+        if self.initial_losses is None:
+            self.initial_losses = [loss.detach() for loss in losses]
+        
+        # Calculate relative losses - ensure scalar comparisons
+        relative_losses = []
+        for i, loss in enumerate(losses):
+            # Fix boolean tensor issue by using .item() to get scalar value
+            initial_loss_scalar = self.initial_losses[i].mean() if self.initial_losses[i].numel() > 1 else self.initial_losses[i]
+            initial_loss_value = initial_loss_scalar.item()
+            
+            if initial_loss_value > 0:
+                # Use scalar division to avoid shape mismatches
+                loss_scalar = loss.mean() if loss.numel() > 1 else loss
+                relative_loss = loss_scalar / initial_loss_scalar
+            else:
+                relative_loss = loss.mean() if loss.numel() > 1 else loss
+            relative_losses.append(relative_loss)
+        
+        # Calculate weights using learnable parameters
+        weights = []
+        for i in range(self.num_losses):
+            weight = torch.exp(-self.log_vars[i])
+            weights.append(weight)
+        
+        return weights, relative_losses
+    
+    def compute_weighted_loss(self, losses: List[torch.Tensor]) -> torch.Tensor:
+        """Compute weighted loss with dynamic balancing"""
+        weights, relative_losses = self.get_weights(losses)
+        
+        # Compute weighted loss - ensure all terms are scalars
+        weighted_loss = torch.tensor(0.0, device=losses[0].device)
+        for i, (loss, weight) in enumerate(zip(losses, weights)):
+            # Ensure loss is a scalar
+            loss_scalar = loss.mean() if loss.numel() > 1 else loss
+            weight_scalar = weight.mean() if weight.numel() > 1 else weight
+            log_var_scalar = self.log_vars[i].mean() if self.log_vars[i].numel() > 1 else self.log_vars[i]
+            
+            weighted_loss += weight_scalar * loss_scalar + self.alpha * log_var_scalar
+        
+        return weighted_loss
 
 class EVCSPhysicsModel:
     """Linearized EVCS physics model for PINN training (fast) vs full dynamics for simulation"""
@@ -159,20 +268,58 @@ class EVCSPhysicsModel:
         # Linearized model parameters for PINN training
         self.use_linearized = True  # Flag to switch between approaches
         
+        # Add differentiable dynamics surrogate
+        self.diff_dynamics = DifferentiableEVCSDynamics(config)
+        
+    def differentiable_dynamics_loss(self, inputs: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
+        """Calculate loss using differentiable EVCS dynamics surrogate"""
+        if len(inputs.shape) == 3:  # LSTM sequences
+            last_inputs = inputs[:, -1, :]
+        else:
+            last_inputs = inputs
+            
+        # Extract features
+        soc = last_inputs[:, 0]
+        grid_voltage = last_inputs[:, 1]
+        grid_frequency = last_inputs[:, 2]
+        demand_factor = last_inputs[:, 3]
+        urgency_factor = last_inputs[:, 5]
+        time_hours = last_inputs[:, 6]
+        
+        # Extract outputs
+        voltage_ref = outputs[:, 0]
+        current_ref = outputs[:, 1]
+        power_ref = outputs[:, 2]
+        
+        # Get differentiable dynamics residuals
+        residuals, v_pred, i_pred, p_pred, soc_dot_pred = self.diff_dynamics(
+            soc, grid_voltage, grid_frequency, demand_factor, 
+            urgency_factor, time_hours, voltage_ref, current_ref, power_ref
+        )
+        
+        # Calculate total dynamics loss
+        dynamics_loss = torch.tensor(0.0, device=inputs.device)
+        for key, residual in residuals.items():
+            dynamics_loss += torch.mean(torch.square(residual))
+            
+        return dynamics_loss
+        
     def ac_dc_converter_dynamics(self, v_ac: torch.Tensor, i_ac: torch.Tensor, 
                                 v_dc: torch.Tensor, i_dc: torch.Tensor) -> torch.Tensor:
         """AC-DC converter physics: P_ac = P_dc / efficiency"""
-        p_ac = v_ac * i_ac
-        p_dc = v_dc * i_dc
-        efficiency_loss = torch.abs(p_ac - p_dc / self.config.efficiency)
+        p_ac = v_ac * i_ac / 1000.0  # Convert to kW
+        p_dc = v_dc * i_dc / 1000.0  # Convert to kW
+        # Normalize by typical power to avoid huge loss values
+        efficiency_loss = torch.mean(torch.square((p_ac - p_dc / self.config.efficiency) / 50.0))
         return efficiency_loss
     
     def dc_dc_converter_dynamics(self, v_in: torch.Tensor, i_in: torch.Tensor,
                                 v_out: torch.Tensor, i_out: torch.Tensor) -> torch.Tensor:
         """DC-DC converter physics: P_in = P_out / efficiency"""
-        p_in = v_in * i_in
-        p_out = v_out * i_out
-        efficiency_loss = torch.abs(p_in - p_out / self.config.efficiency)
+        p_in = v_in * i_in / 1000.0  # Convert to kW
+        p_out = v_out * i_out / 1000.0  # Convert to kW
+        # Normalize by typical power to avoid huge loss values
+        efficiency_loss = torch.mean(torch.square((p_in - p_out / self.config.efficiency) / 50.0))
         return efficiency_loss
     
     def battery_soc_dynamics(self, soc: torch.Tensor, power: torch.Tensor, 
@@ -326,6 +473,25 @@ class LSTMPINNOptimizer(nn.Module):
         # Initialize weights
         self._initialize_weights()
         
+    def ac_dc_converter_dynamics(self, v_ac: torch.Tensor, i_ac: torch.Tensor, 
+                                v_dc: torch.Tensor, i_dc: torch.Tensor) -> torch.Tensor:
+        """AC-DC converter physics: P_ac = P_dc / efficiency"""
+        return self.physics_model.ac_dc_converter_dynamics(v_ac, i_ac, v_dc, i_dc)
+    
+    def dc_dc_converter_dynamics(self, v_in: torch.Tensor, i_in: torch.Tensor,
+                                v_out: torch.Tensor, i_out: torch.Tensor) -> torch.Tensor:
+        """DC-DC converter physics: P_in = P_out / efficiency"""
+        return self.physics_model.dc_dc_converter_dynamics(v_in, i_in, v_out, i_out)
+    
+    def thermal_dynamics(self, power: torch.Tensor, current: torch.Tensor,
+                        resistance: float = 0.1) -> torch.Tensor:
+        """Thermal dynamics for PINN training"""
+        return self.physics_model.thermal_dynamics(power, current, resistance)
+    
+    def differentiable_dynamics_loss(self, inputs: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
+        """Calculate loss using differentiable EVCS dynamics surrogate"""
+        return self.physics_model.differentiable_dynamics_loss(inputs, outputs)
+        
     def _initialize_weights(self):
         """Initialize network weights using Xavier initialization"""
         for layer in self.fc_layers:
@@ -396,7 +562,7 @@ class LSTMPINNOptimizer(nn.Module):
         return temporal_loss / max(1, len(prev_outputs) - 1)
     
     def physics_loss(self, inputs: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
-        """Calculate physics-informed loss using EVCSPhysicsModel methods with realistic EVCS constraints"""
+        """Enhanced physics-informed loss with explicit converter dynamics and DC-link balance"""
         # For LSTM, inputs are sequences, use the last time step for physics constraints
         if len(inputs.shape) == 3:  # (batch_size, sequence_length, input_dim)
             last_inputs = inputs[:, -1, :]  # Use last time step
@@ -463,6 +629,56 @@ class LSTMPINNOptimizer(nn.Module):
         power_penalty = torch.mean(torch.relu(15.0 - power_ref) + torch.relu(power_ref - 75.0))
         losses.append(power_penalty * 0.1)
         
+        # ENHANCED: Add explicit converter dynamics terms
+        # 6. AC-DC Converter Dynamics (P_ac = P_dc / efficiency)
+        # Fix: Use realistic grid voltage (240V RMS for single phase)
+        v_ac_rms = grid_voltage * 240.0  # Convert pu to realistic grid voltage (240V)
+        i_ac_rms = power_ref * 1000.0 / (v_ac_rms + eps)  # Estimate AC current
+        v_dc = voltage_ref  # DC side voltage
+        i_dc = current_ref  # DC side current
+        
+        ac_dc_loss = self.ac_dc_converter_dynamics(
+            v_ac_rms, i_ac_rms, v_dc, i_dc
+        )
+        losses.append(ac_dc_loss * 0.0001)  # Much smaller weight due to large power values
+        
+        # 7. DC-DC Converter Dynamics (P_in = P_out / efficiency)
+        # Assume DC-DC converter input is DC link voltage, output is battery voltage
+        v_dc_in = 400.0  # DC link voltage (fixed)
+        i_dc_in = power_ref * 1000.0 / (v_dc_in + eps)  # DC link current
+        v_dc_out = voltage_ref  # Battery voltage
+        i_dc_out = current_ref  # Battery current
+        
+        dc_dc_loss = self.dc_dc_converter_dynamics(
+            v_dc_in, i_dc_in, v_dc_out, i_dc_out
+        )
+        losses.append(dc_dc_loss * 0.0001)  # Much smaller weight due to large power values
+        
+        # 8. DC-Link Power Balance (P_ac_in = P_dc_out + losses)
+        p_ac_in = v_ac_rms * i_ac_rms / 1000.0  # kW
+        p_dc_out = v_dc * i_dc / 1000.0  # kW
+        efficiency = self.config.efficiency
+        # Fix: Scale power balance loss appropriately
+        dc_link_balance_loss = torch.mean(torch.square((p_ac_in - p_dc_out / efficiency) / 50.0))  # Normalize by typical power
+        losses.append(dc_link_balance_loss * 0.1)  # Reduced weight
+        
+        # 9. Efficiency Bounds (enforce realistic efficiency range)
+        calculated_efficiency = p_dc_out / (p_ac_in + eps)
+        # Clamp efficiency to reasonable range to avoid extreme values
+        calculated_efficiency = torch.clamp(calculated_efficiency, 0.1, 2.0)
+        efficiency_penalty = torch.mean(torch.relu(0.4 - calculated_efficiency) + 
+                                      torch.relu(calculated_efficiency - 0.98))
+        losses.append(efficiency_penalty * 0.05)  # Much smaller weight
+        
+        # 10. Thermal Dynamics (resistive and switching losses)
+        thermal_loss = self.thermal_dynamics(power_ref, current_ref)
+        losses.append(thermal_loss * 0.1)  # Tuned weight for thermal effects
+        
+        # 11. Differentiable EVCS Dynamics (surrogate model residuals)
+        if hasattr(self, 'diff_dynamics') and self.diff_dynamics is not None:
+            dynamics_loss = self.differentiable_dynamics_loss(inputs, outputs)
+            losses.append(dynamics_loss * 0.2)  # Tuned weight for dynamics surrogate
+        
         # Sum all losses with proper gradient flow
         total_loss = sum(losses)
         
@@ -472,7 +688,7 @@ class LSTMPINNOptimizer(nn.Module):
             total_loss = total_loss + noise
         
         # Ensure valid loss value
-        if torch.isnan(total_loss) or torch.isinf(total_loss):
+        if torch.isnan(total_loss).any().item() or torch.isinf(total_loss).any().item():
             return torch.tensor(1.0, device=inputs.device, requires_grad=True)
         
         return total_loss
@@ -537,7 +753,7 @@ class LSTMPINNOptimizer(nn.Module):
         
         # Ensure no NaN values in boundary loss
         total_loss = sum(losses)
-        if torch.isnan(total_loss) or torch.isinf(total_loss):
+        if torch.isnan(total_loss).any().item() or torch.isinf(total_loss).any().item():
             return torch.tensor(0.1, device=inputs.device)
         return torch.clamp(total_loss, 0.0, 3.0)  # Lower clamp for realistic constraints
     
@@ -546,12 +762,22 @@ class LSTMPINNOptimizer(nn.Module):
         """Calculate data fitting loss with proper scaling and gradient flow"""
         
         # Check if targets have valid gradients and variation
-        if torch.all(targets[:, 0] == targets[0, 0]) and torch.all(targets[:, 1] == targets[0, 1]) and torch.all(targets[:, 2] == targets[0, 2]):
-            # Targets are constant - this is the problem!
-            print(f"WARNING: Constant targets detected - V:{targets[0,0]:.3f}, I:{targets[0,1]:.3f}, P:{targets[0,2]:.3f}")
-            # Add some variation to targets to enable learning
-            noise = torch.randn_like(targets) * 0.01
-            targets = targets + noise
+        try:
+            # Fix boolean tensor issue by properly checking for constant targets
+            voltage_constant = torch.all(targets[:, 0] == targets[0, 0])
+            current_constant = torch.all(targets[:, 1] == targets[0, 1])
+            power_constant = torch.all(targets[:, 2] == targets[0, 2])
+            
+            if voltage_constant and current_constant and power_constant:
+                # Targets are constant - this is the problem!
+                print(f"WARNING: Constant targets detected - V:{targets[0,0].item():.3f}, I:{targets[0,1].item():.3f}, P:{targets[0,2].item():.3f}")
+                # Add some variation to targets to enable learning
+                noise = torch.randn_like(targets) * 0.01
+                targets = targets + noise
+        except Exception as e:
+            # Skip constant target check if there are tensor issues
+            print(f"DEBUG: Skipping constant target check due to: {e}")
+            pass
         
         # Scale outputs and targets to similar ranges for better gradient flow
         # Voltage: scale by 1/400 (normalize around 400V)
@@ -572,7 +798,7 @@ class LSTMPINNOptimizer(nn.Module):
             total_loss = total_loss + noise
         
         # Ensure valid loss value with gradient
-        if torch.isnan(total_loss) or torch.isinf(total_loss):
+        if torch.isnan(total_loss).any().item() or torch.isinf(total_loss).any().item():
             return torch.tensor(0.1, device=outputs.device, requires_grad=True)
         
         return total_loss
@@ -1089,13 +1315,24 @@ class LSTMPINNTrainer:
     def __init__(self, config: LSTMPINNConfig):
         self.config = config
         self.model = LSTMPINNOptimizer(config)
-        # Improved optimizer with better hyperparameters
+        
+        # Enhanced optimizer with better hyperparameters
         self.optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate, 
                                     weight_decay=1e-4, betas=(0.9, 0.999))
-        # More aggressive learning rate scheduling
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 
-                                                            patience=50, factor=0.5, 
-                                                            min_lr=1e-6)
+        
+        # Enhanced learning rate scheduling with cosine annealing
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=config.epochs, eta_min=1e-6)
+        
+        # Dynamic weight averaging for loss balancing
+        self.dynamic_weights = DynamicWeightAveraging(num_losses=4, alpha=0.16)
+        
+        # Add differentiable dynamics to physics model
+        if hasattr(self.model, 'physics_model'):
+            self.model.physics_model.diff_dynamics = DifferentiableEVCSDynamics(config)
+            # Add dynamics parameters to optimizer
+            dynamics_params = list(self.model.physics_model.diff_dynamics.parameters())
+            self.optimizer.add_param_group({'params': dynamics_params, 'lr': config.learning_rate * 0.1})
+        
         self.data_generator = PhysicsDataGenerator(config)
         
         self.training_history = {
@@ -1103,15 +1340,20 @@ class LSTMPINNTrainer:
             'physics_loss': [],
             'boundary_loss': [],
             'data_loss': [],
-            'temporal_loss': []
+            'temporal_loss': [],
+            'dynamics_loss': [],
+            'converter_loss': []
         }
         
-        # Improved auto-training parameters
+        # Enhanced training parameters
         self.min_loss_threshold = 1e-3
-        self.convergence_patience = 50   # Much reduced patience
+        self.convergence_patience = 50
         self.best_loss = float('inf')
         self.patience_counter = 0
-        self.early_stopping_threshold = 1.0  # More realistic threshold
+        self.early_stopping_threshold = 1.0
+        
+        # Gradient clipping for stability
+        self.max_grad_norm = 1.0
     
     def generate_training_data(self, n_samples: int = 5000) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate physics-based training data using EVCS dynamics and bus system"""
@@ -1143,41 +1385,81 @@ class LSTMPINNTrainer:
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
         
         for epoch in range(self.config.epochs):
-            epoch_losses = {'total': 0, 'physics': 0, 'boundary': 0, 'data': 0, 'temporal': 0}
+            epoch_losses = {'total': 0, 'physics': 0, 'boundary': 0, 'data': 0, 'temporal': 0, 'dynamics': 0, 'converter': 0}
             num_batches = 0
             
             for batch_sequences, batch_targets in dataloader:
                 self.optimizer.zero_grad()
                 
                 # Forward pass
-                outputs = self.model(batch_sequences)
+                try:
+                    outputs = self.model(batch_sequences)
+                except Exception as e:
+                    print(f"❌ Forward pass failed: {e}")
+                    print(f"Batch sequences shape: {batch_sequences.shape}")
+                    print(f"Batch targets shape: {batch_targets.shape}")
+                    raise
                 
-                # Calculate losses
-                physics_loss = self.model.physics_loss(batch_sequences, outputs)
-                boundary_loss = self.model.boundary_loss(batch_sequences, outputs)
-                data_loss = self.model.data_loss(batch_sequences, outputs, batch_targets)
-                temporal_loss = self.model.temporal_consistency_loss(batch_sequences, outputs)
+                # Calculate individual losses
+                try:
+                    physics_loss = self.model.physics_loss(batch_sequences, outputs)
+                    boundary_loss = self.model.boundary_loss(batch_sequences, outputs)
+                    data_loss = self.model.data_loss(batch_sequences, outputs, batch_targets)
+                    temporal_loss = self.model.temporal_consistency_loss(batch_sequences, outputs)
+                except Exception as e:
+                    print(f"❌ Loss calculation failed: {e}")
+                    print(f"Outputs shape: {outputs.shape}")
+                    print(f"Batch sequences shape: {batch_sequences.shape}")
+                    print(f"Batch targets shape: {batch_targets.shape}")
+                    raise
                 
-                # Total loss with physics emphasis
-                total_loss = (self.config.physics_weight * physics_loss +
-                             self.config.boundary_weight * boundary_loss +
-                             self.config.data_weight * data_loss +
-                             self.config.temporal_weight * temporal_loss)
+                # Calculate additional dynamics losses if available
+                dynamics_loss = torch.tensor(0.0, device=outputs.device)
+                converter_loss = torch.tensor(0.0, device=outputs.device)
+                
+                if hasattr(self.model, 'physics_model') and hasattr(self.model.physics_model, 'diff_dynamics'):
+                    # Differentiable dynamics loss
+                    dynamics_loss = self.model.physics_model.differentiable_dynamics_loss(batch_sequences, outputs)
+                    
+                    # Converter dynamics loss (extract from physics loss components)
+                    if hasattr(self.model.physics_model, 'ac_dc_converter_dynamics'):
+                        # Extract converter-specific losses
+                        soc = batch_sequences[:, -1, 0] if len(batch_sequences.shape) == 3 else batch_sequences[:, 0]
+                        grid_voltage = batch_sequences[:, -1, 1] if len(batch_sequences.shape) == 3 else batch_sequences[:, 1]
+                        v_ac_rms = grid_voltage * 7200.0
+                        i_ac_rms = outputs[:, 2] * 1000.0 / (v_ac_rms + 1e-8)
+                        v_dc = outputs[:, 0]
+                        i_dc = outputs[:, 1]
+                        
+                        ac_dc_loss = self.model.physics_model.ac_dc_converter_dynamics(v_ac_rms, i_ac_rms, v_dc, i_dc)
+                        dc_dc_loss = self.model.physics_model.dc_dc_converter_dynamics(400.0, outputs[:, 2] * 1000.0 / 400.0, v_dc, i_dc)
+                        converter_loss = ac_dc_loss + dc_dc_loss
+                
+                # Use dynamic weight averaging for loss balancing
+                loss_terms = [data_loss, physics_loss, boundary_loss, temporal_loss]
+                total_loss = self.dynamic_weights.compute_weighted_loss(loss_terms)
+                
+                # Add dynamics and converter losses with fixed weights - ensure scalars
+                dynamics_scalar = dynamics_loss.mean() if dynamics_loss.numel() > 1 else dynamics_loss
+                converter_scalar = converter_loss.mean() if converter_loss.numel() > 1 else converter_loss
+                total_loss += 0.1 * dynamics_scalar + 0.05 * converter_scalar
                 
                 # Backward pass
                 total_loss.backward()
                 
-                # Improved gradient clipping
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                # Enhanced gradient clipping
+                clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
                 
                 self.optimizer.step()
                 
-                # Accumulate losses
-                epoch_losses['total'] += total_loss.item()
-                epoch_losses['physics'] += physics_loss.item()
-                epoch_losses['boundary'] += boundary_loss.item()
-                epoch_losses['data'] += data_loss.item()
-                epoch_losses['temporal'] += temporal_loss.item()
+                # Accumulate losses (ensure scalar values)
+                epoch_losses['total'] += total_loss.detach().item() if total_loss.numel() == 1 else total_loss.detach().mean().item()
+                epoch_losses['physics'] += physics_loss.detach().item() if physics_loss.numel() == 1 else physics_loss.detach().mean().item()
+                epoch_losses['boundary'] += boundary_loss.detach().item() if boundary_loss.numel() == 1 else boundary_loss.detach().mean().item()
+                epoch_losses['data'] += data_loss.detach().item() if data_loss.numel() == 1 else data_loss.detach().mean().item()
+                epoch_losses['temporal'] += temporal_loss.detach().item() if temporal_loss.numel() == 1 else temporal_loss.detach().mean().item()
+                epoch_losses['dynamics'] += dynamics_loss.detach().item() if dynamics_loss.numel() == 1 else dynamics_loss.detach().mean().item()
+                epoch_losses['converter'] += converter_loss.detach().item() if converter_loss.numel() == 1 else converter_loss.detach().mean().item()
                 num_batches += 1
             
             # Average losses for epoch
@@ -1186,8 +1468,11 @@ class LSTMPINNTrainer:
             avg_boundary_loss = epoch_losses['boundary'] / num_batches
             avg_data_loss = epoch_losses['data'] / num_batches
             avg_temporal_loss = epoch_losses['temporal'] / num_batches
+            avg_dynamics_loss = epoch_losses['dynamics'] / num_batches
+            avg_converter_loss = epoch_losses['converter'] / num_batches
             
-            self.scheduler.step(avg_total_loss)
+            # Update learning rate with cosine annealing
+            self.scheduler.step()
             
             # Record history
             self.training_history['total_loss'].append(avg_total_loss)
@@ -1195,6 +1480,8 @@ class LSTMPINNTrainer:
             self.training_history['boundary_loss'].append(avg_boundary_loss)
             self.training_history['data_loss'].append(avg_data_loss)
             self.training_history['temporal_loss'].append(avg_temporal_loss)
+            self.training_history['dynamics_loss'].append(avg_dynamics_loss)
+            self.training_history['converter_loss'].append(avg_converter_loss)
             
             # Convergence checking
             if auto_stop:
@@ -1351,6 +1638,9 @@ class LSTMPINNChargingOptimizer:
         self.model.eval()  # Set to evaluation mode to handle single samples
         with torch.no_grad():
             outputs = self.model(sequence_data)
+            # Handle both 2D and 3D output tensors
+            if len(outputs.shape) == 3:  # (batch_size, sequence_length, output_dim)
+                outputs = outputs[:, -1, :]  # Take last time step
             voltage_ref = outputs[0, 0].item()
             current_ref = outputs[0, 1].item()
             power_ref = outputs[0, 2].item()

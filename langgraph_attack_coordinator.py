@@ -21,11 +21,16 @@ except ImportError:
 
 # LangChain imports for LLM integration
 try:
-    from langchain.schema import BaseMessage, HumanMessage, AIMessage
+    # Try new LangChain 0.1.0+ import paths first
+    try:
+        from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+    except ImportError:
+        # Fall back to old import path for backward compatibility
+        from langchain.schema import BaseMessage, HumanMessage, AIMessage
     from langchain.memory import ConversationBufferMemory
     LANGCHAIN_AVAILABLE = True
 except ImportError:
-    print("Warning: LangChain not available. Install with: pip install langchain")
+    print("Warning: LangChain not available. Install with: pip install langchain langchain-core")
     LANGCHAIN_AVAILABLE = False
 
 class AttackState(TypedDict):
@@ -366,6 +371,10 @@ class LangGraphAttackCoordinator:
             state["iteration_count"] = iteration_count + 1
             return "adapt"
         
+        # Complete after a few iterations to prevent infinite loops
+        if iteration_count >= 5:  # Limit to 2 iterations max
+            return "complete"
+        
         # Continue if performance is acceptable but not optimal
         if success_rate < 0.7 or impact_score < 70.0:
             state["iteration_count"] = iteration_count + 1
@@ -402,7 +411,7 @@ class LangGraphAttackCoordinator:
             # Run the workflow with recursion limit
             thread_config = {
                 "configurable": {"thread_id": f"episode_{episode_number}"},
-                "recursion_limit": 10  # Limit iterations to prevent infinite loops
+                "recursion_limit": 100  # Further increased limit for complex coordination workflows
             }
             final_state = self.app.invoke(initial_state, config=thread_config)
             

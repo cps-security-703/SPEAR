@@ -1,0 +1,15 @@
+Till December 5 this model is the most effective one. Start developing or incorporating the new feature from here. 
+With when Gemini token is available it produces better result. 
+
+
+
+New feature needs to be incorporated : 
+1. Deactivate the gemini model [wrong key] and see the distributed MARL model performance
+2. Develop a plotting function for RL convergence analysis. Now it is showing result for 20 episodes . Need to change it to in every episode interaction
+with LLM for different attack types how the  RL agents are converging -how their reward functions are coming to stability.
+3. Incorporate the ADM (Adversarial Defense Mechanism) from Phantom work and show the detection rate improvement. 
+
+
+
+
+Comments are written on 6th December 2025. 

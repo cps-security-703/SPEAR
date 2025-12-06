@@ -11,7 +11,7 @@ def add_enhanced_pinn_integration():
         content = f.read()
     
     # Define the enhanced PINN integration code
-    enhanced_pinn_code = """                            station.update_recovery(self.simulation_time)
+    enhanced_pinn_code = """ station.update_recovery(self.simulation_time)
                 
                 # NEW: Enhanced PINN Integration - Update EVCS dynamics using trained models
                 if (self.use_enhanced_pinn and self.enhanced_pinn_available and 
