@@ -28,7 +28,7 @@ A comprehensive framework for adversarial attack research on Electric Vehicle Ch
 ## 📁 Project Structure
 
 ```
-SPEAR-EVCS/
+SPEAR/
 ├── spear_rag/                      # RAG Knowledge Base System
 │   ├── collectors/                 # Data collectors (NVD, MITRE, STRIDE, etc.)
 │   ├── vector_db/                  # ChromaDB vector database
@@ -208,7 +208,16 @@ python compare_rl_vs_baseline_actual.py
 
 ---
 
-### Stage 3: Run Full Simulation
+### Stage 3: Validate Federated PINN-Based EVCS-CMS Dynamics 
+
+```bash
+python evaluate_federated_pinn.py 
+```
+
+After running the above file, the corresponding results will be saved in federated_pinn_results.
+
+
+### Stage 4: Run Full Simulation
 
 Execute the complete hierarchical co-simulation with RL-coordinated attacks.
 
@@ -222,7 +231,7 @@ python enhanced_integrated_evcs_system.py
 |-------|-------------|----------|
 | **Phase 1** | Load pre-trained PINN models for 6 distribution systems | ~1 min |
 | **Phase 2** | DQN/SAC security evasion training (coordinated) | ~10-15 min |
-| **Phase 3** | Two-level RL training (15 outer × 50 inner episodes) | ~30-60 min |
+| **Phase 3** | Two-level RL training (18 outer × 100 inner episodes) | ~300-400 min |
 | **Phase 4** | Gemini-guided attack deployment | ~5 min |
 | **Phase 5** | Hierarchical co-simulation (3600s simulated) | ~10-20 min |
 
@@ -280,21 +289,6 @@ Layer 3: LSTM ML Detection
 - **Output**: Voltage, Current, Power references
 - **Physics Loss**: Converter dynamics + efficiency constraints
 
-### Two-Level RL Training
-
-```
-Outer Loop (15 circles):
-├── Gemini assigns attack→system mappings
-├── Evaluates results, adapts strategy
-└── Produces final deployment plan
-
-Inner Loop (50 episodes per agent):
-├── DQN: Discrete target system selection
-├── SAC: Continuous attack parameters
-└── Real IDS feedback in reward
-```
-
----
 
 ## 📊 Results & Evaluation
 
@@ -330,19 +324,6 @@ Inner Loop (50 episodes per agent):
 
 Edit in `enhanced_integrated_evcs_system.py`:
 
-```python
-# Training parameters
-outer_circles = 15          # Gemini guidance episodes
-inner_episodes = 50         # RL training episodes per agent
-num_systems = 6             # Distribution systems
-
-# Simulation parameters
-duration_seconds = 3600     # 1-hour simulation
-dist_dt = 1.0               # Distribution timestep (s)
-agc_dt = 4.0                # AGC cycle (s)
-```
-
----
 
 ## 📚 References
 
