@@ -176,13 +176,6 @@ python train_lstm_ids.py \
 - `models/lstm_ids_training_history.png` — Training curves
 - `models/lstm_ids_training_report.txt` — Performance metrics
 
-**Expected Metrics:**
-| Metric | Target | Typical Result |
-|--------|--------|----------------|
-| Detection Rate | ≥80% | ~70-75% |
-| F1-Score | ≥0.75 | ~0.82 |
-| False Positive Rate | ≤5% | ~3-5% |
-
 #### 2.2 Run Baseline Attacks
 
 Execute random (non-RL) attacks through the actual system to establish baseline:
