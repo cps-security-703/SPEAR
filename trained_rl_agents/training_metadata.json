@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-05-02T10:44:01.162809",
+  "attack_types": [
+    "voltage_manipulation",
+    "current_injection",
+    "power_disruption",
+    "communication_spoofing",
+    "data_injection",
+    "protocol_manipulation"
+  ],
+  "num_systems": 6,
+  "num_agents": 12,
+  "observation_space_shape": [
+    158
+  ],
+  "training_history_summary": {
+    "voltage_manipulation": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    },
+    "current_injection": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    },
+    "power_disruption": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    },
+    "communication_spoofing": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    },
+    "data_injection": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    },
+    "protocol_manipulation": {
+      "dqn_episodes": 0,
+      "sac_episodes": 0,
+      "dqn_mean_reward": 0.0,
+      "sac_mean_reward": 0.0
+    }
+  }
+}

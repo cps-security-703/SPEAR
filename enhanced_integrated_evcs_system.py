@@ -2783,9 +2783,6 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 usable_window = duration_seconds - 2 * margin
                 
                 # Collect agent-suggested durations and scale to simulation timescale.
-                # The SAC action space has duration in [5, 60] seconds (training env),
-                # but the hierarchical co-sim runs for thousands of seconds.
-                # Scale proportionally: agent durations represent RELATIVE preference,
                 # mapped to fill the usable simulation window.
                 raw_agent_durations = [dep.get('duration', 30.0) for dep in deployments]
                 total_raw = sum(raw_agent_durations)
@@ -2935,13 +2932,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             self.hierarchical_sim.simulation_time = 0.0  # Start from 0, not duration_seconds
             self.hierarchical_sim.total_time = duration_seconds
             
-            print(f"  🕐 Hierarchical simulation configured for {duration_seconds} seconds")
+            print(f"  Hierarchical simulation configured for {duration_seconds} seconds")
             
             # ── DEPLOY TRAINED RL AGENTS for real-time attack injection ──
-            # If we have trained attack-specific agents AND a deployment plan,
-            # create a RealTimeRLAttackController that calls the trained SAC agents
-            # at each timestep to generate attack parameters dynamically.
-            # This replaces the old static attack_scenarios approach.
             rl_controller_deployed = False
             attack_coord_to_use = None
             
@@ -2953,7 +2946,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             if attack_coord_to_use is None and ATTACK_SPECIFIC_AVAILABLE:
                 import os
                 if os.path.isdir("trained_rl_agents"):
-                    print("  📂 No in-memory agents, attempting to load from trained_rl_agents/...")
+                    print("   No in-memory agents, attempting to load from trained_rl_agents/...")
                     try:
                         disk_coord = AttackSpecificCoordinator(
                             self.federated_manager,
@@ -2989,11 +2982,6 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             hierarchical_results = self.hierarchical_sim.run_hierarchical_simulation(
                 attack_scenarios=attack_scenarios if not rl_controller_deployed else []
-                # max_wall_time_sec is intentionally omitted: the sim duration is
-                # already controlled by self.hierarchical_sim.total_duration (seconds).
-                # Passing duration_seconds as a wall-clock limit caused the attack
-                # simulation to stop at ~2400 sim-seconds whenever the run took
-                # longer than 3600 real seconds, truncating the red line on plots.
             )
             
             # Clean up: remove controller reference after simulation
@@ -3008,10 +2996,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     
     def _apply_attacks_to_hierarchical_sim(self, attack_scenarios: List[Dict]):
         """Validate and prepare attack scenarios for hierarchical simulation
-        
-        NOTE: This method does NOT pre-activate attacks. It only validates the attack
-        scenarios and ensures they have the correct format. The actual activation
-        happens during the simulation loop in hierarchical_cosimulation.py.
+
         """
         if not hasattr(self, 'hierarchical_sim') or not self.hierarchical_sim:
             return
@@ -3034,7 +3019,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 print(f"    ## Attack {idx}: {attack['type']} on system {attack['target_system']} "
                       f"at t={attack['start_time']}s for {attack['duration']}s (mag={attack['magnitude']:.2f})")
         
-        print(f"  ℹ️ Attacks will be activated during simulation runtime (not pre-applied)")
+        print(f"  Attacks will be activated during simulation runtime (not pre-applied)")
     
     def _run_enhanced_episode(self, scenario: EnhancedAttackScenario, episode: int) -> Dict:
         """Run enhanced episode with proper LLM-RL coordination"""
@@ -3048,13 +3033,13 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 enhanced_result = self._process_enhanced_coordinator_result(episode_result, scenario, episode)
             except Exception as e:
                 print(f"Enhanced coordinator failed: {e}")
-                print(f"  📝 No other LLM coordination available - Enhanced is the only one with Agent-RL")
+                print(f"   No other LLM coordination available - Enhanced is the only one with Agent-RL")
                 print(f"  ## Falling back to direct DQN/SAC coordination (no LLM guidance)...")
                 enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
         else:
             # No LLM coordination available - Enhanced is the only one with proper Agent-RL
-            print(f"  📝 No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
+            print(f"   No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
             print(f"  ## Running with direct DQN/SAC coordination (no LLM guidance)...")
             enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
@@ -3113,9 +3098,6 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             enhanced_result['total_reward'] = total_reward
 
             # ── RL-impact retroactive update for LLM metrics ──────────────
-            # Every LLM call during this episode left a call_id on the
-            # analyzer.  Now that the episode reward is known we back-fill
-            # rl_reward_before / rl_reward_after / rl_reward_delta so the
             # CSV has meaningful RL columns for research analysis.
             try:
                 from llm_metrics_logger import LLMMetricsLogger
@@ -3225,8 +3207,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return 0.0
             
             # Calculate success rate from actual results
-            # Handle nested result structure from execute_deployment:
-            # {'attack_type': ..., 'result': {'success': ..., 'impact': ...}}
+
             successful_attacks = 0
             for result in execution_results:
                 inner = result.get('result', result) if isinstance(result, dict) else result
@@ -3277,8 +3258,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return 0.0
             
             # Calculate total impact from actual results
-            # Handle nested result structure from execute_deployment:
-            # {'attack_type': ..., 'result': {'success': ..., 'impact': ...}}
+
             total_impact = 0.0
             for result in execution_results:
                 inner = result.get('result', result) if isinstance(result, dict) else result
@@ -3318,8 +3298,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return 0.0
             
             # Calculate detection rate from actual results
-            # Handle nested result structure from execute_deployment:
-            # {'attack_type': ..., 'result': {'success': ..., 'detection_risk': ...}}
+
             detected_attacks = 0
             for result in execution_results:
                 inner = result.get('result', result) if isinstance(result, dict) else result
@@ -3648,9 +3627,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 }
                 
                 # Warm up LSTM sequence buffer with benign baseline samples
-                # so the LSTM can produce meaningful scores on the first call.
-                # Without this, the LSTM returns score=0.0 ("Insufficient
-                # sequence data") because it needs sequence_length samples.
+
                 anomaly_detector.reset_state()
                 seq_len = getattr(anomaly_detector, 'sequence_length', 10)
                 for _w in range(seq_len):
@@ -3869,9 +3846,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             print(f"      #??# REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
             
             # Create baseline station data matching the CMS input schema used in
-            # hierarchical_cosimulation.py _apply_input_attacks() (Path A).
-            # Keys: soc, grid_voltage (pu), grid_frequency (Hz), demand_factor,
-            #        voltage_priority, urgency_factor, current_time
+
             baseline_station_data = {
                 'soc': 0.5,
                 'grid_voltage': 1.0,        # per-unit (nominal)
@@ -3896,8 +3871,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Apply attack perturbations to station data
-            # These perturbations MIRROR _apply_input_attacks() in hierarchical_cosimulation.py
-            # so that RL training uses the same variables and directions as the simulation.
+
             attacked_station_data = baseline_station_data.copy()
             
             if attack_type == 'voltage_manipulation':
@@ -4342,7 +4316,7 @@ Example format:
   }
 ]
 
-Return ONLY the JSON array, no other text."""
+Return ONLY the JSON array with proposed scenarios, no other text."""
 
             # Query Agent
             print("    ### Sending " + str(len(agent_attacks)) + " agent attacks to Agent for strategic analysis...")
@@ -5892,8 +5866,8 @@ def main(run_mode='rl_coordinated'):
         # Setup EVCS stations
         baseline_cosim.setup_ev_charging_stations()
 
-        print(f"  ⏱️  Simulation duration: {baseline_cosim.total_duration}s")
-        print("  🚀 Running baseline simulation (NO attacks)...")
+        print(f"    Simulation duration: {baseline_cosim.total_duration}s")
+        print("  Running baseline simulation (NO attacks)...")
 
         baseline_results = baseline_cosim.run_hierarchical_simulation(attack_scenarios=[])  # Empty = no attacks
 
@@ -5950,11 +5924,7 @@ def main(run_mode='rl_coordinated'):
             }
             
             # Add individual attack detection details.
-            # Evaluate each attack through the SAME IDS used in production
-            # (hierarchical_cosimulation.py uses BestIDSDetector per station).
-            # Protocol: reset → warm-up with SEQ_LEN//2 benign steps → feed
-            # SEQ_LEN//2 attack steps.  This mirrors the training-data construction
-            # in compare_ids_models.py (inject_at = SEQ_LEN//2 … SEQ_LEN).
+\
             _SEQ_HALF = 5   # SEQ_LEN // 2 = 10 // 2
             for attack_result in episode_result.get('attack_results', episode_result.get('execution_results', [])):
                 inner = attack_result.get('result', attack_result) if isinstance(attack_result, dict) else attack_result
@@ -5962,13 +5932,7 @@ def main(run_mode='rl_coordinated'):
                 attack_success_rl = bool(inner.get('success', False))
 
                 # ── Real IDS evaluation — use RL training-time result if available ─
-                # Priority 1: RL agent already ran _execute_attack_on_pinn against the
-                # real 3-layer IDS using actual PINN outputs.  Reuse those results so
-                # the report faithfully shows RL evasion performance, not a re-scored
-                # heuristic reconstruction from attack_type + magnitude.
-                # Priority 2: if attacked_response (real PINN V/I/P) is present, build
-                # the feature vector from those measurements and re-evaluate.
-                # Priority 3: fall back to type+magnitude reconstruction (legacy path).
+
                 ids_detected = False
                 ids_anomaly = 0.0
 
@@ -5978,11 +5942,7 @@ def main(run_mode='rl_coordinated'):
 
                 if _rl_ids_detected is not None and _rl_ids_score is not None:
                     # ── Priority 1: use the RL agent's actual IDS outcome ──────────
-                    # _execute_attack_on_pinn ran the real multi-layer IDS with:
-                    #   • Youden-J threshold loaded from best_ids_model_meta.json
-                    #   • load_history cleared (no Layer-2 wall-clock pollution)
-                    #   • sequence buffer pre-filled with SEQ_LEN-1 baseline samples
-                    # These are the most faithful evasion results available.
+
                     ids_detected = bool(_rl_ids_detected)
                     ids_anomaly  = float(_rl_ids_score)
 
@@ -6163,10 +6123,7 @@ def main(run_mode='rl_coordinated'):
                     total_fn += 1
             
             # Evaluate IDS on benign (normal) traffic samples for this episode.
-            # For a fair IDS evaluation we need both attack AND benign samples.
-            # Pass REAL benign EVCS traffic through the SAME multi-layer IDS.
-            # Reset detector state first so attack history doesn't contaminate,
-            # then warm up the LSTM buffer with benign data before counting.
+
             num_attacks_this_ep = len(episode_data['attacks_detected'])
             for b in range(num_attacks_this_ep):
                 benign_sys_id = (b % 6) + 1
@@ -6179,7 +6136,6 @@ def main(run_mode='rl_coordinated'):
                     det.reset_state()
                     
                     # Warm-up: fill LSTM sequence buffer with benign traffic
-                    # Sample from the full PINN operating range with correlated features
                     _b_soc = np.random.uniform(0.3, 0.7)
                     _b_v = np.random.uniform(220, 260)   # L2: 240V ±10%
                     _b_i = np.random.uniform(6, 32)      # L2: 6–32A (SAE J1772)
@@ -6330,7 +6286,7 @@ def main(run_mode='rl_coordinated'):
         print("## SIMULATION COMPLETE!")
         print("=" * 90)
 
-        # ── LLM Metrics Summary ────────────────────────────────────────────
+        # ── LLM Metrics Summary ───────────
         try:
             from llm_metrics_logger import LLMMetricsLogger
             logger = LLMMetricsLogger.instance()
@@ -6348,7 +6304,6 @@ def main(run_mode='rl_coordinated'):
                       "(LLM may have been in fallback mode).")
         except Exception as _me:
             print(f"\n##??  LLM metrics summary failed: {_me}")
-        # ──────────────────────────────────────────────────────────────────
 
         print("\n" + "=" * 90)
         print("## Summary:")

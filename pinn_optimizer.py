@@ -2,20 +2,6 @@
 """
 Enhanced PINN Optimizer with Real EVCS Power Flow Dynamics
 
-This version integrates the updated EVCS dynamics with proper AC-DC-DC power flow coupling
-into PINN training data generation. Instead of simplified heuristics, the PINN now learns
-from real converter physics including:
-- AC-DC converter dynamics with efficiency losses
-- DC link power balance and voltage dynamics  
-- DC-DC converter current/voltage control
-- Real SOC evolution based on actual delivered power
-- Power balance validation and system efficiency
-
-Key Changes:
-- Training targets generated from controller.update_dynamics() calls
-- Enhanced input features include physics information (AC power, efficiency, power balance)
-- Real-time dynamics simulation during training data generation
-- Fallback to simplified targets if dynamics simulation fails
 """
 
 import numpy as np
@@ -666,9 +652,7 @@ class LSTMPINNOptimizer(nn.Module):
 
         # ── ODE 3: Battery voltage = f(SOC) at every timestep ────────────────
         # evcs_dynamics.py line 191:  V = SOC_raw × 200 + 300
-        #   SOC_raw = SOC_norm × SOC_raw_scale + SOC_raw_min
-        #   V_battery = (SOC_norm × 0.6 + 0.2) × 200 + 300
-        #             =  SOC_norm × 120 + 340
+
         V_battery = SOC_norm * (SOC_raw_scale * 200.0) + (SOC_raw_min * 200.0 + 300.0)
         v_oc_residual = (V_seq - V_battery) / self.config.rated_voltage
         losses.append(torch.mean(torch.square(v_oc_residual)) * 0.5)
@@ -753,8 +737,7 @@ class LSTMPINNOptimizer(nn.Module):
         losses.append(power_penalty * 0.1)
         
         # ENHANCED: Add explicit converter dynamics terms
-        # 6. AC-DC Converter Dynamics (P_ac = P_dc / efficiency)
-        # Fix: Use realistic grid voltage (240V RMS for single phase)
+
         v_ac_rms = grid_voltage * 240.0  # Convert pu to realistic grid voltage (240V)
         i_ac_rms = power_ref * 1000.0 / (v_ac_rms + eps)  # Estimate AC current
         v_dc = voltage_ref  # DC side voltage
@@ -766,7 +749,6 @@ class LSTMPINNOptimizer(nn.Module):
         losses.append(ac_dc_loss * 0.0001)  # Much smaller weight due to large power values
         
         # 7. DC-DC Converter Dynamics (P_in = P_out / efficiency)
-        # Assume DC-DC converter input is DC link voltage, output is battery voltage
         v_dc_in = ACN_EVSE_VOLTAGE_V  # DC link voltage (ACN L2 EVSE nominal: 240V)
         i_dc_in = power_ref * 1000.0 / (v_dc_in + eps)  # DC link current
         v_dc_out = voltage_ref  # Battery voltage
@@ -794,10 +776,6 @@ class LSTMPINNOptimizer(nn.Module):
         losses.append(efficiency_penalty * 0.05)  # Much smaller weight
         
         # 10. Thermal Dynamics (resistive + switching losses)
-        # thermal_dynamics() returns a per-sample tensor (I²·R + P·0.02).
-        # At rated conditions: 100²×0.1 + 50×0.02 ≈ 1001.
-        # Taking the mean and dividing by this reference brings the term to
-        # ~O(0.1), matching the scale of all other normalised physics terms.
         thermal_loss = self.thermal_dynamics(power_ref, current_ref)
         thermal_ref  = (self.config.rated_current ** 2 * 0.1 +
                         self.config.rated_power * 0.02)          # ≈ 1001
@@ -912,11 +890,7 @@ class LSTMPINNOptimizer(nn.Module):
             pass
         
         # De-normalize targets from [0,1] to physical units so they match the
-        # model's forward() output (V∈[300,500], I∈[50,150], P∈[15,75]).
-        # Normalization convention (fixed ranges, same as _normalize_targets):
-        #   V_phys = target_norm * (max_V - min_V) + min_V  =  target_norm * 200 + 300
-        #   I_phys = target_norm * (max_I - min_I) + min_I  =  target_norm * 100 +  50
-        #   P_phys = target_norm * (max_P - min_P) + min_P  =  target_norm *  60 +  15
+
         v_min = self.config.min_voltage                       # 300.0
         v_rng = self.config.max_voltage - v_min               # 200.0
         i_min = self.config.min_current                       # 50.0
@@ -1227,18 +1201,6 @@ class PhysicsDataGenerator:
                     
                     # Previous power for temporal consistency
                     prev_power = sequence_targets[-1][2] if sequence_targets else 0.0
-                    
-                    # ── Unified CC-CV charging profile (ACN L2) ─────────────────────
-                    # ACN Caltech EVSE: 240 V AC, pilot signal 0–32 A, P_max = 7.68 kW
-                    #
-                    #   Voltage: approximately constant at grid nominal (ACN_EVSE_VOLTAGE_V)
-                    #     with small ±10% band variation (216–264 V).
-                    #
-                    #   Current (pilot signal):
-                    #     CC phase (SOC < 0.8): near max pilot (~32 A) → constant power
-                    #     CV phase (SOC ≥ 0.8): taper from 32 A → 0 A as battery fills
-                    #
-                    #   Power is DERIVED as P = V × I  (always self-consistent)
 
                     # Voltage — INCREASING with SOC (battery terminal voltage)
                     voltage_target = (self.config.min_voltage +
@@ -1457,9 +1419,6 @@ class PhysicsDataGenerator:
     ):
         """
         Load real ACN-Data CSVs and return (X, y) tensors for PINN training.
-
-        Searches the standard ACN-Data path used by acn_sim_interface.ACNDataLoader.
-        Returns None if ACN-Data is unavailable or contains too few sequences.
         """
         acn_data_dir = os.path.join(
             "evcs_data", "ACN-Data-Static-main", "time series data"
@@ -1676,14 +1635,6 @@ class LSTMPINNTrainer:
                         converter_loss = ac_dc_loss + dc_dc_loss
                 
                 # ── Fixed-weight loss combination ────────────────────────────
-                # All individual losses are already normalised to O(1).
-                # Explicit weights give stable, human-interpretable training.
-                #
-                #  data     : MSE in physical space / rated²      → O(0.5–1.0)
-                #  physics  : converter / power-balance residuals  → O(0.2–0.5)
-                #  boundary : SOC/V/I/P constraint violations       → O(0.5–1.5)
-                #  temporal : normalised consecutive-step MSE       → O(0.0–0.5)
-                #  ode      : finite-diff ODE residuals             → O(0.1–0.6)
                 
                 ode_scalar = ode_loss.mean() if ode_loss.numel() > 1 else ode_loss
                 
@@ -1694,7 +1645,6 @@ class LSTMPINNTrainer:
                     0.1  * temporal_loss +
                     0.1  * ode_scalar
                 )
-                # ─────────────────────────────────────────────────────────────
                 
                 # Backward pass
                 total_loss.backward()
