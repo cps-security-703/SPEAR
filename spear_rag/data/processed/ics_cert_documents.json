@@ -1,0 +1,635 @@
+[
+  {
+    "doc_id": "ICSA-23-166-01",
+    "type": "ics_cert_advisory",
+    "title": "Siemens SICAM A8000 RTU",
+    "description": "Siemens SICAM A8000 RTU devices contain multiple vulnerabilities including improper authentication, improper input validation, and use of hard-coded credentials that could allow remote attackers to execute arbitrary code or cause denial of service.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-23-166-01",
+    "date_published": "2023-06-15",
+    "last_updated": "2023-06-15",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0890"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "Grid"
+    ],
+    "affected_components": [
+      "SICAM A8000 RTU"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Update to SICAM A8000 CP-8031 V4.90 or later",
+      "Implement network segmentation",
+      "Use VPN for remote access",
+      "Change default credentials immediately"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Update to SICAM A8000 CP-8031 V4.90 or later",
+      "Implement network segmentation",
+      "Use VPN for remote access",
+      "Change default credentials immediately"
+    ],
+    "countermeasures": [
+      "Update to SICAM A8000 CP-8031 V4.90 or later",
+      "Implement network segmentation",
+      "Use VPN for remote access",
+      "Change default credentials immediately"
+    ],
+    "prerequisites": "",
+    "impact": "Siemens SICAM A8000 RTU devices contain multiple vulnerabilities including improper authentication, improper input validation, and use of hard-coded credentials that could allow remote attackers to execute arbitrary code or cause denial of service.",
+    "cvss_score": 9.8,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-23-166-01"
+    ],
+    "embedding_text": "Siemens SICAM A8000 RTU Siemens SICAM A8000 RTU Siemens SICAM A8000 RTU devices contain multiple vulnerabilities including improper authentication, improper input validation, and use of hard-coded credentials that could allow remote attackers to execute arbitrary code or cause denial of service. Update to SICAM A8000 CP-8031 V4.90 or later Implement network segmentation Use VPN for remote access Change default credentials immediately",
+    "keywords": [
+      "siemens",
+      "sicam a8000 rtu",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2023-32730",
+      "cve-2023-32731",
+      "cve-2023-32732"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "siemens",
+      "energy",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "ICSA-22-349-01",
+    "type": "ics_cert_advisory",
+    "title": "ABB System 800xA",
+    "description": "ABB System 800xA contains vulnerabilities that could allow an attacker to perform unauthorized operations, escalate privileges, or cause denial of service in industrial control systems used for power distribution and automation.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-22-349-01",
+    "date_published": "2022-12-15",
+    "last_updated": "2022-12-15",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0890",
+      "T0814"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "EVSE",
+      "Grid"
+    ],
+    "affected_components": [
+      "System 800xA"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Apply security patches from ABB",
+      "Restrict network access to control systems",
+      "Enable audit logging",
+      "Implement defense-in-depth strategies"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Apply security patches from ABB",
+      "Restrict network access to control systems",
+      "Enable audit logging",
+      "Implement defense-in-depth strategies"
+    ],
+    "countermeasures": [
+      "Apply security patches from ABB",
+      "Restrict network access to control systems",
+      "Enable audit logging",
+      "Implement defense-in-depth strategies"
+    ],
+    "prerequisites": "",
+    "impact": "ABB System 800xA contains vulnerabilities that could allow an attacker to perform unauthorized operations, escalate privileges, or cause denial of service in industrial control systems used for power distribution and automation.",
+    "cvss_score": 8.8,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-22-349-01"
+    ],
+    "embedding_text": "ABB System 800xA ABB System 800xA ABB System 800xA contains vulnerabilities that could allow an attacker to perform unauthorized operations, escalate privileges, or cause denial of service in industrial control systems used for power distribution and automation. Apply security patches from ABB Restrict network access to control systems Enable audit logging Implement defense-in-depth strategies",
+    "keywords": [
+      "abb",
+      "system 800xa",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2022-4047",
+      "cve-2022-4048"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "abb",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-23-073-01",
+    "type": "ics_cert_advisory",
+    "title": "Schneider Electric EcoStruxure Power Monitoring Expert",
+    "description": "Schneider Electric EcoStruxure Power Monitoring Expert contains SQL injection and path traversal vulnerabilities that could allow remote attackers to execute arbitrary code or access sensitive information in power monitoring systems.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-23-073-01",
+    "date_published": "2023-03-14",
+    "last_updated": "2023-03-14",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "EMS",
+      "DMS",
+      "Grid",
+      "EVSE"
+    ],
+    "affected_components": [
+      "EcoStruxure Power Monitoring Expert"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Upgrade to EcoStruxure Power Monitoring Expert 2022 or later",
+      "Implement input validation",
+      "Use least privilege access controls",
+      "Monitor for suspicious database queries"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Upgrade to EcoStruxure Power Monitoring Expert 2022 or later",
+      "Implement input validation",
+      "Use least privilege access controls",
+      "Monitor for suspicious database queries"
+    ],
+    "countermeasures": [
+      "Upgrade to EcoStruxure Power Monitoring Expert 2022 or later",
+      "Implement input validation",
+      "Use least privilege access controls",
+      "Monitor for suspicious database queries"
+    ],
+    "prerequisites": "",
+    "impact": "Schneider Electric EcoStruxure Power Monitoring Expert contains SQL injection and path traversal vulnerabilities that could allow remote attackers to execute arbitrary code or access sensitive information in power monitoring systems.",
+    "cvss_score": 9.8,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-23-073-01"
+    ],
+    "embedding_text": "Schneider Electric EcoStruxure Power Monitoring Expert Schneider Electric EcoStruxure Power Monitoring Expert Schneider Electric EcoStruxure Power Monitoring Expert contains SQL injection and path traversal vulnerabilities that could allow remote attackers to execute arbitrary code or access sensitive information in power monitoring systems. Upgrade to EcoStruxure Power Monitoring Expert 2022 or later Implement input validation Use least privilege access controls Monitor for suspicious database queries",
+    "keywords": [
+      "schneider electric",
+      "ecostruxure power monitoring expert",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2023-1479",
+      "cve-2023-1480"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "schneider electric",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-22-256-01",
+    "type": "ics_cert_advisory",
+    "title": "Multiple EVSE Manufacturers - OCPP Implementation Vulnerabilities",
+    "description": "Multiple electric vehicle charging station manufacturers have implemented OCPP protocol with weak authentication and encryption, allowing attackers to intercept communications, manipulate charging sessions, or gain unauthorized access to charging infrastructure.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-22-256-01",
+    "date_published": "2022-09-13",
+    "last_updated": "2022-09-13",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0855",
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS",
+      "CMS"
+    ],
+    "affected_components": [
+      "OCPP-based Charging Stations"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement mutual TLS authentication",
+      "Use certificate-based authentication",
+      "Enable message signing and encryption",
+      "Conduct security audits of OCPP implementations"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement mutual TLS authentication",
+      "Use certificate-based authentication",
+      "Enable message signing and encryption",
+      "Conduct security audits of OCPP implementations"
+    ],
+    "countermeasures": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement mutual TLS authentication",
+      "Use certificate-based authentication",
+      "Enable message signing and encryption",
+      "Conduct security audits of OCPP implementations"
+    ],
+    "prerequisites": "",
+    "impact": "Multiple electric vehicle charging station manufacturers have implemented OCPP protocol with weak authentication and encryption, allowing attackers to intercept communications, manipulate charging sessions, or gain unauthorized access to charging infrastructure.",
+    "cvss_score": 8.1,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-22-256-01"
+    ],
+    "embedding_text": "Multiple EVSE Manufacturers - OCPP Implementation Vulnerabilities Multiple OCPP-based Charging Stations Multiple electric vehicle charging station manufacturers have implemented OCPP protocol with weak authentication and encryption, allowing attackers to intercept communications, manipulate charging sessions, or gain unauthorized access to charging infrastructure. Upgrade to OCPP 2.0.1 with Security Profile 3 Implement mutual TLS authentication Use certificate-based authentication Enable message signing and encryption Conduct security audits of OCPP implementations",
+    "keywords": [
+      "multiple",
+      "ocpp-based charging stations",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2022-3203",
+      "cve-2022-3204"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "multiple",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-23-285-02",
+    "type": "ics_cert_advisory",
+    "title": "ChargePoint Home Flex Charging Station",
+    "description": "ChargePoint Home Flex charging stations contain vulnerabilities in their WiFi implementation and firmware update mechanism that could allow attackers to intercept credentials, manipulate charging parameters, or install malicious firmware.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-23-285-02",
+    "date_published": "2023-10-12",
+    "last_updated": "2023-10-12",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0873",
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE"
+    ],
+    "affected_components": [
+      "Home Flex Charging Station"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Update to latest firmware version",
+      "Use WPA3 encryption for WiFi",
+      "Isolate charging stations on separate network",
+      "Disable remote firmware updates if not needed",
+      "Monitor for unauthorized firmware changes"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Update to latest firmware version",
+      "Use WPA3 encryption for WiFi",
+      "Isolate charging stations on separate network",
+      "Disable remote firmware updates if not needed",
+      "Monitor for unauthorized firmware changes"
+    ],
+    "countermeasures": [
+      "Update to latest firmware version",
+      "Use WPA3 encryption for WiFi",
+      "Isolate charging stations on separate network",
+      "Disable remote firmware updates if not needed",
+      "Monitor for unauthorized firmware changes"
+    ],
+    "prerequisites": "",
+    "impact": "ChargePoint Home Flex charging stations contain vulnerabilities in their WiFi implementation and firmware update mechanism that could allow attackers to intercept credentials, manipulate charging parameters, or install malicious firmware.",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-23-285-02"
+    ],
+    "embedding_text": "ChargePoint Home Flex Charging Station ChargePoint Home Flex Charging Station ChargePoint Home Flex charging stations contain vulnerabilities in their WiFi implementation and firmware update mechanism that could allow attackers to intercept credentials, manipulate charging parameters, or install malicious firmware. Update to latest firmware version Use WPA3 encryption for WiFi Isolate charging stations on separate network Disable remote firmware updates if not needed Monitor for unauthorized firmware changes",
+    "keywords": [
+      "chargepoint",
+      "home flex charging station",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2023-5412",
+      "cve-2023-5413"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "chargepoint",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-22-174-03",
+    "type": "ics_cert_advisory",
+    "title": "Modbus TCP/IP Protocol Implementation Vulnerabilities",
+    "description": "Multiple vendors' implementations of Modbus TCP/IP protocol in power distribution and charging infrastructure contain vulnerabilities allowing unauthorized command execution, data manipulation, and denial of service attacks.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-22-174-03",
+    "date_published": "2022-06-23",
+    "last_updated": "2022-06-23",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0831",
+      "T0836",
+      "T0814"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "EVSE",
+      "Grid"
+    ],
+    "affected_components": [
+      "Modbus TCP/IP Devices"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Apply vendor patches for Modbus implementations",
+      "Use Modbus security extensions (Modbus/TCP Security)",
+      "Implement firewall rules to restrict Modbus traffic",
+      "Enable authentication and encryption where supported",
+      "Monitor Modbus traffic for anomalies"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Apply vendor patches for Modbus implementations",
+      "Use Modbus security extensions (Modbus/TCP Security)",
+      "Implement firewall rules to restrict Modbus traffic",
+      "Enable authentication and encryption where supported",
+      "Monitor Modbus traffic for anomalies"
+    ],
+    "countermeasures": [
+      "Apply vendor patches for Modbus implementations",
+      "Use Modbus security extensions (Modbus/TCP Security)",
+      "Implement firewall rules to restrict Modbus traffic",
+      "Enable authentication and encryption where supported",
+      "Monitor Modbus traffic for anomalies"
+    ],
+    "prerequisites": "",
+    "impact": "Multiple vendors' implementations of Modbus TCP/IP protocol in power distribution and charging infrastructure contain vulnerabilities allowing unauthorized command execution, data manipulation, and denial of service attacks.",
+    "cvss_score": 9.1,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-22-174-03"
+    ],
+    "embedding_text": "Modbus TCP/IP Protocol Implementation Vulnerabilities Multiple Modbus TCP/IP Devices Multiple vendors' implementations of Modbus TCP/IP protocol in power distribution and charging infrastructure contain vulnerabilities allowing unauthorized command execution, data manipulation, and denial of service attacks. Apply vendor patches for Modbus implementations Use Modbus security extensions (Modbus/TCP Security) Implement firewall rules to restrict Modbus traffic Enable authentication and encryption where supported Monitor Modbus traffic for anomalies",
+    "keywords": [
+      "multiple",
+      "modbus tcp/ip devices",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2022-2003",
+      "cve-2022-2004",
+      "cve-2022-2005"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "multiple",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-23-122-01",
+    "type": "ics_cert_advisory",
+    "title": "Tesla Charging Infrastructure Authentication Bypass",
+    "description": "Tesla Supercharger network components contain authentication bypass vulnerabilities that could allow unauthorized vehicles to charge or attackers to manipulate charging sessions and billing information.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-23-122-01",
+    "date_published": "2023-05-02",
+    "last_updated": "2023-05-02",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0862"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS"
+    ],
+    "affected_components": [
+      "Supercharger Network"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Apply Tesla's security updates",
+      "Implement additional authentication layers",
+      "Monitor charging sessions for anomalies",
+      "Enable transaction logging and auditing"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Apply Tesla's security updates",
+      "Implement additional authentication layers",
+      "Monitor charging sessions for anomalies",
+      "Enable transaction logging and auditing"
+    ],
+    "countermeasures": [
+      "Apply Tesla's security updates",
+      "Implement additional authentication layers",
+      "Monitor charging sessions for anomalies",
+      "Enable transaction logging and auditing"
+    ],
+    "prerequisites": "",
+    "impact": "Tesla Supercharger network components contain authentication bypass vulnerabilities that could allow unauthorized vehicles to charge or attackers to manipulate charging sessions and billing information.",
+    "cvss_score": 8.2,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-23-122-01"
+    ],
+    "embedding_text": "Tesla Charging Infrastructure Authentication Bypass Tesla Supercharger Network Tesla Supercharger network components contain authentication bypass vulnerabilities that could allow unauthorized vehicles to charge or attackers to manipulate charging sessions and billing information. Apply Tesla's security updates Implement additional authentication layers Monitor charging sessions for anomalies Enable transaction logging and auditing",
+    "keywords": [
+      "tesla",
+      "supercharger network",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2023-2891"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "tesla",
+      "energy",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "ICSA-22-305-04",
+    "type": "ics_cert_advisory",
+    "title": "IEC 61850 Protocol Stack Vulnerabilities",
+    "description": "Multiple vendors' implementations of IEC 61850 protocol used in substation automation and grid integration contain buffer overflow and authentication bypass vulnerabilities affecting power distribution systems and EV charging infrastructure.",
+    "source": "https://www.cisa.gov/uscert/ics/advisories/icsa-22-305-04",
+    "date_published": "2022-11-01",
+    "last_updated": "2022-11-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0814",
+      "T0836"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "Grid",
+      "EVSE"
+    ],
+    "affected_components": [
+      "IEC 61850 Implementations"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Update IEC 61850 protocol stack implementations",
+      "Implement network segmentation for substation networks",
+      "Use IEC 62351 security extensions",
+      "Enable authentication and encryption",
+      "Conduct regular security assessments"
+    ],
+    "detection_methods": [
+      "Monitor for CVE exploitation attempts",
+      "Review vendor security advisories",
+      "Conduct vulnerability scans",
+      "Enable IDS/IPS signatures"
+    ],
+    "defensive_actions": [
+      "Update IEC 61850 protocol stack implementations",
+      "Implement network segmentation for substation networks",
+      "Use IEC 62351 security extensions",
+      "Enable authentication and encryption",
+      "Conduct regular security assessments"
+    ],
+    "countermeasures": [
+      "Update IEC 61850 protocol stack implementations",
+      "Implement network segmentation for substation networks",
+      "Use IEC 62351 security extensions",
+      "Enable authentication and encryption",
+      "Conduct regular security assessments"
+    ],
+    "prerequisites": "",
+    "impact": "Multiple vendors' implementations of IEC 61850 protocol used in substation automation and grid integration contain buffer overflow and authentication bypass vulnerabilities affecting power distribution systems and EV charging infrastructure.",
+    "cvss_score": 9.4,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.cisa.gov/uscert/ics/advisories/icsa-22-305-04"
+    ],
+    "embedding_text": "IEC 61850 Protocol Stack Vulnerabilities Multiple IEC 61850 Implementations Multiple vendors' implementations of IEC 61850 protocol used in substation automation and grid integration contain buffer overflow and authentication bypass vulnerabilities affecting power distribution systems and EV charging infrastructure. Update IEC 61850 protocol stack implementations Implement network segmentation for substation networks Use IEC 62351 security extensions Enable authentication and encryption Conduct regular security assessments",
+    "keywords": [
+      "multiple",
+      "iec 61850 implementations",
+      "energy",
+      "ics-cert",
+      "advisory",
+      "cve-2022-4156",
+      "cve-2022-4157"
+    ],
+    "relevance_tags": [
+      "ics-cert",
+      "advisory",
+      "multiple",
+      "energy",
+      "evse"
+    ]
+  }
+]

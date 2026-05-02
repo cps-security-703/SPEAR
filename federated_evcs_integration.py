@@ -70,12 +70,12 @@ class FederatedEVCSSystem:
             )
             
             training_results['local_training_results'][sys_id] = local_result
-            print(f"✅ System {sys_id} training completed")
+            print(f"##System {sys_id} training completed")
         
         # Phase 2: Federated averaging rounds
-        print("\n🔄 Phase 2: Federated Averaging")
+        print("\n## Phase 2: Federated Averaging")
         for round_num in range(self.federated_pinn_manager.config.global_rounds):
-            print(f"\n📡 Federated Round {round_num + 1}/{self.federated_pinn_manager.config.global_rounds}")
+            print(f"\n## Federated Round {round_num + 1}/{self.federated_pinn_manager.config.global_rounds}")
             
             # Perform federated averaging
             round_result = self.federated_pinn_manager.federated_averaging()
@@ -85,7 +85,7 @@ class FederatedEVCSSystem:
             
             # Optional: Additional local training with global model
             if round_num < self.federated_pinn_manager.config.global_rounds - 1:
-                print("   🔄 Additional local training with global model...")
+                print("   ## Additional local training with global model...")
                 for sys_id in range(1, self.num_distribution_systems + 1):
                     # Quick local training (fewer epochs)
                     local_data = self._generate_system_specific_data(sys_id, n_samples_per_system // 2)
@@ -94,10 +94,10 @@ class FederatedEVCSSystem:
                     )
             
             training_results['federated_rounds'].append(round_result)
-            print(f"✅ Round {round_num + 1} completed")
+            print(f"##Round {round_num + 1} completed")
         
         # Phase 3: Final model evaluation
-        print("\n📊 Phase 3: Model Evaluation")
+        print("\n## Phase 3: Model Evaluation")
         global_performance = self._evaluate_federated_models()
         training_results['global_model_performance'] = global_performance
         
@@ -108,7 +108,7 @@ class FederatedEVCSSystem:
         self.federated_pinn_manager.save_federated_models('federated_models')
         
         self.federated_training_complete = True
-        print(f"\n✅ Federated PINN Training Complete!")
+        print(f"\n##Federated PINN Training Complete!")
         print(f"   Total training time: {training_time:.1f} seconds")
         print(f"   Models saved to 'federated_models/' directory")
         
@@ -170,7 +170,7 @@ class FederatedEVCSSystem:
     def setup_hierarchical_cosimulation(self) -> bool:
         """Setup hierarchical co-simulation with federated PINN models"""
         if not self.federated_training_complete:
-            print("❌ Federated training must be completed first")
+            print("## Federated training must be completed first")
             return False
         
         print("🏗️ Setting up Hierarchical Co-simulation with Federated PINN...")
@@ -245,25 +245,25 @@ class FederatedEVCSSystem:
                         federated_model = self.federated_pinn_manager.local_models[sys_id]
                         dist_info['system'].cms.pinn_optimizer = federated_model
                         dist_info['system'].cms.pinn_trained = True
-                        print(f"✅ System {sys_id}: Federated PINN model integrated")
+                        print(f"##System {sys_id}: Federated PINN model integrated")
         
         self.system_ready = True
-        print("✅ Hierarchical co-simulation setup complete with federated PINN models")
+        print("##Hierarchical co-simulation setup complete with federated PINN models")
         return True
     
     def run_federated_simulation_with_attacks(self, load_profile_data: Tuple = None) -> Dict:
         """Run simulation with federated PINN optimization and constrained RL attacks"""
         if not self.system_ready:
-            print("❌ System not ready. Complete setup first.")
+            print("## System not ready. Complete setup first.")
             return {}
         
-        print("\n🚀 Starting Federated EVCS Simulation with Constrained RL Attacks...")
+        print("\n##Starting Federated EVCS Simulation with Constrained RL Attacks...")
         
         # Set load profile if provided
         if load_profile_data:
             times, load_multipliers = load_profile_data
             self.cosim.transmission_system.set_load_profile(times, load_multipliers)
-            print(f"✅ Load profile set: {len(times)} time points")
+            print(f"##Load profile set: {len(times)} time points")
         
         # Simulation results
         simulation_results = {
@@ -287,7 +287,7 @@ class FederatedEVCSSystem:
         allocation_results = self.global_optimizer.process_customer_queue()
         simulation_results['customer_allocations'] = allocation_results
         
-        print(f"✅ Processed {len(allocation_results)} customer allocations")
+        print(f"##Processed {len(allocation_results)} customer allocations")
         
         # Generate constrained RL attacks
         print("\n⚡ Generating constrained RL attacks...")
@@ -315,7 +315,7 @@ class FederatedEVCSSystem:
         )
         
         if coordinated_attacks:
-            print(f"✅ Generated {len(coordinated_attacks)} coordinated attacks")
+            print(f"##Generated {len(coordinated_attacks)} coordinated attacks")
             
             # Execute attacks
             execution_results = self.rl_attack_system.execute_coordinated_attacks(coordinated_attacks)
@@ -326,7 +326,7 @@ class FederatedEVCSSystem:
                   f"{execution_results['failed_attacks']} failed")
         
         # Run hierarchical simulation
-        print("\n🔄 Running hierarchical co-simulation...")
+        print("\n## Running hierarchical co-simulation...")
         
         # Convert attacks to format expected by cosim
         attack_scenarios = []
@@ -361,7 +361,7 @@ class FederatedEVCSSystem:
         simulation_time = time.time() - start_time
         simulation_results['simulation_time'] = simulation_time
         
-        print(f"\n✅ Federated simulation complete!")
+        print(f"\n##Federated simulation complete!")
         print(f"   Simulation time: {simulation_time:.1f} seconds")
         print(f"   Customer allocations: {len(allocation_results)}")
         print(f"   Attack events: {len(simulation_results['attack_events'])}")
@@ -429,31 +429,31 @@ class FederatedEVCSSystem:
     
     def demonstrate_federated_features(self):
         """Demonstrate key federated features"""
-        print("\n🎯 Demonstrating Federated EVCS Features...")
+        print("\n## Demonstrating Federated EVCS Features...")
         
         # 1. Federated PINN Training
-        print("\n1️⃣ Federated PINN Training:")
-        print("   ✅ Each distribution system trains its own PINN model")
-        print("   ✅ Models share knowledge through federated averaging")
-        print("   ✅ Privacy-preserving distributed learning")
+        print("\n## Federated PINN Training:")
+        print("   ##Each distribution system trains its own PINN model")
+        print("   ##Models share knowledge through federated averaging")
+        print("   ##Privacy-preserving distributed learning")
         
         # 2. Constrained RL Attacks
-        print("\n2️⃣ Constrained RL Attacks:")
-        print("   ✅ Physical constraint validation (max 50kW injection)")
-        print("   ✅ Gradual attack injection (5-second steps)")
-        print("   ✅ Anomaly detection and stealth scoring")
-        print("   ✅ Realistic attack patterns instead of 3000-10000MW")
+        print("\n## Constrained RL Attacks:")
+        print("   ##Physical constraint validation (max 50kW injection)")
+        print("   ##Gradual attack injection (5-second steps)")
+        print("   ##Anomaly detection and stealth scoring")
+        print("   ##Realistic attack patterns instead of 3000-10000MW")
         
         # 3. Global Optimization
-        print("\n3️⃣ Global Federated Optimization:")
-        print("   ✅ Customer redirection across distribution systems")
-        print("   ✅ Load balancing using federated PINN insights")
-        print("   ✅ Queue management and wait time optimization")
+        print("\n## Global Federated Optimization:")
+        print("   ##Customer redirection across distribution systems")
+        print("   ##Load balancing using federated PINN insights")
+        print("   ##Queue management and wait time optimization")
         
         # 4. System Integration
-        print("\n4️⃣ System Integration:")
-        print("   ✅ Hierarchical co-simulation with federated models")
-        print("   ✅ Real-time constraint validation")
-        print("   ✅ Coordinated attack detection and mitigation")
+        print("\n## System Integration:")
+        print("   ##Hierarchical co-simulation with federated models")
+        print("   ##Real-time constraint validation")
+        print("   ##Coordinated attack detection and mitigation")
         
-        print("\n🎉 Federated EVCS System Ready for Advanced Simulations!")
+        print("\n## Federated EVCS System Ready for Advanced Simulations!")

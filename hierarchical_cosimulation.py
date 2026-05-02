@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -47,6 +48,20 @@ except ImportError:
 # Import os for file operations
 import os
 
+# Best-IDS detector (auto-selects highest-AUC model after compare_ids_models.py)
+try:
+    from best_ids_model import BestIDSDetector
+except ImportError:
+    BestIDSDetector = None
+
+# ── ACN Caltech dataset EVSE parameters (mirrors acn_sim_interface.py) ────────
+from acn_sim_interface import CALTECH_EVSE_VOLTAGE_V as ACN_EVSE_VOLTAGE_V
+from acn_sim_interface import CALTECH_MAX_PILOT_A    as ACN_MAX_PILOT_A
+ACN_VOLTAGE_MIN_V = ACN_EVSE_VOLTAGE_V * 0.90   # 216 V  (−10% band)
+ACN_VOLTAGE_MAX_V = ACN_EVSE_VOLTAGE_V * 1.10   # 264 V  (+10% band)
+ACN_VOLTAGE_RANGE = ACN_VOLTAGE_MAX_V - ACN_VOLTAGE_MIN_V  # 48 V
+ACN_P_MAX_KW      = ACN_EVSE_VOLTAGE_V * ACN_MAX_PILOT_A / 1000.0  # 7.68 kW
+
 @dataclass
 class EVStatistics:
     """Statistics for each EV that uses the EVCS"""
@@ -68,7 +83,7 @@ class EVChargingStation:
         self.max_power = max_power
         self.num_ports = num_ports
         self.params = params or EVCSParameters()
-        self.total_time = 3600.0  # 1 hour simulation
+        self.total_time = 7200.0  # 2 hour simulation for diagnostic
         
         # Create unified EVCS controller for power electronics dynamics
         self.evcs_controller = EVCSController(evcs_id, self.params)
@@ -78,9 +93,14 @@ class EVChargingStation:
         self.charging_sessions = []
         self.customer_queue = []
         self.scheduled_charging = []
-        self.avg_charging_time = 30.0  # Default baseline charging time in minutes
+        # Realistic baseline: 36 kWh (20%→80% of 60 kWh battery) / 50 kW ≈ 43 min
+        # Ref: Idaho National Lab EV Project, SAE J1772 CCS charging profiles
+        self.avg_charging_time = 45.0  # Realistic DC fast charging baseline (minutes)
         self.queue_wait_time = 0.0
         
+        # ML-based IDS — best model selected automatically after compare_ids_models.py
+        self.anomaly_detector = BestIDSDetector() if BestIDSDetector is not None else None
+
         # FIXED: Initialize attack-related attributes
         self.attack_active = False
         self.attack_type = None
@@ -96,7 +116,12 @@ class EVChargingStation:
         # Power electronics dynamics attributes
         self.ev_connected = False
         self.current_ev_id = None
-        self.soc = 0.5  # Start at 50% SOC
+        # Realistic arrival SOC distribution: mean ~35%, std ~18%
+        # Wider spread ensures EVs reach 80% at staggered times, preventing
+        # a synchronized disconnect wave that causes charging-time instability.
+        # Ref: Idaho National Lab EV Project (2015), FleetCarma data
+        self.soc = np.clip(np.random.normal(0.35, 0.18), 0.10, 0.65)
+        self._arrival_soc = self.soc  # Frozen arrival SOC for charging time metric
         self.voltage_measured = 0.0
         self.current_measured = 0.0
         self.power_measured = 0.0
@@ -105,18 +130,21 @@ class EVChargingStation:
         self.grid_frequency = 60.0
         self.current_load = 0.0
         
-        # Controller references (now managed by unified EVCSController)
-        self.voltage_ref = 400.0  # V
-        self.current_ref = 125.0   # A
-        # FIXED: Calculate individual EV power based on 50kW per port, not arbitrary division
-        individual_ev_power = 50.0  # Each EV gets 50kW regardless of station size
+        # Controller references — L2 ACN values (240 V / 32 A / 7.68 kW per port)
+        self.voltage_ref = 240.0  # V (Caltech ACN EVSE voltage)
+        # L2 per-port capacity: 240 V × 32 A = 7.68 kW (SAE J1772 max)
+        # Station max_power is already set to num_ports × 7.68 kW in configs.
+        individual_ev_power = max_power / max(1, num_ports)  # kW per port
+        self.current_ref = individual_ev_power * 1000.0 / self.voltage_ref  # A
         self.power_ref = individual_ev_power     # kW per EV
-        
+        # IMMUTABLE rated power per port — used for charging time metric only.
+        self.rated_power_per_port = individual_ev_power  # kW (design capacity)
+
         # Legacy attributes for compatibility
-        self.current_setpoint = 125.0  # 50A initial current
+        self.current_setpoint = self.current_ref
         self.voltage_setpoint = 1.0  # Per-unit voltage setpoint
-        self.voltage_reference = 400.0  # V (DC side)
-        self.current_reference = 125.0   # A
+        self.voltage_reference = 240.0  # V (L2 AC EVSE)
+        self.current_reference = self.current_ref
         self.power_reference = individual_ev_power     # kW per EV
         
         # Emergency and safety
@@ -134,12 +162,14 @@ class EVChargingStation:
         self.charging_start_time = 0.0
         
         # Connection management attributes
+        # Realistic turnaround: cable handling + payment + plug-in ≈ 3-5 min
+        # Ref: ChargePoint operational data, NREL EVSE deployment studies
         self.customer_wait_times = {}
         self.last_disconnect_time = 0.0
-        self.min_disconnect_time = 0.02  # Minimum 1.2 minutes before new EV can connect
-        self.connection_probability = 1.0  # 100% chance of connection for demo
+        self.min_disconnect_time = 0.05   # 3 minutes between EVs (cable swap, payment)
+        self.connection_probability = 0.0  # 0 = use get_availability_factor() dynamically
         self.initialization_time = 0.0
-        self.auto_connect_delay = 0.01  # 36 seconds delay before first auto-connection
+        self.auto_connect_delay = 0.04    # ~2.4 min for plug-in, auth, EVSE handshake (ISO 15118)
         
         # Ensure baseline metrics are properly initialized
         self.ensure_baseline_initialization()
@@ -165,7 +195,7 @@ class EVChargingStation:
         if not hasattr(self, 'baseline_metrics') or not self.baseline_metrics:
             # Initialize baseline metrics if not already set
             self.baseline_metrics = {
-                'avg_charging_time': 150.0,  # FIXED: Use correct baseline of 150 minutes
+                'avg_charging_time': 45.0,  # Realistic DC fast charging: ~45 min (20%→80% @ 50kW)
                 'queue_wait_time': 0.0,
                 'current_load': 0.0,
                 'utilization_rate': 0.0,
@@ -173,7 +203,7 @@ class EVChargingStation:
                 'total_evs_served': 0,
                 'total_energy_delivered': 0.0
             }
-            print(f"📊 EVCS {self.evcs_id}: Baseline metrics initialized with correct charging time: 150.0 min")
+            print(f"📊 EVCS {self.evcs_id}: Baseline metrics initialized with charging time: 45.0 min")
     
     def get_baseline_metrics(self):
         """Get the stored baseline metrics, ensuring they exist"""
@@ -202,7 +232,7 @@ class EVChargingStation:
                         'total_evs_served': self.total_evs_served,
                         'total_energy_delivered': self.total_energy_delivered
                     }
-                    print(f"   ⚠️ No baseline metrics found, using current metrics")
+                    print(f"   ## No baseline metrics found, using current metrics")
                 
                 # Start recovery mode
                 self.recovery_mode = True
@@ -236,7 +266,7 @@ class EVChargingStation:
             
             # FIXED: Reset accumulated metrics to pre-attack values
             if self.pre_attack_metrics:
-                self.avg_charging_time = self.pre_attack_metrics.get('avg_charging_time', 30.0)
+                self.avg_charging_time = self.pre_attack_metrics.get('avg_charging_time', 45.0)
                 self.queue_wait_time = self.pre_attack_metrics.get('queue_wait_time', 0.0)
                 self.current_load = self.pre_attack_metrics.get('current_load', 0.0)
                 
@@ -287,7 +317,7 @@ class EVChargingStation:
             
             if self.pre_attack_metrics:
                 # Gradually reduce charging time and queue wait time
-                target_charging_time = self.pre_attack_metrics.get('avg_charging_time', 30.0)
+                target_charging_time = self.pre_attack_metrics.get('avg_charging_time', 45.0)
                 target_queue_wait = self.pre_attack_metrics.get('queue_wait_time', 0.0)
                 target_queue_length = self.pre_attack_metrics.get('queue_length', 0)
                 
@@ -345,8 +375,9 @@ class EVChargingStation:
             self._force_ev_connection(current_time_hours)
             return
         
-        # For subsequent connections, use high probability to ensure EVs connect
-        connection_prob = max(0.8, self.connection_probability)  # At least 80% chance
+        # Use realistic time-of-day availability factor for connection probability
+        # Ref: NREL EV charging behavior studies
+        connection_prob = self.get_availability_factor(current_time_hours)
         if np.random.random() < connection_prob:
             self._force_ev_connection(current_time_hours)
     
@@ -377,29 +408,33 @@ class EVChargingStation:
         if self.soc < 0.1:
             self.soc = 0.1  # Minimum 10% SOC
         
-        # Reset power electronics states for new connection
-        self.voltage_measured = self.voltage_reference
+        # FIXED: Store arrival SOC so _calculate_real_charging_time() uses the
+        # fixed arrival value for the full-session duration, not the current
+        # (increasing) SOC which would make the metric shrink during charging.
+        self._arrival_soc = self.soc
+        
+        # Reset power electronics states for new connection — L2 ACN values
+        self.voltage_measured = self.voltage_reference   # 240 V
         self.current_measured = 0.0
         self.power_measured = 0.0
-        self.dc_link_voltage = 600.0  # Reset to safe level
-        
-        # FIXED: Initialize current_setpoint to prevent zero setpoint warnings
-        self.current_setpoint = 125.0  # 50A initial current
-        
-        # FIXED: Initialize power-related attributes to prevent zero power warnings
-        # Use much lower individual power per charging session to prevent massive accumulation
-        max_single_ev_power = min(50.0, self.max_power / max(4, self.num_ports/2))  # Limit individual EV power
-        self.power_reference = max_single_ev_power  # Much lower individual EV power
-        self.voltage_reference = 400.0  # 400V initial voltage
-        self.current_reference = 125.0  # 50A initial current
-        
-        # FIXED: Create corresponding legacy charging session
+        self.dc_link_voltage = 240.0  # L2 EVSE voltage
+
+        # L2 per-port setpoints (SAE J1772: 32 A max, 7.68 kW max per port)
+        self.current_setpoint = 24.0   # A (typical L2 operating setpoint)
+        max_single_ev_power = min(7.68, self.max_power / max(1, self.num_ports))
+        self.power_reference = max_single_ev_power
+        self.voltage_reference = 240.0  # V (L2 AC EVSE)
+        self.current_reference = 24.0   # A (typical L2 setpoint)
+
+        # Create corresponding legacy charging session
         customer_id = f"cust_{self.evcs_id}_{self.current_ev_id}"
-        # Estimate charging duration based on SOC deficit and power
+        # L2 session duration: 60 kWh battery, 20%→80% SOC at 5.76 kW ≈ 6.25 hours
+        # Typical workplace L2: capped at 4 hours; overnight: up to 8 hours
         soc_deficit = self.params.disconnect_soc - self.soc
         estimated_energy = soc_deficit * self.params.capacity  # kWh
-        estimated_duration = estimated_energy / self.power_reference  # hours
-        estimated_duration = max(0.1, min(estimated_duration, 4.0))  # Clamp between 0.1 and 4 hours
+        estimated_duration = estimated_energy / max(self.power_reference, 0.1)  # hours
+        # L2 workplace sessions: typically 2-8 hours; clamp to realistic range
+        estimated_duration = max(0.5, min(estimated_duration, 8.0))
         
         # Create legacy session
         session = {
@@ -464,9 +499,13 @@ class EVChargingStation:
         # FIXED: Reset current EV ID
         self.current_ev_id = None
         
-        # FIXED: Reset available ports and current load for queue management
+        # Reset available ports for queue management
         self.available_ports = self.num_ports
-        self.current_load = 0.0
+        # Don't zero current_load — other ports are still charging.
+        # Set to estimated background load from remaining active ports.
+        rated_pp = getattr(self, 'rated_power_per_port', 7.68)
+        bg_ports = max(0, int(self.num_ports * 0.50))  # ~50% utilization between tracked EVs
+        self.current_load = rated_pp * bg_ports if bg_ports > 0 else 1.0
         
         # FIXED: Sanitize EVCS controller states to prevent invalid conditions
         if hasattr(self, 'evcs_controller') and hasattr(self.evcs_controller, '_sanitize_states'):
@@ -492,20 +531,21 @@ class EVChargingStation:
             should_disconnect = True
             disconnect_reason = f"SOC {self.soc:.2f} >= disconnect threshold {self.params.disconnect_soc}"
         
-        # Check time-based disconnection (more realistic)
+        # Check time-based disconnection
+        # Ref: Most DC fast charging networks enforce 60-min max session
         charging_duration = current_time_hours - self.connection_time
-        max_charging_time = 2.0  # FIXED: Reduced from 4.0 to 2.0 hours for realistic charging
+        max_charging_time = 1.0  # 60 min max session (Electrify America, EVgo policy)
         
         if charging_duration > max_charging_time:
             should_disconnect = True
             disconnect_reason = f"Charging duration {charging_duration:.1f}h > max {max_charging_time}h"
         
-        # FIXED: Additional disconnection criteria for better queue management
-        # Disconnect if SOC is high enough and charging has been going for a reasonable time
-        if (self.soc >= 0.75 and  # 75% SOC
-            charging_duration >= 0.5):  # At least 30 minutes of charging
+        # Disconnect at 80% SOC — CC-CV charging curve knee point
+        # Above 80%, charging power drops significantly (constant-voltage phase)
+        # Ref: Battery University, SAE J1772 CC-CV charging profile
+        if self.soc >= 0.80 and charging_duration >= 0.15:  # 80% SOC + at least 9 min
             should_disconnect = True
-            disconnect_reason = f"SOC {self.soc:.2f} >= 75% and charging duration {charging_duration:.1f}h >= 0.5h"
+            disconnect_reason = f"SOC {self.soc:.2f} >= 80% (CC-CV knee) after {charging_duration:.2f}h"
         
         # FIXED: Emergency disconnection only for critical issues
         if self.emergency_mode and self.soc > 0.7:  # Reduced from 0.8 to 0.7
@@ -539,14 +579,19 @@ class EVChargingStation:
             return 0.3
         
     def set_references(self, voltage_ref: float, current_ref: float, power_ref: float):
-        """Set references from CMS using unified controller"""
+        """Set references from CMS using unified controller (clamped to realistic bounds)"""
+        # Clamp to L2 ACN-matched bounds
+        voltage_ref = float(np.clip(voltage_ref, 0.0, 240.0))
+        current_ref = float(np.clip(current_ref, 0.0, 32.0))
+        power_ref = float(np.clip(power_ref, 0.0, 7.68))
+        
         # Update local references for compatibility
         self.voltage_ref = voltage_ref
         self.current_ref = current_ref
         self.power_ref = power_ref
         
         if self.ev_connected:
-            # Set references in unified controller
+            # Set references in unified controller (also clamped internally)
             self.evcs_controller.set_references(voltage_ref, current_ref, power_ref)
             
             # Update legacy attributes for compatibility
@@ -596,9 +641,18 @@ class EVChargingStation:
             self.ac_current_rms = dynamics_result.get('ac_current_rms', 0.0)
             self.grid_frequency = dynamics_result.get('grid_frequency', 60.0)
             
-            # Update legacy compatibility attributes
-            self.current_load = self.power_measured
-            self.voltage_setpoint = self.voltage_measured / 400.0  # Normalize
+            # Clamp power_measured to physically realistic bounds (2× station max_power as safety margin)
+            _station_power_cap = getattr(self, 'max_power', 192.0) * 2.0  # kW
+            self.power_measured = np.clip(self.power_measured, 0.0, _station_power_cap)
+            
+            # Scale station total load to reflect ALL charging ports.
+            # The ODE solver tracks ONE representative EV, but the station has num_ports
+            # ports charging simultaneously.  Estimate active ports from a realistic
+            # utilization factor (~70%) since the single-EV tracker only knows about 1 EV.
+            estimated_utilization = 0.70  # Typical L2 charging utilization
+            active_ports = max(1, int(self.num_ports * estimated_utilization))
+            self.current_load = self.power_measured * active_ports
+            self.voltage_setpoint = self.voltage_measured / 240.0  # Normalize to L2 nominal
             self.current_setpoint = self.current_measured
             
             # Update legacy charging session energy (if exists)
@@ -617,23 +671,27 @@ class EVChargingStation:
                 'evs_served': self.total_evs_served
             }
         else:
-            # No EV connected - return standby state
-            standby_power = 1.0  # 1 kW standby
-            standby_current = 0.1  # 0.1 A standby
+            # No EV connected to ODE solver — but OTHER ports are still charging.
+            # Estimate background load from remaining active ports.
+            rated_pp = getattr(self, 'rated_power_per_port', 7.68)
+            estimated_utilization = 0.50  # Lower utilization between tracked EVs
+            bg_active_ports = max(0, int(self.num_ports * estimated_utilization))
+            background_power = rated_pp * bg_active_ports if bg_active_ports > 0 else 1.0
+            background_current = background_power * 1000.0 / 240.0  # A (L2: 240V AC)
             
-            self.current_load = standby_power
+            self.current_load = background_power
             self.voltage_setpoint = 0.1
-            self.current_setpoint = standby_current
+            self.current_setpoint = background_current
             
             return {
                 'voltage_measured': 50.0,
-                'current_measured': standby_current,
-                'power_measured': standby_power,
+                'current_measured': background_current,
+                'power_measured': background_power,
                 'ac_voltage_rms': grid_voltage_rms,
-                'ac_current_rms': standby_current,
+                'ac_current_rms': background_current,
                 'grid_frequency': system_frequency if system_frequency is not None else 60.0,
                 'soc': 0.0,
-                'total_power': standby_power,
+                'total_power': background_power,
                 'ev_connected': False,
                 'ev_id': 0,
                 'evs_served': self.total_evs_served,
@@ -744,12 +802,13 @@ class EVChargingStation:
             self.last_customer_arrival_time = current_time
             time_since_last_arrival = 0
         
-        # During attacks, customers arrive more frequently due to longer charging times
-        arrival_interval = 15.0  # Normal: every 15 seconds
+        # Realistic customer arrival intervals for DC fast charging
+        # Ref: NREL EVSE utilization data — busy station: ~4-6 arrivals/hour
+        arrival_interval = 600.0  # Normal: every 10 minutes (6 arrivals/hour)
         if hasattr(self, 'attack_active') and self.attack_active:
-            arrival_interval = 8.0  # Attack: every 8 seconds (more frequent)
+            arrival_interval = 300.0  # Attack: every 5 min (longer sessions → more queuing)
         elif hasattr(self, 'recovery_mode') and self.recovery_mode:
-            arrival_interval = 12.0  # Recovery: every 12 seconds (moderately frequent)
+            arrival_interval = 450.0  # Recovery: every 7.5 min (moderately frequent)
         
         if time_since_last_arrival >= arrival_interval:
             # Add new customer to queue
@@ -764,7 +823,7 @@ class EVChargingStation:
                 'soc_target': soc_target,
                 'urgency': np.random.uniform(0.3, 1.0),
                 'priority': np.random.randint(1, 4),
-                'requested_charge': (soc_target - soc_initial) * 75.0  # Assume 75kWh battery
+                'requested_charge': (soc_target - soc_initial) * 60.0  # Assume 60kWh battery (ACN default)
             }
             
             # Only add if queue isn't too long (realistic constraint)
@@ -775,105 +834,184 @@ class EVChargingStation:
         self._update_queue_metrics(current_time)
     
     def _calculate_real_charging_time(self, current_time: float = None) -> float:
-        """Calculate real charging time based on actual simulation state and attack conditions"""
+        """Calculate real charging time based on actual simulation state and attack conditions.
+        
+        Physics model:  t_charge = E_needed / P_effective  (converted to minutes)
+        
+        Realistic variation sources (benign & attack):
+          - Arrival SOC spread  → different energy needed per EV
+          - Grid voltage sag/swell → effective charger power changes
+          - Temperature derating  → power electronics efficiency loss
+          - Shared-transformer load → voltage drop under heavy utilization
+          - CC-CV taper at high SOC → reduced average power for high-SOC arrivals
+        
+        Ref: Idaho National Lab EV Project (2015), SAE J1772 CCS profiles,
+             Battery University CC-CV charging curves
+        """
         import numpy as np
         
-        # Base charging time depends on power output and SOC
-        base_charging_time = 30.0  # Normal baseline charging time in minutes
+        rated_power = getattr(self, 'rated_power_per_port', 7.68)  # kW (L2: 7.68 kW per port)
+        battery_capacity = 60.0  # kWh (EPA average EV battery 2023)
         
-        # Factor 1: Power-based charging time calculation
-        if hasattr(self, 'power_measured') and self.power_measured > 0:
-            # Calculate charging time based on actual power delivery
-            # Typical EV battery: 60-100 kWh, charging from 20% to 80% (40-60 kWh)
-            typical_energy_needed = 50.0  # kWh
-            charging_time_from_power = (typical_energy_needed / max(1.0, self.power_measured)) * 60  # Convert to minutes
-            base_charging_time = min(150.0, max(15.0, charging_time_from_power))  # Clamp between 15-150 minutes
+        # ── Energy needed: depends on THIS EV's arrival SOC ──
+        # Use the frozen arrival SOC (set in _force_ev_connection) so the
+        # metric represents the FULL session duration, not the shrinking
+        # remaining time as self.soc increases during charging.
+        arrival_soc = getattr(self, '_arrival_soc', getattr(self, 'soc', 0.35))
+        # Clamp: EV won't charge past 80% (CC-CV knee); won't arrive above 65%
+        arrival_soc = float(np.clip(arrival_soc, 0.10, 0.65))
+        target_soc = 0.80
+        energy_needed = battery_capacity * (target_soc - arrival_soc)  # kWh (18–42 kWh range)
         
-        # Factor 2: SOC-based adjustment
-        if hasattr(self, 'soc') and self.soc > 0:
-            # Higher SOC means less charging time needed
-            remaining_charge_needed = max(0.1, 1.0 - self.soc)  # How much charge is still needed
-            base_charging_time *= remaining_charge_needed
+        # ── Effective power: derated by grid voltage and temperature ──
+        effective_power = rated_power
         
-        # Factor 3: Attack impact on charging time (using RL attack suggestions)
+        # (a) Grid voltage effect: charger output power scales with input voltage.
+        #     At 0.95 p.u. grid voltage, power drops ~5%.
+        #     Ref: IEC 61851 charger derating curves
+        grid_voltage_pu = 1.0
+        if hasattr(self, 'voltage_measured') and self.voltage_measured > 100:
+            grid_voltage_pu = self.voltage_measured / 240.0
+        grid_voltage_pu = float(np.clip(grid_voltage_pu, 0.85, 1.10))
+        effective_power *= grid_voltage_pu
+        
+        # (b) Temperature derating: above 35°C, power electronics derate ~2%/°C.
+        #     Ref: ABB Terra 54 charger thermal management spec
+        temperature = getattr(self, 'params', None)
+        # Use a slow-varying pseudo-random temperature per station (seeded by evcs_id hash)
+        station_hash = hash(getattr(self, 'evcs_id', '')) % 1000
+        time_s = current_time if current_time is not None else 0.0
+        # Diurnal temperature: 20–35°C with station-specific phase offset
+        ambient_temp = 27.5 + 7.5 * np.sin(2 * np.pi * (time_s / 3600.0 - station_hash / 1000.0))
+        if ambient_temp > 35.0:
+            derate_pct = (ambient_temp - 35.0) * 0.02  # 2% per °C above 35
+            effective_power *= (1.0 - min(derate_pct, 0.20))  # Cap at 20% derating
+        
+        # (c) Shared-transformer voltage drop under heavy utilization.
+        #     More occupied ports → more voltage drop on the LV bus.
+        utilization = 1.0 - (getattr(self, 'available_ports', 0) / max(1, getattr(self, 'num_ports', 1)))
+        transformer_drop = utilization * 0.03  # Up to 3% drop at full utilization
+        effective_power *= (1.0 - transformer_drop)
+        
+        # (d) CC-CV taper: EVs arriving at higher SOC spend more time in the
+        #     constant-voltage phase where power tapers off.  Model the average
+        #     power over the session as reduced for higher arrival SOC.
+        #     At 20% SOC the full CC phase is available; at 60% SOC ~30% is CV.
+        cv_fraction = max(0.0, (arrival_soc - 0.20) / 0.60) * 0.30  # 0–30% CV
+        avg_power_factor = 1.0 - cv_fraction * 0.40  # CV phase runs at ~60% of CC power
+        effective_power *= avg_power_factor
+        
+        # (e) Small stochastic variation: cable resistance, contactors, BMS negotiation
+        #     ±3% random variation per timestep (smoothed by the averaging across stations)
+        noise = np.random.normal(1.0, 0.03)
+        effective_power *= float(np.clip(noise, 0.90, 1.10))
+        
+        effective_power = max(1.0, effective_power)  # Safety floor
+        
+        # ── Base charging time (minutes) ──
+        base_charging_time = (energy_needed / effective_power) * 60.0
+        
+        # ── Attack-induced power degradation via attack_manipulation_factor ──
+        # The amf represents the CMS power_multiplier set by the attack.
+        # amf > 1.0 means the attack is forcing the station to draw MORE grid
+        # power (overloading, demand inflation).  However, this excess draw does
+        # NOT translate to faster battery charging — it represents wasted energy,
+        # converter stress, and thermal losses.  The effective power *delivered
+        # to the battery* actually DECREASES because:
+        #   - Converter efficiency drops sharply under overload (IEC 61851)
+        #   - Thermal derating kicks in (ABB Terra 54 spec)
+        #   - BMS may throttle to protect the battery
+        # amf < 1.0 means the attack is starving the station of power, so
+        # effective charging power drops proportionally.
+        amf = getattr(self, 'attack_manipulation_factor', 1.0)
+        if getattr(self, 'attack_active', False) and amf != 1.0:
+            if amf > 1.0:
+                # Overload attack: grid draw increases but battery delivery degrades.
+                # Model efficiency collapse: η ≈ 1/sqrt(amf) for overload conditions.
+                # e.g. amf=4x → η=0.50, amf=20x → η=0.22
+                overload_efficiency = 1.0 / max(1.0, np.sqrt(amf))
+                effective_power_attacked = max(1.0, rated_power * overload_efficiency)
+            else:
+                # Power starvation attack: less grid power → less battery delivery
+                effective_power_attacked = max(1.0, rated_power * amf)
+            base_charging_time = (energy_needed / effective_power_attacked) * 60.0
+        
+        # Factor 3: Attack impact on charging time
+        # Maps each attack type to a charging-time multiplier.
+        # If rl_attack_impact is available, use it; otherwise use defaults.
         attack_time_factor = 1.0
         if hasattr(self, 'attack_active') and self.attack_active:
-            print(f"🔍 DEBUG: Station {self.evcs_id} under attack - attack_active={self.attack_active}, attack_type={getattr(self, 'attack_type', 'None')}")
-            if hasattr(self, 'attack_type') and hasattr(self, 'rl_attack_impact'):
-                # Use RL-generated attack impact instead of hardcoded values
-                rl_impact = getattr(self, 'rl_attack_impact', {})
-                print(f"🔍 DEBUG: RL impact data: {rl_impact}")
-                
-                if self.attack_type == 'power_manipulation':
-                    # Use RL-suggested power manipulation impact
-                    power_impact = rl_impact.get('power_efficiency_reduction', 0.2)  # Default 20% reduction
-                    attack_time_factor = 1.0 / max(0.1, 1.0 - power_impact)
-                    attack_time_factor = min(5.0, attack_time_factor)  # Cap at 5x normal time
-                    print(f"🔍 DEBUG: Power attack - power_impact={power_impact}, attack_time_factor={attack_time_factor}")
-                
-                elif self.attack_type == 'load_manipulation':
-                    # Use RL-suggested load manipulation impact
-                    load_impact = rl_impact.get('load_instability_factor', 1.5)  # Default 1.5x increase
-                    attack_time_factor = min(3.0, load_impact)  # Cap at 3x normal time
-                    print(f"🔍 DEBUG: Load attack - load_impact={load_impact}, attack_time_factor={attack_time_factor}")
-                
-                elif self.attack_type == 'cyber_attack':
-                    # Map cyber_infiltration to load_manipulation behavior
-                    load_impact = rl_impact.get('load_instability_factor', 1.3)  # Default 1.3x increase
-                    attack_time_factor = min(2.5, load_impact)  # Cap at 2.5x normal time
-                    print(f"🔍 DEBUG: Cyber infiltration attack - load_impact={load_impact}, attack_time_factor={attack_time_factor}")
-                
-                elif self.attack_type == 'voltage_manipulation':
-                    # Use RL-suggested voltage manipulation impact
-                    voltage_impact = rl_impact.get('voltage_efficiency_loss', 0.3)  # Default 30% loss
-                    if hasattr(self, 'voltage_measured') and self.voltage_measured > 0:
-                        voltage_deviation = abs(self.voltage_measured - 400.0) / 400.0
-                        attack_time_factor = 1.0 + voltage_deviation * voltage_impact * 5.0
-                    else:
-                        attack_time_factor = 1.0 + voltage_impact
-                
-                elif self.attack_type == 'demand_increase' or self.attack_type == 'demand_decrease':
-                    # Use RL-suggested demand manipulation impact
-                    demand_impact = rl_impact.get('demand_instability_factor', 1.3)  # Default 1.3x increase
-                    attack_time_factor = min(2.5, demand_impact)
-                
-                elif self.attack_type == 'frequency_manipulation':
-                    # Use RL-suggested frequency manipulation impact
-                    freq_impact = rl_impact.get('frequency_efficiency_loss', 0.15)  # Default 15% loss
-                    attack_time_factor = 1.0 + freq_impact
+            attack_type = getattr(self, 'attack_type', None)
+            rl_impact = getattr(self, 'rl_attack_impact', {})
+            magnitude = getattr(self, 'attack_magnitude', 0.5)
             
-            # Fallback to basic attack impact if no RL suggestions available
-            elif hasattr(self, 'attack_type'):
-                if self.attack_type == 'power_manipulation':
-                    attack_time_factor = 1.5  # 50% increase
-                elif self.attack_type == 'load_manipulation':
-                    attack_time_factor = 1.8  # 80% increase
-                elif self.attack_type == 'voltage_manipulation':
-                    attack_time_factor = 1.6  # 60% increase
+            # Default multipliers per attack type (used when no rl_attack_impact)
+            default_factors = {
+                'power_manipulation': 1.5,
+                'power_disruption': 1.6,
+                'load_manipulation': 1.8,
+                'demand_increase': 1.6,
+                'demand_decrease': 0.7,
+                'voltage_manipulation': 1.6,
+                'voltage_spoofing': 1.5,
+                'current_injection': 1.5,
+                'frequency_manipulation': 1.3,
+                'frequency_spoofing': 1.3,
+                'cyber_attack': 1.5,
+                'communication_spoofing': 1.4,
+                'soc_manipulation': 1.4,
+                'data_injection': 1.5,
+                'protocol_manipulation': 1.6,
+                'oscillating_demand': 1.4,
+                'thermal_attack': 1.5,
+            }
+            
+            if rl_impact:
+                # Use RL-generated impact values — match against canonical names
+                if attack_type in ('power_disruption', 'power_manipulation'):
+                    power_impact = rl_impact.get('power_efficiency_reduction', 0.2)
+                    attack_time_factor = 1.0 / max(0.1, 1.0 - power_impact)
+                elif attack_type in ('current_injection', 'load_manipulation', 'demand_increase'):
+                    attack_time_factor = rl_impact.get('load_instability_factor', 1.5)
+                elif attack_type == 'voltage_manipulation':
+                    v_loss = rl_impact.get('voltage_efficiency_loss', 0.3)
+                    attack_time_factor = 1.0 + v_loss
+                elif attack_type in ('data_injection', 'frequency_manipulation'):
+                    f_loss = rl_impact.get('frequency_efficiency_loss', 0.15)
+                    attack_time_factor = 1.0 + f_loss
                 else:
-                    attack_time_factor = 1.4  # 40% increase default
+                    attack_time_factor = default_factors.get(attack_type, 1.4)
+            else:
+                # No RL impact data — use default factor for the attack type
+                attack_time_factor = default_factors.get(attack_type, 1.4)
+            
+            # Scale by attack magnitude (0-1) for gradual impact
+            # factor=1.0 means no attack; interpolate between 1.0 and full factor
+            if magnitude < 1.0:
+                attack_time_factor = 1.0 + (attack_time_factor - 1.0) * magnitude
         
-        # Factor 4: Grid frequency impact
+        # Factor 4: Grid frequency impact (additive, not multiplicative)
         if hasattr(self, 'grid_frequency') and self.grid_frequency > 0:
             freq_deviation = abs(self.grid_frequency - 60.0) / 60.0
-            freq_factor = 1.0 + freq_deviation * 0.5  # Small impact from frequency deviation
-            attack_time_factor *= freq_factor
+            attack_time_factor += freq_deviation * 0.3  # Additive to avoid compound spikes
         
-        # Factor 5: Queue congestion impact
-        if hasattr(self, 'customer_queue') and len(self.customer_queue) > 0:
-            # More customers waiting can lead to rushed charging or resource contention
-            queue_factor = 1.0 + len(self.customer_queue) * 0.05  # 5% increase per waiting customer
-            attack_time_factor *= min(2.0, queue_factor)  # Cap at 2x
+        # Factor 5: Queue congestion — REMOVED from charging time.
+        # Queue length affects WAIT time (before plug-in), not the charging
+        # duration once an EV is connected.  Including it here caused regular
+        # sawtooth spikes every 600s (customer arrival interval) across all
+        # systems.  Queue impact is captured in the separate queue_length
+        # and queue_wait_time metrics instead.
         
         # Calculate final charging time
         final_charging_time = base_charging_time * attack_time_factor
         
+        # Clamp to realistic range: 10 min (minimum DC fast) to 300 min (5 hours,
+        # effectively stalled but not infinite).  Benign range is ~30-55 min.
+        final_charging_time = float(np.clip(final_charging_time, 10.0, 300.0))
+        
         # Debug final charging time calculation
         if hasattr(self, 'attack_active') and self.attack_active:
-            print(f"🔍 DEBUG: Station {self.evcs_id} final charging time: base={base_charging_time:.1f}min * factor={attack_time_factor:.2f} = {final_charging_time:.1f}min")
-        
-        # Realistic bounds: 10 minutes to 180 minutes (3 hours)
-        final_charging_time = max(10.0, min(180.0, final_charging_time))
+            print(f"🔍 DEBUG: Station {self.evcs_id} final charging time: base={base_charging_time:.1f}min * factor={attack_time_factor:.2f} = {final_charging_time:.1f}min (amf={amf:.2f})")
         
         return final_charging_time
     
@@ -901,7 +1039,8 @@ class EVChargingStation:
         if hasattr(self, 'attack_active') and self.attack_active:
             # Get current charging time vs normal charging time
             current_charging_time = self._calculate_real_charging_time(current_time)
-            normal_charging_time = 30.0  # minutes
+            rated_power = getattr(self, 'rated_power_per_port', 7.68)
+            normal_charging_time = (36.0 / max(1.0, rated_power)) * 60.0  # Station's actual baseline
             
             if current_charging_time > normal_charging_time:
                 # Each minute of delay adds customers to queue
@@ -956,12 +1095,8 @@ class EVChargingStation:
         # Calculate real charging time based on actual simulation state
         avg_time = self._calculate_real_charging_time(current_time)
         
-        # During recovery, apply gradual interpolation to target values
-        if hasattr(self, 'recovery_mode') and self.recovery_mode:
-            recovery_progress = (current_time - getattr(self, 'recovery_start_time', 0)) / 120.0  # Recovery time constant remains 120s
-            recovery_progress = min(1.0, max(0.0, recovery_progress))
-            target_time = 30.0  # Target normal charging time
-            avg_time = avg_time * (1 - recovery_progress) + target_time * recovery_progress
+        # Recovery mode: no artificial smoothing toward 45 min target.
+        # The charging time naturally returns to baseline when attack ends.
         
         # Calculate real queue length and wait time based on simulation state
         real_queue_length = self._calculate_real_queue_length(current_time)
@@ -1022,14 +1157,17 @@ class EnhancedChargingManagementSystem:
         self.measurements = {}
         
         # Enhanced control parameters for dynamics
-        self.voltage_limits = {'min': 0.95, 'max': 1.05}  # Per unit
-        self.total_power_limit = 6000  # kW (increased to match 6x1000kW stations)
-        self.voltage_droop_gain = 100.0  # kW/pu
-        self.frequency_droop_gain = 50.0  # kW/Hz
+        # Ref: ANSI C84.1 Range A for voltage limits
+        self.voltage_limits = {'min': 0.95, 'max': 1.05}  # Per unit (ANSI C84.1)
+        self.total_power_limit = 430.0  # kW (45 L2 ports × 7.68 kW/port, per DS)
+        # Droop gains scaled for 430 kW L2 system (proportional to prior 1 MW DCFC base)
+        # Ref: IEEE Std 1547-2018 Table 10, Kundur Ch. 12
+        self.voltage_droop_gain = 2.5    # kW/pu (scaled for 430 kW L2 DS)
+        self.frequency_droop_gain = 4.1  # kW/Hz (scaled for 430 kW L2 DS)
         self.soc_weight = 0.3
         self.voltage_weight = 0.4
         self.load_weight = 0.3
-        self.total_time = 3600.0  # 1 hour simulation
+        self.total_time = 7200.0  # 2 hour simulation for diagnostic
         
         # Security and Anomaly Detection System
         self.security_enabled = True
@@ -1037,7 +1175,7 @@ class EnhancedChargingManagementSystem:
         self.input_history = {}     # Store historical inputs for each station
         self.anomaly_threshold = 0.3  # 30% change threshold
         self.rate_change_limit = 0.5  # 50% per time step
-        self.consecutive_anomaly_limit = 3  # Max consecutive anomalies
+        self.consecutive_anomaly_limit = 5  # Consecutive anomalies before emergency response
         self.anomaly_counters = {}  # Track consecutive anomalies per station
 
         # RESEARCH MODE: Allow attacks to bypass security for impact analysis
@@ -1045,16 +1183,18 @@ class EnhancedChargingManagementSystem:
 
         # Adaptive limits based on attack simulation mode
         if self.research_mode:
-            # AMPLIFIED Research mode: Much higher limits to observe extreme attack impacts
-            self.max_power_reference = 3000.0  # kW - AMPLIFIED: 1000 → 3000 for extreme attacks
-            self.max_voltage_reference = 800.0  # V - AMPLIFIED: 600 → 800 for voltage attacks
-            self.max_current_reference = 1000.0  # A - AMPLIFIED: 500 → 1000 for current attacks
-            self.rate_change_limit = 20.0  # 2000% - AMPLIFIED: 5.0 → 20.0 for rapid attack changes
+            # Research mode: relaxed limits to observe attack impacts
+            # Physically bounded to L2 ACN specs (SAE J1772)
+            self.max_power_reference = 7.68   # kW (240V × 32A L2 max)
+            self.max_voltage_reference = 240.0 # V (L2 nominal = max)
+            self.max_current_reference = 32.0  # A (SAE J1772 L2 max, CALTECH_MAX_PILOT_A)
+            self.rate_change_limit = 2.0  # 200% per timestep (relaxed for attack visibility)
         else:
-            # Production mode: Strict security limits
-            self.max_power_reference = 100.0  # kW upper bound
-            self.max_voltage_reference = 500.0  # V upper bound
-            self.max_current_reference = 200.0  # A upper bound
+            # Production mode: strict security limits
+            # Ref: SAE J1772 L2, IEC 61851-1 safety limits
+            self.max_power_reference = 7.68   # kW (L2 max)
+            self.max_voltage_reference = 240.0 # V (L2 nominal)
+            self.max_current_reference = 32.0  # A (L2 max)
         
         # Adaptive RL Attack Integration
         self.adaptive_rl_system = None
@@ -1114,15 +1254,15 @@ class EnhancedChargingManagementSystem:
                 boundary_weight=10.0,
                 data_weight=1.0,
                 # EVCS Charging Specifications
-                rated_voltage=400.0,
-                rated_current=100.0,
-                rated_power=40.0,
-                max_voltage=500.0,
-                min_voltage=300.0,
-                max_current=150.0,
-                min_current=50.0,
-                max_power=75.0,
-                min_power=15.0
+                rated_voltage=240.0,
+                rated_current=24.0,
+                rated_power=5.76,
+                max_voltage=240.0,
+                min_voltage=208.0,
+                max_current=32.0,
+                min_current=6.0,
+                max_power=7.68,
+                min_power=1.44
             )
             
             # Create optimizer but don't train (always_train=False)
@@ -1180,14 +1320,16 @@ class EnhancedChargingManagementSystem:
                 # Prepare station data for federated optimization
                 grid_voltage_pu = 1.0  # Default
                 if bus_voltages and station.bus_name in bus_voltages:
-                    grid_voltage_pu = bus_voltages[station.bus_name]
-                    # CRITICAL FIX: Ensure voltage is in per-unit (0.85-1.15 range)
-                    # If voltage is in Volts (>10), convert to per-unit
-                    if grid_voltage_pu > 10.0:
-                        # Assume nominal voltage is around 12470V (typical distribution)
-                        grid_voltage_pu = grid_voltage_pu / 12470.0
-                    # Clamp to reasonable per-unit range
-                    grid_voltage_pu = np.clip(grid_voltage_pu, 0.85, 1.15)
+                    raw_v = bus_voltages[station.bus_name]
+                    # Guard against NaN/Inf from unconverged power flow
+                    if np.isfinite(raw_v):
+                        grid_voltage_pu = raw_v
+                        # CRITICAL FIX: Ensure voltage is in per-unit (0.85-1.15 range)
+                        # If voltage is in Volts (>10), convert to per-unit
+                        if grid_voltage_pu > 10.0:
+                            grid_voltage_pu = grid_voltage_pu / 12470.0
+                        # Clamp to reasonable per-unit range
+                        grid_voltage_pu = np.clip(grid_voltage_pu, 0.85, 1.15)
                 
                 # Calculate voltage priority
                 voltage_priority = max(0, self.voltage_limits['min'] - grid_voltage_pu)
@@ -1202,6 +1344,16 @@ class EnhancedChargingManagementSystem:
                 # Get demand factor
                 demand_factor = self.generate_daily_charging_profile(current_time)
                 
+                # Compute realistic values for LSTM feature extraction (14-dim)
+                # so the anomaly detector doesn't see 9/14 default constants.
+                nominal_voltage = 240.0  # V, nominal L2 EVSE voltage
+                nominal_current = max(1.0, min(station.soc * 26.0 + 6.0, 32.0))  # 6–32A L2 range
+                nominal_power = nominal_voltage * nominal_current / 1000.0  # kW
+                station_temperature = getattr(station, 'temperature', 25.0 + 5.0 * demand_factor)
+                station_utilization = demand_factor  # proxy
+                queue_len = getattr(station, 'queue_length', max(0, int(demand_factor * 8)))
+                time_of_day = (current_time / 3600.0) % 24.0  # seconds → hour-of-day
+
                 station_data = {
                     'soc': station.soc,
                     'grid_voltage': grid_voltage_pu,
@@ -1209,7 +1361,17 @@ class EnhancedChargingManagementSystem:
                     'demand_factor': demand_factor,
                     'voltage_priority': voltage_priority,
                     'urgency_factor': urgency_factor,
-                    'current_time': current_time
+                    'current_time': current_time,
+                    # Additional features for LSTM anomaly detector (14-dim)
+                    'voltage': nominal_voltage,
+                    'current': nominal_current,
+                    'power': nominal_power,
+                    'temperature': station_temperature,
+                    'load_factor': demand_factor,
+                    'queue_length': queue_len,
+                    'utilization': station_utilization,
+                    'time_of_day': time_of_day,
+                    'system_id': self.system_id
                 }
                 
                 # FIXED: Apply attacks to INPUTS instead of outputs
@@ -1226,10 +1388,20 @@ class EnhancedChargingManagementSystem:
                 current_ref = results['current_ref']
                 power_ref = results['power_ref']
                 
+                # Clamp PINN output to station's actual per-port capacity.
+                # The PINN optimizes abstractly and may output values far below the
+                # station's design capacity (e.g. 15 kW when rated is 40-50 kW/port).
+                # Use rated_power_per_port × demand_factor as the floor.
+                rated_per_port = getattr(station, 'rated_power_per_port', 7.68)
+                power_floor = rated_per_port * max(0.5, demand_factor)  # At least 50% of rated
+                if power_ref < power_floor:
+                    power_ref = power_floor
+                    current_ref = power_ref * 1000.0 / max(voltage_ref, 240.0)  # P=VI
+
                 # BENIGN SCENARIO: Constrain voltage to normal operating range if no attacks
                 if not self.attack_active or not hasattr(self, 'attack_params') or not self.attack_params:
-                    # No attack active - keep voltage stable around 400V nominal (±2.5%)
-                    voltage_ref = np.clip(voltage_ref, 390.0, 410.0)
+                    # No attack active - keep voltage stable around 240V L2 nominal (±5%)
+                    voltage_ref = np.clip(voltage_ref, 228.0, 252.0)
 
                 # ENHANCED: Apply power multiplier from attack if present
                 if 'power_multiplier' in attacked_station_data:
@@ -1237,7 +1409,7 @@ class EnhancedChargingManagementSystem:
                     power_ref *= power_multiplier
                     # Scale current proportionally to maintain P=VI relationship
                     current_ref *= power_multiplier
-                    print(f"    🔥 ATTACK MULTIPLIER: Power scaled by {power_multiplier:.2f}x")
+                    print(f"    ##ATTACK MULTIPLIER: Power scaled by {power_multiplier:.2f}x")
 
                 # Debug: Print detailed PINN input and output
                 print(f" FEDERATED PINN System {self.system_id} Station {station_id} @ t={current_time:.1f}s:")
@@ -1247,23 +1419,23 @@ class EnhancedChargingManagementSystem:
 
                 # Apply security validation and anomaly detection
                 voltage_ref, current_ref, power_ref, attack_detected = self._security_validation(
-                    station_id, voltage_ref, current_ref, power_ref, attacked_station_data, current_time
+                    station_id, voltage_ref, current_ref, power_ref, attacked_station_data, current_time,
+                    station_obj=station
                 )
-                
+
                 if not attack_detected:
                     print(f"    ATTACK BLOCKED: Security system prevented malicious operation")
                 
                 # Ensure minimum values
-                voltage_ref = max(voltage_ref, 400.0)
+                voltage_ref = max(voltage_ref, 240.0)
                 current_ref = max(current_ref, 1.0)
                 power_ref = max(power_ref, 1.0)
-                
-                # Keep PINN-optimized current within realistic bounds (don't recalculate from power)
-                # Only adjust if current is completely unrealistic (>200A for safety)
-                if current_ref > 200.0:
-                    current_ref = min(125.0, power_ref * 1000.0 / voltage_ref)
-                    print(f"   🔧 Current clamped to {current_ref:.1f}A (was >200A)")
-                
+
+                # Keep PINN-optimized current within L2 bounds
+                if current_ref > 32.0:
+                    current_ref = min(32.0, power_ref * 1000.0 / voltage_ref)  # L2 max 32A
+                    print(f"   🔧 Current clamped to {current_ref:.1f}A (was >32A L2 limit)")
+
                 print(f"    Final Constrained: V={voltage_ref:.1f}V, I={current_ref:.1f}A, P={power_ref:.1f}kW")
                 print(f" Federated PINN Optimization - Station {station_id}: V={voltage_ref:.1f}V, I={current_ref:.1f}A, P={power_ref:.1f}kW")
                 
@@ -1296,11 +1468,36 @@ class EnhancedChargingManagementSystem:
         magnitude = self.attack_params['magnitude']
         start_time = self.attack_params.get('start_time', 0)
         duration = self.attack_params.get('duration', 60.0)
-        
+
+        # ── Canonical alias normalisation ─────────────────────────────────────
+        # Map legacy operational / Gemini-generated names to the canonical 6-type
+        # taxonomy (attack_specific_rl_agents.ATTACK_TYPES) so every branch that
+        # reaches the IDS feature extractor uses a consistent label.
+        _ALIAS_MAP = {
+            'demand_increase':      'current_injection',    # inflates demand/current
+            'demand_decrease':      'power_disruption',     # suppresses power delivery
+            'oscillating_demand':   'protocol_manipulation',# oscillating = protocol abuse
+            'voltage_spoofing':     'voltage_manipulation', # voltage signal attack
+            'frequency_spoofing':   'data_injection',       # false frequency data
+            'soc_manipulation':     'communication_spoofing',# SOC spoofed over comms
+            'power_manipulation':   'power_disruption',     # same physical effect
+            'load_manipulation':    'current_injection',    # load ≈ current manipulation
+            'cyber_attack':         'communication_spoofing',# generic cyber = comms layer
+            'ramp_demand':          'current_injection',    # ramp ≈ current inflate
+            'thermal_attack':       'protocol_manipulation',# protocol-level thermal override
+            'charging_hijacking':   'protocol_manipulation',# hijacking = protocol abuse
+            'model_poisoning':      'data_injection',       # poisoning ≈ data injection
+            'frequency_attack':     'data_injection',       # false freq = data injection
+            'frequency_manipulation':'data_injection',      # same
+        }
+        attack_type = _ALIAS_MAP.get(attack_type, attack_type)
+        # Update attack_params so downstream logging is also canonical
+        self.attack_params['type'] = attack_type
+
         # Calculate elapsed time and progress (0.0 to 1.0) for gradual attack
         elapsed_time = max(0.0, current_time - start_time)
         progress = min(elapsed_time / max(duration, 1.0), 1.0)  # Clamp to [0, 1]
-        
+
         # Initialize cumulative attack factor if not exists or if attack just started
         if not hasattr(self, 'input_attack_cumulative_factor'):
             self.input_attack_cumulative_factor = 1.0
@@ -1308,114 +1505,102 @@ class EnhancedChargingManagementSystem:
             # Attack just started or parameters changed - reset cumulative factor
             self.input_attack_cumulative_factor = 1.0
             self.input_attack_start_time = start_time
-        
+
         # Only print debug every 10 seconds to reduce spam
         debug_print = (int(current_time) % 10 == 0)
-        
-        if attack_type == 'demand_increase':
-            # AMPLIFIED: Gradual demand increase - starts at 1.0, gradually increases to (1.0 + magnitude * 50.0)
-            # Increased from 20.0 to 50.0 for higher deviation
-            gradual_magnitude = magnitude * progress  # 0 to magnitude over duration
-            cumulative_factor = 1.0 + (gradual_magnitude * 50.0)  # AMPLIFIED: 20.0 → 50.0
-            
-            # Store cumulative factor for persistence
-            self.input_attack_cumulative_factor = cumulative_factor
-            
-            attacked_data['demand_factor'] *= cumulative_factor
-            attacked_data['urgency_factor'] *= (1.0 + gradual_magnitude * 25.0)  # AMPLIFIED: 10.0 → 25.0
-            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 40.0  # AMPLIFIED: 15.0 → 40.0
-            
-            if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, gradual_mag={gradual_magnitude:.3f}, factor={cumulative_factor:.3f}) on Station {station_id}")
+        gradual_magnitude = magnitude * progress  # 0 to magnitude over duration
 
-        elif attack_type == 'demand_decrease':
-            # FIXED: Gradual demand decrease - starts at 1.0, gradually decreases to (1.0 - magnitude * 0.95)
-            gradual_magnitude = magnitude * progress
-            cumulative_factor = max(0.01, 1.0 - (gradual_magnitude * 0.95))
-            
+        # =====================================================================
+        # Canonical 6-type attack handlers — all legacy names already aliased above
+        # =====================================================================
+        if attack_type == 'voltage_manipulation':
+            voltage_drop_factor = 1.0 - (gradual_magnitude * 0.35)
+            attacked_data['grid_voltage'] *= voltage_drop_factor
+            attacked_data['voltage_priority'] = max(0, self.voltage_limits['min'] - attacked_data['grid_voltage'])
+            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 20.0
+            self.input_attack_cumulative_factor = voltage_drop_factor
+            if debug_print:
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, voltage_factor={voltage_drop_factor:.3f}) on Station {station_id}")
+
+        elif attack_type == 'current_injection':
+            cumulative_factor = 1.0 + (gradual_magnitude * 45.0)
             self.input_attack_cumulative_factor = cumulative_factor
-            
+            attacked_data['demand_factor'] *= cumulative_factor
+            attacked_data['urgency_factor'] *= (1.0 + gradual_magnitude * 20.0)
+            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 35.0
+            if debug_print:
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, factor={cumulative_factor:.3f}) on Station {station_id}")
+
+        elif attack_type == 'power_disruption':
+            cumulative_factor = max(0.02, 1.0 - (gradual_magnitude * 0.90))
+            self.input_attack_cumulative_factor = cumulative_factor
             attacked_data['demand_factor'] *= cumulative_factor
             attacked_data['urgency_factor'] *= cumulative_factor
             attacked_data['power_multiplier'] = cumulative_factor
-            
             if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, gradual_mag={gradual_magnitude:.3f}, factor={cumulative_factor:.3f}) on Station {station_id}")
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, factor={cumulative_factor:.3f}) on Station {station_id}")
 
-        elif attack_type == 'oscillating_demand':
-            # AMPLIFIED: Oscillating with much higher amplitude
-            time_factor = elapsed_time / 3.0  # AMPLIFIED: Faster oscillation (5.0 → 3.0)
-            oscillation = np.sin(time_factor) * 25.0 + 1.0  # AMPLIFIED: 10.0 → 25.0
-            
-            # Gradually increase oscillation amplitude over attack duration
-            amplitude_growth = 1.0 + (magnitude * progress * 15.0)  # AMPLIFIED: 5.0 → 15.0
-            attacked_data['demand_factor'] *= oscillation * amplitude_growth
-            attacked_data['power_multiplier'] = oscillation * amplitude_growth
-            
-            self.input_attack_cumulative_factor = amplitude_growth
-            
+        elif attack_type == 'communication_spoofing':
+            soc_reduction = gradual_magnitude * 0.7
+            attacked_data['soc'] = max(0.01, attacked_data['soc'] - soc_reduction)
+            attacked_data['urgency_factor'] = 1.0 + (gradual_magnitude * 40.0)
+            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 30.0
+            self.input_attack_cumulative_factor = 1.0 + gradual_magnitude
             if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, amplitude={amplitude_growth:.3f}) on Station {station_id}")
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, soc_reduction={soc_reduction:.3f}) on Station {station_id}")
 
-        elif attack_type == 'voltage_spoofing':
-            # AMPLIFIED: Gradual voltage manipulation - much larger voltage drop
-            gradual_magnitude = magnitude * progress
-            voltage_drop_factor = 1.0 - (gradual_magnitude * 0.3)  # AMPLIFIED: 0.5 → 0.3 (larger drop)
-            
-            attacked_data['grid_voltage'] *= voltage_drop_factor
-            attacked_data['voltage_priority'] = max(0, self.voltage_limits['min'] - attacked_data['grid_voltage'])
-            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 20.0  # AMPLIFIED: 5.0 → 20.0
-            
-            self.input_attack_cumulative_factor = voltage_drop_factor
-            
-            if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, voltage_factor={voltage_drop_factor:.3f}) on Station {station_id}")
-
-        elif attack_type == 'frequency_spoofing':
-            # AMPLIFIED: Gradual frequency deviation - much larger deviation
-            gradual_magnitude = magnitude * progress
-            frequency_deviation = gradual_magnitude * 15.0  # AMPLIFIED: 5.0 → 15.0
-            
+        elif attack_type == 'data_injection':
+            frequency_deviation = gradual_magnitude * 12.0
             attacked_data['grid_frequency'] += frequency_deviation
-            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 25.0  # AMPLIFIED: 8.0 → 25.0
-            
+            attacked_data['demand_factor'] *= (1.0 + gradual_magnitude * 30.0)
+            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 25.0
             self.input_attack_cumulative_factor = 1.0 + gradual_magnitude
-            
             if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, freq_dev={frequency_deviation:.3f}Hz) on Station {station_id}")
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, freq_dev={frequency_deviation:.3f}Hz) on Station {station_id}")
 
-        elif attack_type == 'soc_manipulation':
-            # FIXED: Gradual SOC manipulation - gradually reduces SOC
-            gradual_magnitude = magnitude * progress
-            soc_reduction = gradual_magnitude * 0.8  # Gradually from 0 to (magnitude * 0.8)
-            
-            if hasattr(self, 'stations') and station_id < len(self.stations):
-                attacked_data['soc'] = max(0.01, attacked_data['soc'] - soc_reduction)
-                
-                # AMPLIFIED: Gradually increase urgency and power as SOC decreases
-                if attacked_data['soc'] < 0.2:
-                    urgency_factor = 1.0 + (gradual_magnitude * 49.0)  # AMPLIFIED: 19.0 → 49.0 (up to 50x)
-                    power_multiplier = 1.0 + (gradual_magnitude * 39.0)  # AMPLIFIED: 14.0 → 39.0 (up to 40x)
-                    attacked_data['urgency_factor'] = urgency_factor
-                    attacked_data['power_multiplier'] = power_multiplier
-                elif attacked_data['soc'] > 0.8:
-                    attacked_data['urgency_factor'] = max(0.01, 1.0 - gradual_magnitude)
-                    attacked_data['power_multiplier'] = max(0.01, 1.0 - gradual_magnitude)
-            
-            self.input_attack_cumulative_factor = 1.0 + gradual_magnitude
-            
+        elif attack_type == 'protocol_manipulation':
+            time_factor = elapsed_time / 4.0
+            oscillation = np.sin(time_factor) * 20.0 + 1.0
+            amplitude_growth = 1.0 + (magnitude * progress * 12.0)
+            attacked_data['demand_factor'] *= oscillation * amplitude_growth
+            attacked_data['grid_voltage'] *= (1.0 - gradual_magnitude * 0.2)
+            attacked_data['power_multiplier'] = oscillation * amplitude_growth
+            self.input_attack_cumulative_factor = amplitude_growth
             if debug_print:
-                print(f"    🔥 INPUT attack: {attack_type} (progress={progress:.2f}, soc_reduction={soc_reduction:.3f}) on Station {station_id}")
+                print(f"    ##INPUT attack: {attack_type} (progress={progress:.2f}, amplitude={amplitude_growth:.3f}) on Station {station_id}")
+
+        else:
+            # Truly unknown type after alias resolution — default to current_injection behaviour
+            cumulative_factor = 1.0 + (gradual_magnitude * 30.0)
+            self.input_attack_cumulative_factor = cumulative_factor
+            attacked_data['demand_factor'] *= cumulative_factor
+            attacked_data['power_multiplier'] = 1.0 + gradual_magnitude * 25.0
+            if debug_print:
+                print(f"    ##INPUT attack: {attack_type} (unresolved, default handler, progress={progress:.2f}, factor={cumulative_factor:.3f}) on Station {station_id}")
         
         # Only print detailed comparison every 10 seconds to reduce spam
         if debug_print:
             print(f"    Original inputs: demand={station_data.get('demand_factor', 1.0):.3f}, urgency={station_data.get('urgency_factor', 1.0):.1f}")
             print(f"    Attacked inputs: demand={attacked_data.get('demand_factor', 1.0):.3f}, urgency={attacked_data.get('urgency_factor', 1.0):.1f}")
         
+        # Defense-in-depth: sanitize any NaN/Inf produced by attack formulas
+        # so they never reach the PINN optimizer's physical constraint check.
+        _defaults = {
+            'grid_voltage': 1.0, 'grid_frequency': 60.0, 'demand_factor': 0.7,
+            'urgency_factor': 1.0, 'soc': 0.5, 'voltage_priority': 0.0,
+            'power_multiplier': 1.0, 'load_factor': 0.7,
+        }
+        for key, default_val in _defaults.items():
+            if key in attacked_data and not np.isfinite(attacked_data[key]):
+                if debug_print:
+                    print(f"    ## Sanitized NaN/Inf in attacked_data['{key}'] → {default_val}")
+                attacked_data[key] = default_val
+        
         return attacked_data
     
-    def _security_validation(self, station_id: int, voltage_ref: float, current_ref: float, 
-                           power_ref: float, station_data: Dict, current_time: float) -> Tuple[float, float, float, bool]:
+    def _security_validation(self, station_id: int, voltage_ref: float, current_ref: float,
+                           power_ref: float, station_data: Dict, current_time: float,
+                           station_obj=None) -> Tuple[float, float, float, bool]:
         """Comprehensive security validation and anomaly detection"""
         if not self.security_enabled:
             return voltage_ref, current_ref, power_ref, True
@@ -1476,24 +1661,63 @@ class EnhancedChargingManagementSystem:
         
         # 3. Statistical Anomaly Detection
         anomaly_detected = self._detect_statistical_anomaly(station_id, power_ref, voltage_ref, current_ref)
-        
+
         # 4. Input Pattern Analysis
         input_anomaly = self._detect_input_anomaly(station_id, station_data)
-        
+
+        # 4b. ML-IDS (best model from compare_ids_models.py benchmark)
+        ml_anomaly = False
+        if station_obj is not None and getattr(station_obj, 'anomaly_detector', None) is not None:
+            freq = station_data.get('grid_frequency', 60.0)
+            feat_14d = np.array([
+                station_data.get('soc',           0.5),
+                station_data.get('voltage',      240.0) / 240.0,
+                station_data.get('current',       16.0) /  32.0,
+                station_data.get('power',         3.84) /  7.68,
+                station_data.get('temperature',   25.0) / 50.0,
+                station_data.get('demand_factor',  0.7),
+                station_data.get('load_factor',    0.7),
+                station_data.get('grid_voltage',   1.0),
+                freq / 60.0,
+                station_data.get('queue_length',   3)   / 10.0,
+                station_data.get('utilization',    0.6),
+                station_data.get('urgency_factor', 1.0),
+                station_data.get('time_of_day',   12.0) / 24.0,
+                station_data.get('system_id',      1)   / 10.0,
+            ], dtype=np.float32)
+            ml_anomaly, ml_conf = station_obj.anomaly_detector.detect(feat_14d)
+            if ml_anomaly:
+                print(f"    SECURITY [ML-IDS/{station_obj.anomaly_detector.model_name}]: "
+                      f"attack detected (conf={ml_conf:.3f})")
+
         # 5. Consecutive Anomaly Check
-        if anomaly_detected or input_anomaly:
+        if anomaly_detected or input_anomaly or ml_anomaly:
             self.anomaly_counters[station_id] += 1
             print(f"    SECURITY: Anomaly detected (count: {self.anomaly_counters[station_id]})")
             
             if self.anomaly_counters[station_id] >= self.consecutive_anomaly_limit:
                 print(f"    SECURITY: ATTACK DETECTED - {self.consecutive_anomaly_limit} consecutive anomalies")
                 print(f"    Switching to emergency safe mode for Station {station_id}")
-                
-                # Emergency safe mode: conservative references
-                voltage_ref = 400.0  # Safe voltage
-                current_ref = 25.0   # Reduced current
-                power_ref = 10.0     # Minimal power
-                
+
+                # Emergency safe mode uses FIXED pre-defined conservative references —
+                # NOT computed from current grid state.  Rationale: under a potential
+                # cyber attack the sensor readings cannot be trusted, so the controller
+                # falls back to known-safe L2 minimums rather than trusting
+                # potentially-manipulated measurement data.
+                #
+                #   voltage_ref = 240.0 V  → L2 nominal (EVSE output unchanged)
+                #   current_ref =  16.0 A  → 50 % of J1772 L2 max (32 A)
+                #   power_ref   =   3.84 kW → 240 V × 16 A / 1000
+                #
+                # Effect on RL agent's real-world impact: power drops from up to
+                # 7.68 kW (full L2) to 3.84 kW → 50 % mitigation.
+                # This 0.50 mitigation factor is mirrored in the RL reward calculation
+                # (IDS_RESPONSE_MITIGATION in execute_attack) so training and
+                # deployment are logically consistent.
+                voltage_ref = 240.0
+                current_ref = 16.0
+                power_ref   = 3.84
+
                 return voltage_ref, current_ref, power_ref, False  # Attack detected
         else:
             # Reset counter on normal operation
@@ -1578,9 +1802,9 @@ class EnhancedChargingManagementSystem:
         # Store baseline if not exists
         if station_id not in self.evcs_output_baseline:
             self.evcs_output_baseline[station_id] = {
-                'voltage': 400.0,
-                'current': 25.0, 
-                'power': 10.0
+                'voltage': 240.0,
+                'current': 16.0,
+                'power': 3.84
             }
         
         baseline = self.evcs_output_baseline[station_id]
@@ -1613,14 +1837,16 @@ class EnhancedChargingManagementSystem:
         # Prepare input data for PINN
         grid_voltage_pu = 1.0  # Default
         if bus_voltages and station.bus_name in bus_voltages:
-            grid_voltage_pu = bus_voltages[station.bus_name]
-            # CRITICAL FIX: Ensure voltage is in per-unit (0.85-1.15 range)
-            # If voltage is in Volts (>10), convert to per-unit
-            if grid_voltage_pu > 10.0:
-                # Assume nominal voltage is around 12470V (typical distribution)
-                grid_voltage_pu = grid_voltage_pu / 12470.0
-            # Clamp to reasonable per-unit range
-            grid_voltage_pu = np.clip(grid_voltage_pu, 0.85, 1.15)
+            raw_v = bus_voltages[station.bus_name]
+            # Guard against NaN/Inf from unconverged power flow
+            if np.isfinite(raw_v):
+                grid_voltage_pu = raw_v
+                # CRITICAL FIX: Ensure voltage is in per-unit (0.85-1.15 range)
+                # If voltage is in Volts (>10), convert to per-unit
+                if grid_voltage_pu > 10.0:
+                    grid_voltage_pu = grid_voltage_pu / 12470.0
+                # Clamp to reasonable per-unit range
+                grid_voltage_pu = np.clip(grid_voltage_pu, 0.85, 1.15)
         
         # Calculate voltage priority
         voltage_priority = max(0, self.voltage_limits['min'] - grid_voltage_pu)
@@ -1656,12 +1882,19 @@ class EnhancedChargingManagementSystem:
             # Get PINN optimization results with potentially attacked inputs
             voltage_ref, current_ref, power_ref = self.pinn_optimizer.optimize_references(attacked_station_data)
 
+            # Clamp PINN output to station's actual per-port capacity
+            rated_per_port = getattr(station, 'rated_power_per_port', 7.68)
+            power_floor = rated_per_port * max(0.5, demand_factor)
+            if power_ref < power_floor:
+                power_ref = power_floor
+                current_ref = power_ref * 1000.0 / max(voltage_ref, 240.0)
+
             # ENHANCED: Apply power multiplier from attack if present
             if 'power_multiplier' in attacked_station_data:
                 power_multiplier = attacked_station_data['power_multiplier']
                 power_ref *= power_multiplier
                 current_ref *= power_multiplier
-                print(f"    🔥 ATTACK MULTIPLIER: Power scaled by {power_multiplier:.2f}x")
+                print(f"    ##ATTACK MULTIPLIER: Power scaled by {power_multiplier:.2f}x")
 
             # Debug: Print detailed PINN input and output
             print(f" LEGACY PINN System {self.system_id} Station {station_id} @ t={current_time:.1f}s:")
@@ -1671,24 +1904,24 @@ class EnhancedChargingManagementSystem:
 
             # Apply security validation and anomaly detection
             voltage_ref, current_ref, power_ref, attack_detected = self._security_validation(
-                station_id, voltage_ref, current_ref, power_ref, attacked_station_data, current_time
+                station_id, voltage_ref, current_ref, power_ref, attacked_station_data, current_time,
+                station_obj=station
             )
             
             if not attack_detected:
-                print(f"   🚨 ATTACK BLOCKED: Security system prevented malicious operation")
+                print(f"   ## ATTACK BLOCKED: Security system prevented malicious operation")
             
             # Ensure minimum values
-            voltage_ref = max(voltage_ref, 400.0)
+            voltage_ref = max(voltage_ref, 240.0)
             current_ref = max(current_ref, 1.0)
             power_ref = max(power_ref, 1.0)
-            
-            # Keep PINN-optimized current within realistic bounds (don't recalculate from power)
-            # Only adjust if current is completely unrealistic (>200A for safety)
-            if current_ref > 200.0:
-                current_ref = min(125.0, power_ref * 1000.0 / voltage_ref)
-                print(f"   🔧 Current clamped to {current_ref:.1f}A (was >200A)")
-            
-            print(f"   ✅ Final Constrained: V={voltage_ref:.1f}V, I={current_ref:.1f}A, P={power_ref:.1f}kW")
+
+            # Keep current within L2 bounds
+            if current_ref > 32.0:
+                current_ref = min(32.0, power_ref * 1000.0 / voltage_ref)  # L2 max 32A
+                print(f"   🔧 Current clamped to {current_ref:.1f}A (was >32A L2 limit)")
+
+            print(f"   ## Final Constrained: V={voltage_ref:.1f}V, I={current_ref:.1f}A, P={power_ref:.1f}kW")
             print(f" Legacy PINN Optimization - Station {station_id}: V={voltage_ref:.1f}V, I={current_ref:.1f}A, P={power_ref:.1f}kW")
             
             return voltage_ref, current_ref, power_ref
@@ -1712,14 +1945,15 @@ class EnhancedChargingManagementSystem:
         # Calculate available power considering system constraints
         total_available_power = self.total_power_limit * demand_factor
         
-        # Ensure minimum power
-        min_station_power = 50.0
+        # Ensure minimum power — each L2 station provides at least 20% of its max_power
+        min_station_power = station.max_power * 0.20  # kW (20% of station capacity)
         total_min_power = min_station_power * len(self.stations)
-        
+
         if total_available_power < total_min_power:
             total_available_power = total_min_power
-        
-        min_emergency_power = 500.0
+
+        # Emergency floor: 50% of total DS L2 capacity (430 kW × 0.5 ≈ 215 kW)
+        min_emergency_power = self.total_power_limit * 0.50
         if total_available_power < min_emergency_power:
             total_available_power = min_emergency_power
         
@@ -1750,17 +1984,17 @@ class EnhancedChargingManagementSystem:
             
             # Power allocation based on SOC (increased to utilize full EVCS capacity)
             if station.soc < 0.2:
-                base_power = 800  # High urgency - use 80% of 1000kW capacity
-                target_voltage = 400.0
-                target_current = 125.0
+                base_power = station.max_power * 0.80  # High urgency: 80% of station capacity
+                target_voltage = 240.0
+                target_current = 32.0
             elif station.soc < 0.8:
-                base_power = 600  # Normal charging - use 60% of capacity
-                target_voltage = 400.0
-                target_current = 100.0
+                base_power = station.max_power * 0.60  # Normal: 60% of station capacity
+                target_voltage = 240.0
+                target_current = 24.0
             else:
-                base_power = 300  # Topping off - use 30% of capacity
-                target_voltage = 400.0
-                target_current = 75.0
+                base_power = station.max_power * 0.30  # Topping off: 30% of station capacity
+                target_voltage = 240.0
+                target_current = 16.0
             
             # Apply factors
             base_power *= demand_factor
@@ -1769,82 +2003,86 @@ class EnhancedChargingManagementSystem:
             allocated_power = max(allocated_power, 10.0)
             
             # Calculate references
-            voltage_ref = max(target_voltage, 400.0)
+            voltage_ref = max(target_voltage, 240.0)
             current_ref = allocated_power * 1000 / voltage_ref
             current_ref = max(current_ref, 1.0)
             current_ref = min(current_ref, target_current)
-            
+
             # BENIGN SCENARIO: Constrain voltage to normal operating range if no attacks
             if not self.attack_active or not hasattr(self, 'attack_params') or not self.attack_params:
-                # No attack active - keep voltage stable around 400V nominal (±2.5%)
-                voltage_ref = np.clip(voltage_ref, 390.0, 410.0)
+                # No attack active - keep voltage stable around 240V L2 nominal (±5%)
+                voltage_ref = np.clip(voltage_ref, 228.0, 252.0)
             
-            # CRITICAL FIX: Apply attack multipliers if attack is active
+            # Apply attack multipliers if attack is active
             if self.attack_active and station_id in self.attack_params.get('targets', []):
-                attack_type = self.attack_params.get('type', 'demand_increase')
+                _raw_type = self.attack_params.get('type', 'current_injection')
                 magnitude = self.attack_params.get('magnitude', 0.5)
                 start_time = self.attack_params.get('start_time', 0)
                 duration = self.attack_params.get('duration', 60.0)
-                
-                # Calculate attack progress for gradual effect
+
+                # Alias → canonical
+                _ALIAS_MAP = {
+                    'demand_increase': 'current_injection', 'demand_decrease': 'power_disruption',
+                    'oscillating_demand': 'protocol_manipulation', 'voltage_spoofing': 'voltage_manipulation',
+                    'frequency_spoofing': 'data_injection', 'soc_manipulation': 'communication_spoofing',
+                    'power_manipulation': 'power_disruption', 'load_manipulation': 'current_injection',
+                    'cyber_attack': 'communication_spoofing', 'ramp_demand': 'current_injection',
+                    'thermal_attack': 'protocol_manipulation', 'charging_hijacking': 'protocol_manipulation',
+                    'model_poisoning': 'data_injection', 'frequency_attack': 'data_injection',
+                    'frequency_manipulation': 'data_injection',
+                }
+                attack_type = _ALIAS_MAP.get(_raw_type, _raw_type)
+
                 elapsed_time = max(0.0, current_time - start_time)
                 progress = min(elapsed_time / max(duration, 1.0), 1.0)
                 gradual_magnitude = magnitude * progress
-                
-                # Apply attack-specific power multipliers
-                if attack_type == 'demand_increase':
+
+                if attack_type == 'voltage_manipulation':
+                    voltage_drop_factor = 1.0 - (gradual_magnitude * 0.5)
+                    voltage_ref *= voltage_drop_factor
+                    power_multiplier = 1.0 + gradual_magnitude * 5.0
+                    allocated_power *= power_multiplier
+                    current_ref *= power_multiplier
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - V={voltage_drop_factor:.2f}x, P={power_multiplier:.2f}x")
+
+                elif attack_type == 'current_injection':
                     power_multiplier = 1.0 + (gradual_magnitude * 15.0)
                     allocated_power *= power_multiplier
                     current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
-                elif attack_type == 'demand_decrease':
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+
+                elif attack_type == 'power_disruption':
                     power_multiplier = max(0.01, 1.0 - (gradual_magnitude * 0.95))
                     allocated_power *= power_multiplier
                     current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
-                elif attack_type == 'oscillating_demand':
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+
+                elif attack_type == 'communication_spoofing':
+                    power_multiplier = 1.0 + (gradual_magnitude * 10.0)
+                    allocated_power *= power_multiplier
+                    current_ref *= power_multiplier
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+
+                elif attack_type == 'data_injection':
+                    power_multiplier = 1.0 + (gradual_magnitude * 8.0)
+                    allocated_power *= power_multiplier
+                    current_ref *= power_multiplier
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+
+                elif attack_type == 'protocol_manipulation':
                     time_factor = elapsed_time / 5.0
                     oscillation = np.sin(time_factor) * 10.0 + 1.0
                     amplitude_growth = 1.0 + (gradual_magnitude * 5.0)
                     power_multiplier = oscillation * amplitude_growth
                     allocated_power *= power_multiplier
                     current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
-                elif attack_type in ['voltage_manipulation', 'voltage_spoofing']:
-                    voltage_drop_factor = 1.0 - (gradual_magnitude * 0.5)
-                    voltage_ref *= voltage_drop_factor
-                    power_multiplier = 1.0 + gradual_magnitude * 5.0
-                    allocated_power *= power_multiplier
-                    current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Voltage={voltage_drop_factor:.2f}x, Power={power_multiplier:.2f}x")
-                    
-                elif attack_type in ['power_disruption', 'power_manipulation', 'load_manipulation']:
-                    power_multiplier = 1.0 + (gradual_magnitude * 12.0)
-                    allocated_power *= power_multiplier
-                    current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
-                elif attack_type in ['data_injection', 'current_injection']:
-                    power_multiplier = 1.0 + (gradual_magnitude * 8.0)
-                    allocated_power *= power_multiplier
-                    current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
-                elif attack_type in ['protocol_manipulation', 'communication_spoofing']:
-                    power_multiplier = 1.0 + (gradual_magnitude * 10.0)
-                    allocated_power *= power_multiplier
-                    current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
-                    
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+
                 else:
-                    # Default attack multiplier for unknown types
                     power_multiplier = 1.0 + (gradual_magnitude * 8.0)
                     allocated_power *= power_multiplier
                     current_ref *= power_multiplier
-                    print(f"    🔥 HEURISTIC ATTACK: {attack_type} (unknown) on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
+                    print(f"    ##HEURISTIC ATTACK: {attack_type} (unresolved) on Station {station_id} - Power scaled by {power_multiplier:.2f}x")
             
             return voltage_ref, current_ref, allocated_power
         else:
@@ -1862,47 +2100,57 @@ class EnhancedChargingManagementSystem:
     def inject_false_data(self, station_id: int, attack_type: str, magnitude: float, current_time: float = 0.0):
         """Inject false data into measurements to deceive PINN optimizer"""
         if station_id in self.measurements:
-            # Store original measurements before manipulation
             if not hasattr(self, 'original_measurements'):
                 self.original_measurements = {}
             if station_id not in self.original_measurements:
                 self.original_measurements[station_id] = self.measurements[station_id].copy()
-            
-            # Apply RL-guided false data injection
-            if attack_type == 'voltage_low':
-                self.measurements[station_id]['voltage'] *= (1 - magnitude)
-            elif attack_type == 'current_low':
-                self.measurements[station_id]['current'] *= (1 - magnitude)
-            elif attack_type == 'power_underreport':
-                self.measurements[station_id]['power'] *= (1 - magnitude)
-            elif attack_type == 'demand_increase':
-                # RL agent deceives PINN by reporting higher demand
-                self.measurements[station_id]['power'] *= (1 + magnitude)
-                # Also manipulate voltage to make PINN think grid is stressed
-                self.measurements[station_id]['voltage'] *= (1 - magnitude * 0.1)
-            elif attack_type == 'demand_decrease':
-                # RL agent deceives PINN by reporting lower demand
-                self.measurements[station_id]['power'] *= magnitude
-                # Manipulate voltage to appear stable
-                self.measurements[station_id]['voltage'] *= (1 + magnitude * 0.05)
-            elif attack_type == 'oscillating_demand':
-                # Dynamic oscillating deception
-                time_factor = (current_time) / 10.0
+
+            # Normalise to canonical taxonomy before branching
+            _ALIAS_MAP = {
+                'demand_increase':       'current_injection',
+                'demand_decrease':       'power_disruption',
+                'oscillating_demand':    'protocol_manipulation',
+                'ramp_demand':           'current_injection',
+                'voltage_low':           'voltage_manipulation',
+                'current_low':           'power_disruption',
+                'power_underreport':     'power_disruption',
+                'voltage_spoofing':      'voltage_manipulation',
+                'frequency_spoofing':    'data_injection',
+                'soc_manipulation':      'communication_spoofing',
+                'power_manipulation':    'power_disruption',
+                'load_manipulation':     'current_injection',
+                'cyber_attack':          'communication_spoofing',
+                'thermal_attack':        'protocol_manipulation',
+                'charging_hijacking':    'protocol_manipulation',
+                'model_poisoning':       'data_injection',
+                'frequency_attack':      'data_injection',
+                'frequency_manipulation':'data_injection',
+            }
+            attack_type = _ALIAS_MAP.get(attack_type, attack_type)
+
+            if attack_type == 'voltage_manipulation':
+                self.measurements[station_id]['voltage'] *= (1.0 - magnitude * 0.35)
+                self.measurements[station_id]['power']   *= (1.0 + magnitude * 0.20)
+            elif attack_type == 'current_injection':
+                self.measurements[station_id]['power']   *= (1.0 + magnitude)
+                self.measurements[station_id]['voltage']  *= (1.0 - magnitude * 0.1)
+            elif attack_type == 'power_disruption':
+                self.measurements[station_id]['power']   *= max(0.05, magnitude)
+                self.measurements[station_id]['voltage']  *= (1.0 + magnitude * 0.05)
+            elif attack_type == 'communication_spoofing':
+                self.measurements[station_id]['power']   *= (1.0 + magnitude * 0.5)
+                self.measurements[station_id]['voltage']  *= (1.0 - magnitude * 0.1)
+            elif attack_type == 'data_injection':
+                self.measurements[station_id]['power']   *= (1.0 + magnitude * 0.6)
+                self.measurements[station_id]['voltage']  *= (1.0 - magnitude * 0.15)
+            elif attack_type == 'protocol_manipulation':
+                time_factor = current_time / 10.0
                 oscillation = np.sin(time_factor) * 0.5 + 1.0
-                self.measurements[station_id]['power'] *= oscillation * magnitude
-            elif attack_type == 'ramp_demand':
-                # Gradual ramp deception
-                ramp_factor = min(1.0, current_time / 50.0)  # Ramp over 50 seconds
-                if magnitude > 1.0:
-                    manipulation_factor = 1.0 + (magnitude - 1.0) * ramp_factor
-                else:
-                    manipulation_factor = 1.0 - (1.0 - magnitude) * ramp_factor
-                self.measurements[station_id]['power'] *= manipulation_factor
-            
-            # Add timestamp for RL learning
+                self.measurements[station_id]['power']   *= oscillation * magnitude
+
             self.measurements[station_id]['attack_timestamp'] = current_time
-            self.measurements[station_id]['attack_type'] = attack_type
-            self.measurements[station_id]['attack_magnitude'] = magnitude
+            self.measurements[station_id]['attack_type']      = attack_type
+            self.measurements[station_id]['attack_magnitude']  = magnitude
     
     def generate_daily_charging_profile(self, time_hours: float) -> float:
         """Generate realistic daily charging demand profile matching enhanced load profile"""
@@ -2018,7 +2266,7 @@ class EnhancedChargingManagementSystem:
         for station in self.stations:
             if station.ev_connected:
                 # Set initial references to prevent zero setpoints
-                station.set_references(400.0, 50.0, 20.0)  # Safe initial values
+                station.set_references(240.0, 16.0, 3.84)  # Safe initial values (L2: 240V, 16A, 3.84kW)
                 print(f"EVCS {station.evcs_id}: Set initial references")
         
         # Final count
@@ -2056,7 +2304,8 @@ class CentralChargingCoordinator:
         self.emergency_power_reduction = 0.3  # 30% power reduction in emergency
         
         # Customer arrival simulation parameters
-        self.customer_arrival_rate = 0.0385  # customers per minute per station (50% utilization, 20min charging)
+        # Ref: NREL EVSE utilization data — busy DC fast station: ~4-6 arrivals/hour
+        self.customer_arrival_rate = 0.10  # customers per minute per station (6/hour)
         self.charging_demand_distribution = {
             'low': {'min': 10, 'max': 30, 'probability': 0.4},    # 10-30 kWh
             'medium': {'min': 30, 'max': 60, 'probability': 0.4}, # 30-60 kWh
@@ -2088,7 +2337,7 @@ class CentralChargingCoordinator:
             'total_customers_served': 0,
             'total_wait_time': 0.0,
             'max_queue_length': 0,
-            'avg_charging_duration': 30.0,
+            'avg_charging_duration': 45.0,  # Consistent with EVChargingStation baseline
             'customer_satisfaction': 1.0
         }
         
@@ -2102,8 +2351,8 @@ class CentralChargingCoordinator:
         
         # Initialize charging time impacts tracking
         self.charging_time_impacts[system_id] = {
-            'normal_charging_time': 30.0,
-            'current_charging_time': 30.0,
+            'normal_charging_time': 45.0,  # Consistent DC fast baseline
+            'current_charging_time': 45.0,
             'attack_impact_factor': 1.0,
             'recovery_progress': 0.0
         }
@@ -2170,7 +2419,7 @@ class CentralChargingCoordinator:
                 
                 print(f"   System {sys_id}: Added {self.initial_customers_per_station} initial customers per station")
         
-        print(f"✅ Pre-populated {self.initial_customers_per_station} customers per station across all systems")
+        print(f"## Pre-populated {self.initial_customers_per_station} customers per station across all systems")
                         
     def process_charging_queues(self, current_time: float):
         """Process charging queues and start charging sessions (called every 10 seconds)"""
@@ -2191,7 +2440,7 @@ class CentralChargingCoordinator:
                             charging_duration = (customer['requested_charge'] / station.current_setpoint) * 60.0  # minutes
                         else:
                             # Use a default charging duration when station is idle
-                            charging_duration = 30.0  # 30 minutes default
+                            charging_duration = 45.0  # Consistent DC fast baseline (minutes)
                             if station.ev_connected:
                                 print(f"Warning: Station {station.evcs_id} has connected EV but zero current setpoint, using default charging duration")
                             else:
@@ -2304,191 +2553,110 @@ class CentralChargingCoordinator:
     def assess_cyber_attack_impact(self, attack_type, attack_magnitude, duration):
         """
         Assess the impact of a cyber attack on the EVCS and distribution system.
-        
+
         Args:
-            attack_type (str): Type of attack ('demand_increase', 'demand_decrease', 'voltage_manipulation')
+            attack_type (str): Attack type — canonical 6-type taxonomy or legacy alias
             attack_magnitude (float): Magnitude of the attack (0.0 to 1.0)
             duration (int): Duration of the attack in time steps
-            
+
         Returns:
             dict: Attack impact assessment
         """
-        # Use default baseline charging time since coordinator doesn't have access to individual EVCS metrics
-        baseline_charging_time = 150.0  # Default baseline: 150 minutes (2.5 hours)
-        
-        # Calculate attack impact factors
-        if attack_type == 'demand_increase':
-            # Increased demand leads to longer charging times
-            demand_factor = 1.0 + attack_magnitude
-            charging_time_factor = 1.0 + (attack_magnitude * 0.5)  # Charging time increases with demand
-            voltage_impact = -0.1 * attack_magnitude  # Voltage drops with increased demand
-        elif attack_type == 'demand_decrease':
-            # Decreased demand leads to shorter charging times
-            demand_factor = 1.0 - attack_magnitude
-            charging_time_factor = 1.0 - (attack_magnitude * 0.3)  # Charging time decreases with lower demand
-            voltage_impact = 0.05 * attack_magnitude  # Voltage increases with decreased demand
-        elif attack_type == 'power_manipulation':
-            # FIXED: Power manipulation attack - reduces available charging power
-            demand_factor = attack_magnitude  # Power reduction factor
-            charging_time_factor = 1.0 / attack_magnitude  # Inversely proportional to power
-            voltage_impact = -0.1 * (1.0 - attack_magnitude)  # Voltage drops with power reduction
-        elif attack_type == 'load_manipulation':
-            # FIXED: Load manipulation attack - increases system load
-            demand_factor = 1.0 + (1.0 - attack_magnitude)  # Load increase
-            charging_time_factor = 1.0 + (1.0 - attack_magnitude) * 0.6  # Charging time increases
-            voltage_impact = -0.12 * (1.0 - attack_magnitude)  # Voltage drops with load increase
-        elif attack_type == 'voltage_manipulation':
-            # Direct voltage manipulation
-            demand_factor = 1.0
-            charging_time_factor = 1.0 / attack_magnitude  # Lower voltage = longer charging time
-            voltage_impact = -0.15 * (1.0 - attack_magnitude)  # Direct voltage reduction
-        elif attack_type == 'oscillating_demand':
-            # Oscillating demand attack - creates fluctuating demand patterns
-            # This can cause varying charging times due to power fluctuations
-            demand_factor = 1.0 + (attack_magnitude * 0.3)  # Moderate demand increase
-            charging_time_factor = 1.0 + (attack_magnitude * 0.4)  # Charging time varies with oscillations
-            voltage_impact = -0.08 * attack_magnitude  # Voltage fluctuations
-        elif attack_type == 'ramp_demand':
-            # Gradual ramp demand attack - slowly increases demand over time
-            # This creates a gradual increase in charging times and voltage stress
-            demand_factor = 1.0 + (attack_magnitude * 0.6)  # Significant demand increase over time
-            charging_time_factor = 1.0 + (attack_magnitude * 0.5)  # Charging time increases with ramped demand
-            voltage_impact = -0.12 * attack_magnitude  # Voltage drops with sustained increased demand
-        elif attack_type == 'frequency_manipulation':
-            # Frequency manipulation attack - affects grid frequency and charging efficiency
-            demand_factor = 1.0 + (attack_magnitude * 0.3)  # Moderate demand increase due to frequency instability
-            charging_time_factor = 1.0 + (attack_magnitude * 0.4)  # Charging time increases with frequency deviation
-            voltage_impact = -0.06 * attack_magnitude  # Voltage drops with frequency instability
-        elif attack_type == 'thermal_attack':
-            # Thermal attack - causes component overheating and reduced efficiency
-            demand_factor = 1.0 + (attack_magnitude * 0.2)  # Slight demand increase due to thermal inefficiency
-            charging_time_factor = 1.0 + (attack_magnitude * 0.6)  # Significant charging time increase due to thermal limits
-            voltage_impact = -0.05 * attack_magnitude  # Minor voltage impact from thermal effects
-        elif attack_type == 'cyber_attack':
-            # Cyber attack - sophisticated attack affecting control systems
-            demand_factor = 1.0 + (attack_magnitude * 0.5)  # Significant demand manipulation
-            charging_time_factor = 1.0 + (attack_magnitude * 0.7)  # Major charging time disruption
-            voltage_impact = -0.1 * attack_magnitude  # Voltage manipulation through compromised controls
-        elif attack_type == 'dqn_sac_evasion':
-            # DQN/SAC security evasion attack - sophisticated RL-based attack
-            # Uses trained agents to bypass security while maximizing impact
-            
-            # Try to get coordinated attack parameters if trainer is available
-            if hasattr(self, 'dqn_sac_trainer') and self.dqn_sac_trainer and hasattr(self.dqn_sac_trainer, 'get_coordinated_attack'):
-                # Get baseline outputs for coordinated attack
+        # L2 ACN Caltech baseline: ~120 min (20%→80% @ 7.68 kW, 60 kWh battery)
+        baseline_charging_time = 120.0  # minutes
+
+        # Normalise legacy / Gemini-generated names to canonical 6-type taxonomy
+        _ALIAS_MAP = {
+            'demand_increase':       'current_injection',
+            'demand_decrease':       'power_disruption',
+            'oscillating_demand':    'protocol_manipulation',
+            'voltage_spoofing':      'voltage_manipulation',
+            'frequency_spoofing':    'data_injection',
+            'soc_manipulation':      'communication_spoofing',
+            'power_manipulation':    'power_disruption',
+            'load_manipulation':     'current_injection',
+            'cyber_attack':          'communication_spoofing',
+            'ramp_demand':           'current_injection',
+            'thermal_attack':        'protocol_manipulation',
+            'charging_hijacking':    'protocol_manipulation',
+            'model_poisoning':       'data_injection',
+            'frequency_attack':      'data_injection',
+            'frequency_manipulation':'data_injection',
+        }
+        attack_type = _ALIAS_MAP.get(attack_type, attack_type)
+
+        # ── DQN/SAC evasion: coordinated RL-guided meta-attack ─────────────────
+        if attack_type == 'dqn_sac_evasion':
+            demand_factor = 1.0 + (attack_magnitude * 0.4)
+            charging_time_factor = 1.0 + (attack_magnitude * 0.3)
+            voltage_impact = -0.08 * attack_magnitude
+            if hasattr(self, 'dqn_sac_trainer') and self.dqn_sac_trainer and \
+                    hasattr(self.dqn_sac_trainer, 'get_coordinated_attack'):
                 baseline_outputs = {
-                    'power_reference': 15.0,
-                    'voltage_reference': 400.0,
-                    'current_reference': 25.0,
-                    'soc': 0.5,
-                    'grid_voltage': 1.0,
-                    'grid_frequency': 60.0,
-                    'demand_factor': 1.0,
-                    'urgency_factor': 1.0,
-                    'voltage_priority': 0.0
+                    'power_reference': 3.84, 'voltage_reference': 240.0,
+                    'current_reference': 16.0, 'soc': 0.5,
+                    'grid_voltage': 1.0, 'grid_frequency': 60.0,
+                    'demand_factor': 1.0, 'urgency_factor': 1.0, 'voltage_priority': 0.0,
                 }
-                
-                # Get coordinated attack from DQN/SAC trainer
                 coordinated_attack = self.dqn_sac_trainer.get_coordinated_attack(0, baseline_outputs)
-                
                 if coordinated_attack:
-                    attack_params = coordinated_attack['attack_params']
                     sac_control = coordinated_attack['sac_control']
-                    
-                    # Use SAC continuous control for precise parameter adjustment
-                    magnitude_modifier = sac_control.get('magnitude', 1.0)
-                    stealth_factor = sac_control.get('stealth_factor', 0.5)
-                    
-                    # Apply coordinated attack parameters with stealth consideration
-                    demand_factor = 1.0 + (attack_magnitude * magnitude_modifier * 0.4 * (1.0 - stealth_factor))
-                    charging_time_factor = 1.0 + (attack_magnitude * magnitude_modifier * 0.3 * (1.0 - stealth_factor))
-                    voltage_impact = -0.08 * attack_magnitude * magnitude_modifier * (1.0 - stealth_factor)
-                    
-                    print(f"   🎯 Using Coordinated DQN/SAC Attack:")
-                    print(f"      DQN Strategy: {coordinated_attack['dqn_decision'].get('attack_type', 'unknown')}")
-                    print(f"      SAC Magnitude: {magnitude_modifier:.3f}")
-                    print(f"      SAC Stealth: {stealth_factor:.3f}")
-                else:
-                    # Fallback to default DQN/SAC parameters
-                    demand_factor = 1.0 + (attack_magnitude * 0.4)
-                    charging_time_factor = 1.0 + (attack_magnitude * 0.3)
-                    voltage_impact = -0.08 * attack_magnitude
-            else:
-                # Fallback to default DQN/SAC parameters
-                demand_factor = 1.0 + (attack_magnitude * 0.4)  # Moderate demand increase to avoid detection
-                charging_time_factor = 1.0 + (attack_magnitude * 0.3)  # Subtle charging time changes
-                voltage_impact = -0.08 * attack_magnitude  # Controlled voltage impact for stealth
-        elif attack_type == 'cyber_attack' or attack_type == 'communication_spoofing':
-            # Map cyber_infiltration/communication_spoofing to load_manipulation behavior
-            # communication_spoofing: Attacks on communication links (e.g., false pricing, false SOC)
-            print(f"⚠️ Handling '{attack_type}' as communication spoofing attack")
-            demand_factor = 1.0 + (attack_magnitude * 0.5)  # Moderate demand increase due to false signals
-            charging_time_factor = 1.0 + (attack_magnitude * 0.4)  # Charging time increase
-            voltage_impact = -0.1 * attack_magnitude  # Minor voltage drop
-            
-        elif attack_type == 'data_injection' or attack_type == 'model_poisoning' or attack_type == 'frequency_attack':
-            # data_injection: False data injection into sensors/meters
-            print(f"⚠️ Handling '{attack_type}' as data injection attack")
-            demand_factor = 1.0 + (attack_magnitude * 0.6)  # Significant demand increase due to false readings
-            charging_time_factor = 1.0 - (attack_magnitude * 0.3)  # Reduced charging time (false completion)
-            voltage_impact = -0.15 * attack_magnitude  # Voltage instability
-            
-        elif attack_type == 'protocol_manipulation' or attack_type == 'thermal_attack' or attack_type == 'charging_hijacking':
-            # protocol_manipulation: Manipulating charging protocols (e.g., V2G abuse, thermal override)
-            print(f"⚠️ Handling '{attack_type}' as protocol manipulation attack")
-            demand_factor = 1.0 - (attack_magnitude * 0.4)  # Demand reduction (interruption) or increase (overload)
-            charging_time_factor = 1.0 + (attack_magnitude * 0.8)  # Significant delay in charging
-            voltage_impact = -0.05 * attack_magnitude  # Minor voltage impact
-            
+                    m = sac_control.get('magnitude', 1.0)
+                    s = sac_control.get('stealth_factor', 0.5)
+                    demand_factor        = 1.0 + (attack_magnitude * m * 0.4 * (1.0 - s))
+                    charging_time_factor = 1.0 + (attack_magnitude * m * 0.3 * (1.0 - s))
+                    voltage_impact       = -0.08 * attack_magnitude * m * (1.0 - s)
+                    print(f"   ## Coordinated DQN/SAC: mag={m:.3f}, stealth={s:.3f}")
+
+        # ── Canonical 6-type impact table ──────────────────────────────────────
         elif attack_type == 'voltage_manipulation':
-            # voltage_manipulation: Direct voltage control attacks
-            print(f"⚠️ Handling '{attack_type}' as voltage manipulation attack")
-            demand_factor = 1.0 + (attack_magnitude * 0.2)  # Slight demand increase
-            charging_time_factor = 1.0 + (attack_magnitude * 0.2)
-            voltage_impact = -0.25 * attack_magnitude  # Major voltage drop
-            
-        elif attack_type == 'power_disruption' or attack_type == 'power_manipulation' or attack_type == 'load_manipulation':
-            # power_disruption: Direct power flow attacks
-            print(f"⚠️ Handling '{attack_type}' as power disruption attack")
-            demand_factor = 1.0 + (attack_magnitude * 0.8)  # Major demand surge
-            charging_time_factor = 1.0 + (attack_magnitude * 0.5)
-            voltage_impact = -0.2 * attack_magnitude  # Significant voltage drop
-            
+            demand_factor        = 1.0 + (attack_magnitude * 0.2)
+            charging_time_factor = 1.0 / max(attack_magnitude, 0.1)
+            voltage_impact       = -0.25 * attack_magnitude
+
         elif attack_type == 'current_injection':
-            # current_injection: Harmonic injection or current manipulation
-            print(f"⚠️ Handling '{attack_type}' as current injection attack")
-            demand_factor = 1.0 + (attack_magnitude * 0.3)
-            charging_time_factor = 1.0 + (attack_magnitude * 0.3)
-            voltage_impact = -0.15 * attack_magnitude  # Voltage distortion impact
-            
+            demand_factor        = 1.0 + attack_magnitude
+            charging_time_factor = 1.0 + (attack_magnitude * 0.5)
+            voltage_impact       = -0.10 * attack_magnitude
+
+        elif attack_type == 'power_disruption':
+            demand_factor        = max(0.05, attack_magnitude)
+            charging_time_factor = 1.0 / max(attack_magnitude, 0.1)
+            voltage_impact       = -0.12 * (1.0 - attack_magnitude)
+
+        elif attack_type == 'communication_spoofing':
+            demand_factor        = 1.0 + (attack_magnitude * 0.5)
+            charging_time_factor = 1.0 + (attack_magnitude * 0.4)
+            voltage_impact       = -0.10 * attack_magnitude
+
+        elif attack_type == 'data_injection':
+            demand_factor        = 1.0 + (attack_magnitude * 0.6)
+            charging_time_factor = 1.0 - (attack_magnitude * 0.3)
+            voltage_impact       = -0.15 * attack_magnitude
+
+        elif attack_type == 'protocol_manipulation':
+            demand_factor        = 1.0 + (attack_magnitude * 0.3)
+            charging_time_factor = 1.0 + (attack_magnitude * 0.8)
+            voltage_impact       = -0.08 * attack_magnitude
+
         else:
-            print(f"⚠️ Unknown attack type '{attack_type}', using default fallback parameters")
-            demand_factor = 1.0 + (attack_magnitude * 0.3)
+            demand_factor        = 1.0 + (attack_magnitude * 0.3)
             charging_time_factor = 1.0 + (attack_magnitude * 0.3)
-            voltage_impact = -0.1 * attack_magnitude
-        
-        # Calculate new charging time based on baseline
+            voltage_impact       = -0.10 * attack_magnitude
+
         new_charging_time = baseline_charging_time * charging_time_factor
-        
-        # Ensure charging time doesn't go below reasonable minimum (30 minutes) or above reasonable maximum (300 minutes)
-        new_charging_time = max(30.0, min(300.0, new_charging_time))
-        
-        # Log the attack impact
         print(f" Attack {attack_type} applied with magnitude {attack_magnitude}")
-        print(f"   Demand factor: {demand_factor:.3f}")
-        print(f"   Charging time factor: {charging_time_factor:.3f}")
-        print(f"   New charging time: {new_charging_time:.1f} minutes (baseline: {baseline_charging_time:.1f})")
-        print(f"   Voltage impact: {voltage_impact:.3f}")
-        
+        print(f"   Demand factor: {demand_factor:.3f}  |  Charging time: {new_charging_time:.1f} min  |  Voltage: {voltage_impact:.3f}")
+
         return {
-            'attack_type': attack_type,
-            'attack_magnitude': attack_magnitude,
-            'duration': duration,
-            'demand_factor': demand_factor,
-            'charging_time_factor': charging_time_factor,
-            'voltage_impact': voltage_impact,
-            'baseline_charging_time': baseline_charging_time,
-            'new_charging_time': new_charging_time
+            'attack_type':           attack_type,
+            'attack_magnitude':      attack_magnitude,
+            'duration':              duration,
+            'demand_factor':         demand_factor,
+            'charging_time_factor':  charging_time_factor,
+            'voltage_impact':        voltage_impact,
+            'baseline_charging_time':baseline_charging_time,
+            'new_charging_time':     new_charging_time,
         }
     
     def _calculate_customer_satisfaction_impact(self, time_impact_factor: float) -> float:
@@ -2565,8 +2733,8 @@ class CentralChargingCoordinator:
             
     def _calculate_charging_time_impact(self, load_change_mw):
         """Calculate impact on charging time due to load change"""
-        # Base charging time is 150 minutes (2.5 hours) - this should match the baseline
-        base_charging_time = 150.0
+        # Consistent with EVChargingStation baseline (45 min DC fast)
+        base_charging_time = 45.0
         
         if load_change_mw < 0:  # Reduced power delivery
             # More time needed for charging - load reduction increases charging time
@@ -2576,9 +2744,6 @@ class CentralChargingCoordinator:
             # Increased power delivery - faster charging possible but with smaller effect
             impact_factor = 1.0 - (load_change_mw / 2000.0)  # 2000 MW = 50% decrease
             new_charging_time = base_charging_time * impact_factor
-        
-        # Ensure reasonable bounds (30 minutes to 300 minutes)
-        new_charging_time = max(30.0, min(300.0, new_charging_time))
         
         # Log the calculation for debugging
         self.logger.debug(f"Load change: {load_change_mw:.2f} MW, Impact factor: {impact_factor:.3f}, New charging time: {new_charging_time:.1f} min")
@@ -2661,22 +2826,26 @@ class IEEE14BusAGC:
         self.net = pp.create_empty_network()
         self._create_ieee14_bus_network()
         
-        # AGC parameters - ENHANCED for attack visibility
-        self.f_nominal = 60.0  # Hz
+        # AGC parameters — realistic values from power systems literature
+        # Ref: Kundur, 'Power System Stability and Control', Ch. 11-12
+        # Ref: IEEE Std 1547-2018 for DER interconnection frequency response
+        self.f_nominal = 60.0  # Hz (North American nominal)
         self.frequency = 60.0
-        self.H_system = 0.5   # System inertia (s) - REDUCED for higher sensitivity to attacks
-        self.D_system = 0.2   # Load damping - REDUCED for higher sensitivity to attacks
-        self.R_droop = 0.05   # Governor droop
-        self.T_gov = 0.1      # Governor time constant
-        self.T_turb = 0.1     # Turbine time constant
+        self.H_system = 4.0   # System inertia constant (s) — typical: 3-6 s for mixed gen
+        self.D_system = 1.5   # Load damping coefficient — typical: 1.0-2.0
+        self.R_droop = 0.05   # Governor droop (5%) — IEEE/NERC standard
+        self.T_gov = 0.3      # Governor time constant (s) — typical: 0.2-0.5 s
+        self.T_turb = 0.5     # Turbine time constant (s) — typical: 0.3-1.0 s
         
         # AGC state variables
         self.delta_f = 0.0
         self.delta_Pm = 0.0
         self.delta_Pv = 0.0
         
-        # Area Control Error (ACE) parameters - ENHANCED for attack visibility
-        self.beta = 50.0  # Frequency bias factor (MW/Hz) - INCREASED for higher sensitivity
+        # Area Control Error (ACE) parameters
+        # Ref: NERC BAL-001-2, Kundur Ch. 11
+        # β = D + 1/R = 1.5 + 1/0.05 = 21.5 MW/Hz (for this small system)
+        self.beta = 21.5  # Frequency bias factor (MW/Hz) — derived from D and R
         self.tie_line_power = 0.0  # Net tie line power flow
         self.tie_line_scheduled = 0.0  # Scheduled tie line power
         self.ACE = 0.0  # Area Control Error
@@ -2701,8 +2870,9 @@ class IEEE14BusAGC:
         self.dist_base_loads = {}  # Store original distribution base loads for scaling
         self.reference_power = self.P_load_base
         
-        # AGC timing
-        self.agc_time_step = 10.0  # Update every 5 seconds for more realistic dynamics
+        # AGC timing — must match HierarchicalCyberAttackStudy.agc_dt
+        # Ref: NERC BAL-001-2, typical AGC cycle: 2-4 s
+        self.agc_time_step = 4.0  # AGC update cycle (seconds)
         self.last_agc_update = 0.0
         self.reference_power = self.P_load_base  # Initial reference power
     
@@ -2847,17 +3017,26 @@ class IEEE14BusAGC:
         
         if sol.success:
             x_new = sol.y[:, -1]
-            self.delta_f, self.delta_Pm, self.delta_Pv = x_new
-            self.frequency = self.f_nominal + self.delta_f
+            # Guard against NaN/Inf from divergent ODE (e.g. extreme attack loads)
+            if all(np.isfinite(x_new)):
+                self.delta_f, self.delta_Pm, self.delta_Pv = x_new
+            else:
+                print(f"  ## AGC ODE produced non-finite state {x_new}, clamping")
+                self.delta_f = float(np.clip(np.nan_to_num(x_new[0], nan=0.0), -1.0, 1.0))
+                self.delta_Pm = float(np.clip(np.nan_to_num(x_new[1], nan=0.0), -50.0, 50.0))
+                self.delta_Pv = float(np.clip(np.nan_to_num(x_new[2], nan=0.0), -50.0, 50.0))
         else:
             # Fallback: simple frequency calculation based on power imbalance with DRAMATIC attack effects
             print("AGC Dynamics failed, using fallback frequency calculation")
             total_load = self.P_load_current + self.P_dist_total
-            power_imbalance = (total_load - self.reference_power) / self.reference_power
+            power_imbalance = (total_load - self.reference_power) / max(self.reference_power, 1.0)
             
             # Normal frequency response based on actual power imbalance
             self.delta_f = -power_imbalance * 0.1  # Simple frequency response
-            self.frequency = self.f_nominal + self.delta_f
+        
+        # Clamp frequency to physically realistic range (±1 Hz from nominal)
+        self.delta_f = float(np.clip(self.delta_f, -1.0, 1.0))
+        self.frequency = self.f_nominal + self.delta_f
         
         return self.frequency
     
@@ -3003,6 +3182,8 @@ class OpenDSSInterface:
     _shared_pinn_optimizer = None
     _shared_federated_manager = None
     _shared_cms_config = None
+    # Track which system's circuit is currently compiled in the shared OpenDSS instance
+    _active_system_id = None
     
     def __init__(self, system_id: int = 1, dss_file: str = None, use_mock: bool = False):
         self.system_id = system_id
@@ -3019,9 +3200,75 @@ class OpenDSSInterface:
         self.current_storage_power = {}
         self.storage_soc = {}
         self.last_der_update_time = 0.0
+        # Store the .dss file path for re-compilation when switching systems
+        self._dss_file = dss_file
+        # Cache of current EVCS load values (kW) to restore after re-compile
+        self._evcs_load_cache = {}
 
         # Cumulative attack factor for compounding attack effects over time
         self.cumulative_attack_factor = 1.0
+
+        # ACN-Sim zone for this DS (set by ACNSimFleet after initialization).
+        # None → legacy EVCSController dynamics path active.
+        self._acn_zone = None
+        self._path_logged = False  # one-time path indicator per run
+
+    def _activate_circuit(self):
+        """Re-compile this system's .dss file if another system's circuit is currently active.
+        
+        Since all OpenDSSInterface instances share a single opendssdirect module,
+        only one circuit can be active at a time.  This method ensures the correct
+        circuit is loaded before any OpenDSS operations (solve, load updates, etc.).
+        After re-compiling, it re-creates the EVCS loads with their cached power values.
+        """
+        if OpenDSSInterface._active_system_id == self.system_id:
+            return  # Already active — no re-compile needed
+
+        if not self._dss_file:
+            return  # No .dss file stored (mock system) — skip
+
+        try:
+            self.dss.Command("Clear")
+            self.dss.Command(f"Compile {self._dss_file}")
+            self.dss.Command("Solve")
+            OpenDSSInterface._active_system_id = self.system_id
+
+            # Re-create EVCS loads that were wiped by Clear
+            for i, station in enumerate(self.ev_stations):
+                load_name = f"EVCS_{self.system_id}_{i:02d}"
+                cached_kw = self._evcs_load_cache.get(load_name, 0.01)
+                cached_kvar = cached_kw * 0.2
+                self.dss.Command(
+                    f"New Load.{load_name} Bus1={station.bus_name} "
+                    f"Phases=3 kW={cached_kw} kvar={cached_kvar} Model=1"
+                )
+
+            # Re-create PV systems
+            for pv in self.pv_systems:
+                pv_name = pv['name']
+                bus = pv.get('bus', '890')
+                kva = pv.get('kva', 500.0)
+                pmpp = pv.get('pmpp', kva)
+                self.dss.Command(
+                    f"New PVSystem.{pv_name} Bus1={bus} Phases=3 "
+                    f"kV=12.47 kVA={kva} Pmpp={pmpp} pf=1"
+                )
+
+            # Re-create storage devices
+            for stor in self.storage_devices:
+                stor_name = stor['name']
+                bus = stor.get('bus', '890')
+                kwrated = stor.get('kwrated', 250.0)
+                kwhrated = stor.get('kwhrated', 500.0)
+                self.dss.Command(
+                    f"New Storage.{stor_name} Bus1={bus} Phases=3 "
+                    f"kV=12.47 kWRated={kwrated} kWhRated={kwhrated} "
+                    f"kWhStored={kwhrated * 0.5} %reserve=20 State=IDLING"
+                )
+
+            self.dss.Command("Solve")
+        except Exception as e:
+            print(f"Warning: Failed to re-activate circuit for system {self.system_id}: {e}")
 
     def initialize(self):
         """Initialize OpenDSS system using DSS functions"""
@@ -3035,11 +3282,13 @@ class OpenDSSInterface:
                 dss_file = "ieee34Mod2.dss"
             else:
                 dss_file = "ieee34Mod1.dss"  # System 3 uses Mod1 again
+            self._dss_file = dss_file  # Store for re-compilation
             
             # Initialize OpenDSS
             self.dss.Command("Clear")
             self.dss.Command(f"Compile {dss_file}")
             self.dss.Command("Solve")
+            OpenDSSInterface._active_system_id = self.system_id
             
             # Get system information using DSS functions
             ybus_matrix = self.circuit.SystemY()
@@ -3094,31 +3343,21 @@ class OpenDSSInterface:
                 max_power = config['max_power']
                 num_ports = config.get('num_ports', 10)
                 
-                # Create EVCS parameters based on station size
-                if max_power >= 1000:  # Mega stations
-                    params = EVCSParameters(
-                        rated_voltage=400.0,
-                        rated_current=125.0,  # Higher current for mega stations
-                        capacity=100.0,       # Larger battery capacity
-                        efficiency_charge=0.96,
-                        efficiency_discharge=0.93
-                    )
-                elif max_power >= 500:  # Large stations
-                    params = EVCSParameters(
-                        rated_voltage=400.0,
-                        rated_current=100.0,
-                        capacity=75.0,
-                        efficiency_charge=0.95,
-                        efficiency_discharge=0.92
-                    )
-                else:  # Standard stations
-                    params = EVCSParameters(
-                        rated_voltage=400.0,
-                        rated_current=75.0,
-                        capacity=50.0,
-                        efficiency_charge=0.95,
-                        efficiency_discharge=0.92
-                    )
+                # All stations use L2 ACN parameters (240 V / 32 A / 7.68 kW per port)
+                params = EVCSParameters(
+                    rated_voltage=240.0,
+                    rated_current=24.0,
+                    rated_power=5.76,
+                    max_voltage=240.0,
+                    min_voltage=208.0,
+                    max_current=32.0,
+                    min_current=6.0,
+                    max_power=7.68,
+                    min_power=1.44,
+                    capacity=60.0,
+                    efficiency_charge=0.95,
+                    efficiency_discharge=0.92,
+                )
                 
                 # Try to add to OpenDSS if available
                 try:
@@ -3400,6 +3639,9 @@ class OpenDSSInterface:
     
     def update_ev_loads(self, current_time: float = 0.0, system_frequency: float = 60.0):
         """Update EV charging loads based on CMS control with power electronics dynamics"""
+        # Ensure this system's OpenDSS circuit is active before any DSS operations
+        self._activate_circuit()
+        
         if not self.cms:
             print(f"Warning: No CMS available for system {self.system_id}")
             return
@@ -3413,8 +3655,10 @@ class OpenDSSInterface:
                 try:
                     self.circuit.SetActiveBus(bus_name)
                     pu_voltages = self.dss.Bus.puVmagAngle()
-                    if len(pu_voltages) >= 2:
+                    if len(pu_voltages) >= 2 and np.isfinite(pu_voltages[0]):
                         bus_voltages[bus_name] = pu_voltages[0]
+                    else:
+                        bus_voltages[bus_name] = 1.0  # Default if NaN/Inf
                 except:
                     bus_voltages[bus_name] = 1.0  # Default voltage
         except:
@@ -3435,58 +3679,113 @@ class OpenDSSInterface:
                 station.connect_new_ev(current_time / 3600.0)
         
         print(f"System {self.system_id}: {connected_stations}/{total_stations} stations have connected EVs")
-            
+
+        # ── One-time path indicator per simulation run ────────────────────────
+        acn_live = (self._acn_zone is not None
+                    and getattr(self._acn_zone, 'simulator', None) is not None)
+        if not self._path_logged:
+            if acn_live:
+                print(f"[DS{self.system_id}] ## ACN-Sim path ACTIVE "
+                      f"(zone={self._acn_zone.ds_id}, "
+                      f"EVSEs={self._acn_zone.n_evses}, "
+                      f"period={self._acn_zone.period_min} min)")
+            else:
+                print(f"[DS{self.system_id}] ℹ️  Legacy EVCSController dynamics path "
+                      f"(acn_zone={'None' if self._acn_zone is None else 'set but simulator=None'})")
+            self._path_logged = True
+
         for i, station in enumerate(self.ev_stations):
             try:
                 load_name = f"EVCS_{self.system_id}_{i:02d}"
-                
+
                 # Get grid voltage for dynamics simulation
-                grid_voltage_pu = bus_voltages.get(station.bus_name, 1.0)
-                grid_voltage_rms = grid_voltage_pu * 12470  # Convert pu to RMS voltage (12.47kV base)
-                
-                # Update EVCS dynamics
-                dt = 0.1  # Time step for dynamics (100ms)
-                current_time_hours = current_time / 3600.0  # Convert seconds to hours for EV connection logic
-                
-                # Update dynamics first
-                dynamics_result = station.update_dynamics(
-                    grid_voltage_rms, dt, current_time_hours, system_frequency=system_frequency
-                )
-                
-                # FIXED: Check EV status for disconnection after dynamics update
-                station.check_ev_status(current_time_hours)
-                
-                # FIXED: Check if dynamics returned valid power - only warn if it's actually a problem
-                if dynamics_result['total_power'] == 0 and station.ev_connected:
-                    # Check if this is a transient issue or actual problem
-                    if hasattr(station, 'consecutive_zero_power_count'):
-                        station.consecutive_zero_power_count += 1
-                    else:
-                        station.consecutive_zero_power_count = 1
-                    
-                    # Only warn after multiple consecutive zero power readings
-                    if station.consecutive_zero_power_count >= 3:
-                        print(f"Warning: EVCS {station.evcs_id} has connected EV but zero power for {station.consecutive_zero_power_count} consecutive readings")
+                grid_voltage_pu  = bus_voltages.get(station.bus_name, 1.0)
+                grid_voltage_rms = grid_voltage_pu * 12470  # Convert pu to RMS (12.47kV base)
+
+                # ── ACN-Sim path (primary) ────────────────────────────────────
+                if acn_live:
+                    acn_sid  = f"DS{self.system_id}_EV{i:02d}"
+                    acn_bv   = {acn_sid: grid_voltage_pu}
+                    zone_metrics = self._acn_zone.step(
+                        current_time, acn_bv, system_frequency)
+                    sm  = zone_metrics.get(acn_sid, {})
+                    agg = zone_metrics.get("_aggregate", {})
+
+                    # Map ACN-Sim outputs onto station state.
+                    # Voltage fallback: use the zone's evse_voltage (ACN L2 = 240V).
+                    _zone_v_nominal = getattr(self._acn_zone, 'evse_voltage',
+                                             station.params.rated_voltage
+                                             if hasattr(station, 'params') else ACN_EVSE_VOLTAGE_V)
+                    station.soc              = float(sm.get("soc",              station.soc))
+                    station.current_measured = float(sm.get("actual_current_A", 0.0))
+                    station.voltage_measured = float(sm.get("voltage_V",        _zone_v_nominal))
+                    station.power_measured   = float(sm.get("power_kW",         0.0))
+                    station.current_load     = station.power_measured
+                    station.ev_connected     = bool(sm.get("connected", False))
+                    if agg.get("avg_charging_time_min"):
+                        station.avg_charging_time = float(agg["avg_charging_time_min"])
+
+                    # Build dynamics_result for the OpenDSS load-update block below
+                    dynamics_result = {
+                        "soc":              station.soc,
+                        "voltage_measured": station.voltage_measured,
+                        "current_measured": station.current_measured,
+                        "power_measured":   station.power_measured,
+                        "total_power":      station.power_measured,
+                        "grid_frequency":   system_frequency,
+                    }
+
+                    # CMS was already called inside PINNCMSAlgorithm.schedule();
+                    # set references from ACN-Sim pilot signal.
+                    i_ref = float(sm.get("pilot_A",   station.current_ref
+                                         if hasattr(station, 'current_ref') else 25.0))
+                    v_ref = float(sm.get("voltage_V", _zone_v_nominal))
+                    p_ref = float(sm.get("power_kW",  station.power_ref
+                                         if hasattr(station, 'power_ref') else 10.0))
+                    station.set_references(v_ref, i_ref, p_ref)
+                    # Expose canonical names used by the shared validation block below
+                    voltage_ref, current_ref, power_ref = v_ref, i_ref, p_ref
+
+
                 else:
-                    # Reset counter when power is non-zero
-                    if hasattr(station, 'consecutive_zero_power_count'):
-                        station.consecutive_zero_power_count = 0
-                
-                # Get optimized references from CMS with dynamics state and error handling
-                try:
-                    voltage_ref, current_ref, power_ref = self.cms.optimize_charging(
-                        i, current_time, bus_voltages, system_frequency, dynamics_result
-                    )
-                    
-                    # Validate CMS outputs
-                    if not all(np.isfinite([voltage_ref, current_ref, power_ref])):
-                        print(f"Warning: CMS returned non-finite values for EVCS {station.evcs_id}")
-                        voltage_ref, current_ref, power_ref = 400.0, 25.0, 10.0  # Safe defaults
+                    # ── Legacy path (fallback when acnportal not installed) ────
+                    dt = 1.0
+                    current_time_hours = current_time / 3600.0
+                    dynamics_result = station.update_dynamics(
+                        grid_voltage_rms, dt, current_time_hours,
+                        system_frequency=system_frequency)
+
+                    # FIXED: Check EV status for disconnection after dynamics update
+                    station.check_ev_status(current_time_hours)
+
+                    # FIXED: Check if dynamics returned valid power
+                    if dynamics_result['total_power'] == 0 and station.ev_connected:
+                        if hasattr(station, 'consecutive_zero_power_count'):
+                            station.consecutive_zero_power_count += 1
+                        else:
+                            station.consecutive_zero_power_count = 1
+                        if station.consecutive_zero_power_count >= 3:
+                            print(f"Warning: EVCS {station.evcs_id} has connected EV but zero power "
+                                  f"for {station.consecutive_zero_power_count} consecutive readings")
+                    else:
+                        if hasattr(station, 'consecutive_zero_power_count'):
+                            station.consecutive_zero_power_count = 0
+
+                    # Get optimized references from CMS
+                    try:
+                        voltage_ref, current_ref, power_ref = self.cms.optimize_charging(
+                            i, current_time, bus_voltages, system_frequency, dynamics_result
+                        )
                         
-                except Exception as e:
-                    print(f"Error: CMS optimization failed for EVCS {station.evcs_id}: {e}")
-                    # Use safe fallback values
-                    voltage_ref, current_ref, power_ref = 400.0, 25.0, 10.0
+                        # Validate CMS outputs
+                        if not all(np.isfinite([voltage_ref, current_ref, power_ref])):
+                            print(f"Warning: CMS returned non-finite values for EVCS {station.evcs_id}")
+                            voltage_ref, current_ref, power_ref = 240.0, 16.0, 3.84  # Safe L2 defaults
+
+                    except Exception as e:
+                        print(f"Error: CMS optimization failed for EVCS {station.evcs_id}: {e}")
+                        # Use safe fallback values
+                        voltage_ref, current_ref, power_ref = 240.0, 16.0, 3.84
                 
                 # FIXED: Validate references before setting - only warn if EV is connected
                 if station.ev_connected and (voltage_ref <= 0 or current_ref <= 0):
@@ -3536,10 +3835,11 @@ class OpenDSSInterface:
                     # Log attack-induced power changes
                     if hasattr(self.cms, 'attack_active') and self.cms.attack_active:
                         baseline_power = dynamics_result['total_power']
-                        print(f"    🔥 ATTACK POWER UPDATE: {baseline_power:.1f}kW → {actual_power:.1f}kW (OpenDSS)")
+                        print(f"    ##ATTACK POWER UPDATE: {baseline_power:.1f}kW → {actual_power:.1f}kW (OpenDSS)")
 
                     self.dss.Command(f"Load.{load_name}.kW={actual_power}")
                     self.dss.Command(f"Load.{load_name}.kvar={reactive_power}")
+                    self._evcs_load_cache[load_name] = actual_power  # Cache for re-compile
                     
                 except Exception as e:
                     # If load doesn't exist, try to create it on-demand
@@ -3584,190 +3884,83 @@ class OpenDSSInterface:
                     hasattr(self.cms, 'attack_params') and self.cms.attack_params and 
                     i in self.cms.attack_params.get('targets', [])):
                     
-                    attack_type = self.cms.attack_params['type']
+                    _raw_atk_type = self.cms.attack_params['type']
                     magnitude = self.cms.attack_params['magnitude']
                     start_time = self.cms.attack_params.get('start_time', 0)
                     duration = self.cms.attack_params.get('duration', 50.0)
-                    
+
+                    # Normalise to canonical taxonomy
+                    _PWR_ALIAS = {
+                        'demand_increase': 'current_injection', 'demand_decrease': 'power_disruption',
+                        'oscillating_demand': 'protocol_manipulation', 'ramp_demand': 'current_injection',
+                        'voltage_spoofing': 'voltage_manipulation', 'frequency_spoofing': 'data_injection',
+                        'soc_manipulation': 'communication_spoofing', 'power_manipulation': 'power_disruption',
+                        'load_manipulation': 'current_injection', 'cyber_attack': 'communication_spoofing',
+                        'thermal_attack': 'protocol_manipulation', 'charging_hijacking': 'protocol_manipulation',
+                        'model_poisoning': 'data_injection', 'frequency_attack': 'data_injection',
+                        'frequency_manipulation': 'data_injection',
+                    }
+                    attack_type = _PWR_ALIAS.get(_raw_atk_type, _raw_atk_type)
+
                     # Apply attack manipulation to power reference with error handling
-                    # FIXED: Check both start_time AND end_time for attack window
                     if start_time <= current_time <= start_time + duration:
                         try:
                             original_power_ref = power_ref
+                            elapsed_time = current_time - start_time
+                            progress = min(elapsed_time / max(duration, 1.0), 1.0)
 
-                            if attack_type == 'demand_increase':
-                                # CUMULATIVE ATTACK: Linear accumulation over attack duration
-                                # This causes gradual drift as controllers respond to manipulated values
-                                elapsed_time = current_time - start_time
-
-                                # Linear growth from 1.0 to (1.0 + magnitude) over duration
-                                # This represents the cumulative effect of controllers making wrong decisions
-                                progress = min(elapsed_time / duration, 1.0)  # 0.0 to 1.0
-                                self.cumulative_attack_factor = 1.0 + (magnitude * progress)
-
-                                # Safety cap to prevent overflow (should rarely trigger with linear growth)
-                                self.cumulative_attack_factor = min(self.cumulative_attack_factor, 1.0 + magnitude * 2.0)
-
-                                # Apply cumulative factor
+                            if attack_type == 'current_injection':
+                                # Linear demand/load inflation
+                                self.cumulative_attack_factor = min(1.0 + magnitude * progress, 1.0 + magnitude * 2.0)
                                 power_ref *= self.cumulative_attack_factor
-
-                                # Debug every 10 seconds
                                 if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} cumulative factor: {self.cumulative_attack_factor:.3f}, power: {power_ref:.1f}kW")
-                            elif attack_type == 'demand_decrease':
-                                # CUMULATIVE ATTACK: Linear demand reduction over attack duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
+                                    print(f"  ##System {self.system_id} {attack_type} factor: {self.cumulative_attack_factor:.3f}, power: {power_ref:.1f}kW")
 
-                                # Linear decrease from 1.0 to (1.0 - magnitude)
-                                self.cumulative_attack_factor = 1.0 - (magnitude * progress)
-
-                                # Safety bounds
-                                self.cumulative_attack_factor = max(0.1, min(self.cumulative_attack_factor, 1.0))
-
-                                # Apply cumulative factor
+                            elif attack_type == 'power_disruption':
+                                # Linear power reduction
+                                self.cumulative_attack_factor = max(0.1, 1.0 - magnitude * progress)
                                 power_ref *= self.cumulative_attack_factor
-
                                 if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} cumulative factor (decrease): {self.cumulative_attack_factor:.3f}")
+                                    print(f"  ##System {self.system_id} {attack_type} factor: {self.cumulative_attack_factor:.3f}")
 
-                            elif attack_type == 'oscillating_demand':
-                                # CUMULATIVE ATTACK: Oscillating with linearly increasing amplitude
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
+                            elif attack_type == 'voltage_manipulation':
+                                # Voltage manipulation affects power indirectly (damped)
+                                self.cumulative_attack_factor = 1.0 + magnitude * 0.8 * progress
+                                power_ref *= (1.0 + (self.cumulative_attack_factor - 1.0) * 0.6)
+                                if int(current_time) % 10 == 0:
+                                    print(f"  ##System {self.system_id} {attack_type} factor: {self.cumulative_attack_factor:.3f}")
 
-                                # Linear amplitude growth (starts small, grows to magnitude)
-                                amplitude_factor = 1.0 + (magnitude * 0.5 * progress)
+                            elif attack_type == 'communication_spoofing':
+                                # Cyber/comms infiltration — moderate linear growth
+                                self.cumulative_attack_factor = min(1.0 + magnitude * progress, 1.0 + magnitude * 1.5)
+                                power_ref *= self.cumulative_attack_factor
+                                if int(current_time) % 10 == 0:
+                                    print(f"  ##System {self.system_id} {attack_type} factor: {self.cumulative_attack_factor:.3f}")
 
-                                # Apply oscillation with growing amplitude
+                            elif attack_type == 'data_injection':
+                                # Frequency/data injection — moderate damped effect
+                                self.cumulative_attack_factor = 1.0 + magnitude * 0.7 * progress
+                                power_ref *= (1.0 + (self.cumulative_attack_factor - 1.0) * 0.5)
+                                if int(current_time) % 10 == 0:
+                                    print(f"  ##System {self.system_id} {attack_type} factor: {self.cumulative_attack_factor:.3f}")
+
+                            elif attack_type == 'protocol_manipulation':
+                                # Oscillating with growing amplitude (thermal/protocol abuse)
+                                amplitude_factor = 1.0 + magnitude * 0.5 * progress
                                 time_factor = elapsed_time / max(10.0, 1.0)
                                 oscillation = np.sin(time_factor) * 0.5 + 1.0
                                 power_ref *= oscillation * amplitude_factor
-
                                 self.cumulative_attack_factor = amplitude_factor
-
                                 if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} oscillation amplitude: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'ramp_demand':
-                                # CUMULATIVE ATTACK: Linear ramp over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                # Linear ramp from 1.0 to (1.0 + magnitude)
-                                ramp_factor = 1.0 + (magnitude * progress)
-
-                                # Safety cap
-                                ramp_factor = min(ramp_factor, 1.0 + magnitude * 1.5)
-                                power_ref *= ramp_factor
-
-                                self.cumulative_attack_factor = ramp_factor
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} ramp factor: {ramp_factor:.3f}")
-
-                            elif attack_type == 'voltage_manipulation':
-                                # CUMULATIVE ATTACK: Linear voltage manipulation over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                # Moderate linear growth (voltage affects power indirectly)
-                                self.cumulative_attack_factor = 1.0 + (magnitude * 0.8 * progress)
-
-                                # Apply to power reference (voltage affects power with damping)
-                                power_ref *= (1.0 + (self.cumulative_attack_factor - 1.0) * 0.6)
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} voltage manipulation factor: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'power_manipulation':
-                                # CUMULATIVE ATTACK: Linear power manipulation over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                self.cumulative_attack_factor = 1.0 + (magnitude * progress)
-
-                                # Safety cap
-                                self.cumulative_attack_factor = min(self.cumulative_attack_factor, 1.0 + magnitude * 1.5)
-
-                                power_ref *= self.cumulative_attack_factor
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} power manipulation factor: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'load_manipulation':
-                                # CUMULATIVE ATTACK: Linear load manipulation over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                self.cumulative_attack_factor = 1.0 + (magnitude * progress)
-
-                                # Safety cap
-                                self.cumulative_attack_factor = min(self.cumulative_attack_factor, 1.0 + magnitude * 1.5)
-
-                                power_ref *= self.cumulative_attack_factor
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} load manipulation factor: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'frequency_manipulation':
-                                # CUMULATIVE ATTACK: Linear frequency manipulation over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                # Moderate linear growth (frequency affects power indirectly)
-                                self.cumulative_attack_factor = 1.0 + (magnitude * 0.7 * progress)
-
-                                # Frequency attacks affect power demand with damping
-                                power_ref *= (1.0 + (self.cumulative_attack_factor - 1.0) * 0.5)
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} frequency manipulation factor: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'thermal_attack':
-                                # CUMULATIVE ATTACK: Linear thermal stress accumulation over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                # Slower linear growth (thermal effects accumulate gradually)
-                                self.cumulative_attack_factor = 1.0 + (magnitude * 0.6 * progress)
-
-                                # Thermal attacks reduce efficiency, increasing power demand with damping
-                                power_ref *= (1.0 + (self.cumulative_attack_factor - 1.0) * 0.4)
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} thermal stress factor: {self.cumulative_attack_factor:.3f}")
-
-                            elif attack_type == 'cyber_attack':
-                                # CUMULATIVE ATTACK: Linear cyber infiltration over duration
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                self.cumulative_attack_factor = 1.0 + (magnitude * progress)
-
-                                # Safety cap
-                                self.cumulative_attack_factor = min(self.cumulative_attack_factor, 1.0 + magnitude * 1.5)
-
-                                power_ref *= self.cumulative_attack_factor
-
-                                if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} cyber attack factor: {self.cumulative_attack_factor:.3f}")
+                                    print(f"  ##System {self.system_id} {attack_type} amplitude: {self.cumulative_attack_factor:.3f}")
 
                             else:
-                                # DEFAULT: Generic linear cumulative attack for any other attack type
-                                elapsed_time = current_time - start_time
-                                progress = min(elapsed_time / duration, 1.0)
-
-                                # Conservative linear growth
-                                self.cumulative_attack_factor = 1.0 + (magnitude * 0.5 * progress)
-
-                                # Safety cap
-                                self.cumulative_attack_factor = min(self.cumulative_attack_factor, 1.0 + magnitude)
-
+                                # Unknown type after alias resolution
+                                self.cumulative_attack_factor = min(1.0 + magnitude * 0.5 * progress, 1.0 + magnitude)
                                 power_ref *= self.cumulative_attack_factor
 
                                 if int(current_time) % 10 == 0:
-                                    print(f"  🔥 System {self.system_id} {attack_type} cumulative factor: {self.cumulative_attack_factor:.3f}")
+                                    print(f"  ##System {self.system_id} {attack_type} cumulative factor: {self.cumulative_attack_factor:.3f}")
 
                             # Validate attack result
                             if not np.isfinite(power_ref) or power_ref <= 0:
@@ -3780,35 +3973,49 @@ class OpenDSSInterface:
                     else:
                         # Attack ended - reset cumulative factor
                         if hasattr(self, 'cumulative_attack_factor') and self.cumulative_attack_factor > 1.0:
-                            print(f"  ✅ System {self.system_id}: Attack ended. Resetting factor from {self.cumulative_attack_factor:.3f} to 1.0")
+                            print(f"  ## System {self.system_id}: Attack ended. Resetting factor from {self.cumulative_attack_factor:.3f} to 1.0")
                             self.cumulative_attack_factor = 1.0
 
-                    # FIXED: Store attack parameters for time-wise injection
-                    station.attack_active = True
-                    station.attack_type = attack_type
-                    station.attack_magnitude = magnitude
-                    station.attack_start_time = start_time
-                    station.attack_duration = duration
-                    
-                    # Store the continuous sequence from RL agents if available
-                    if hasattr(self.cms, 'current_attack_sequence'):
-                        station.rl_attack_sequence = self.cms.current_attack_sequence
-                        # Calculate current time step in attack sequence
-                        elapsed_time = current_time - start_time
-                        time_step = int(elapsed_time)
+                        # FIXED: Attack window has passed — clear station-level flags
+                        # so _calculate_real_charging_time() and PINN integration stop
+                        # seeing stale attack state.
+                        station.attack_active = False
+                        station.attack_type = None
+                        station.attack_magnitude = 0
+                        station.attack_manipulation_factor = 1.0
+
+                    # Store attack parameters ONLY while inside the attack window
+                    if start_time <= current_time <= start_time + duration:
+                        station.attack_active = True
+                        station.attack_type = attack_type
+                        station.attack_magnitude = magnitude
+                        station.attack_start_time = start_time
+                        station.attack_duration = duration
                         
-                        if 0 <= time_step < len(station.rl_attack_sequence):
-                            # Use RL-generated magnitude for this time step
-                            rl_step = station.rl_attack_sequence[time_step]
-                            station.attack_manipulation_factor = rl_step['magnitude']
+                        # FIXED: Use the CMS's actual power_multiplier (computed in
+                        # _apply_input_attacks) instead of raw RL magnitude.
+                        # The CMS power_multiplier reflects the real attack effect
+                        # on grid power draw (e.g. 20-40x for demand_increase),
+                        # while raw magnitude is just the RL action (0.5-0.7).
+                        # _calculate_real_charging_time() uses this to model the
+                        # efficiency collapse under overload.
+                        cms_power_multiplier = getattr(self.cms, 'input_attack_cumulative_factor', 1.0)
+                        if cms_power_multiplier != 1.0:
+                            station.attack_manipulation_factor = cms_power_multiplier
+                        elif hasattr(self.cms, 'current_attack_sequence'):
+                            station.rl_attack_sequence = self.cms.current_attack_sequence
+                            elapsed_time = current_time - start_time
+                            time_step = int(elapsed_time)
+                            if 0 <= time_step < len(station.rl_attack_sequence):
+                                rl_step = station.rl_attack_sequence[time_step]
+                                station.attack_manipulation_factor = rl_step['magnitude']
+                            else:
+                                station.attack_manipulation_factor = magnitude
                         else:
-                            station.attack_manipulation_factor = magnitude  # Fallback
-                    else:
-                        # Fallback to static magnitude if no RL sequence available
-                        station.attack_manipulation_factor = magnitude
-                    
-                    # Update references with attack manipulation
-                    station.set_references(voltage_ref, current_ref, power_ref)
+                            station.attack_manipulation_factor = magnitude
+                        
+                        # Update references with attack manipulation
+                        station.set_references(voltage_ref, current_ref, power_ref)
                 else:
                     # FIXED: Clear attack state when not under attack
                     if hasattr(station, 'attack_active'):
@@ -3837,6 +4044,7 @@ class OpenDSSInterface:
                         # Update load in OpenDSS
                         self.dss.Command(f"Load.{load_name}.kW={manipulated_kw:.2f}")
                         self.dss.Command(f"Load.{load_name}.kvar={manipulated_kvar:.2f}")
+                        self._evcs_load_cache[load_name] = manipulated_kw  # Cache for re-compile
                         
                         print(f" Attack Load Update: System {self.system_id}, Station {i}, "
                               f"Original: {dynamics_result['total_power']:.2f}W, "
@@ -3873,6 +4081,7 @@ class OpenDSSInterface:
                                 
                                 self.dss.Command(f"Load.{load_name}.kW={normal_kw:.2f}")
                                 self.dss.Command(f"Load.{load_name}.kvar={normal_kvar:.2f}")
+                                self._evcs_load_cache[load_name] = normal_kw  # Cache for re-compile
                                 
                                 # Only print recovery messages occasionally to reduce spam
                                 if hasattr(station, 'recovery_message_counter'):
@@ -3962,7 +4171,7 @@ class OpenDSSInterface:
 
             # Apply cascading effects if violations detected
             if voltage_violations or overloaded_lines:
-                print(f"    ⚠️ CASCADE DETECTED in System {self.system_id}:")
+                print(f"    ## CASCADE DETECTED in System {self.system_id}:")
 
                 if voltage_violations:
                     print(f"       {len(voltage_violations)} buses with voltage violations")
@@ -4000,6 +4209,9 @@ class OpenDSSInterface:
 
     def get_total_load(self) -> float:
         """Get total system load in MW using DSS functions with cascading failure detection"""
+        # Ensure this system's OpenDSS circuit is active before solving
+        self._activate_circuit()
+        
         try:
             self.dss.Command("solve")
 
@@ -4011,19 +4223,16 @@ class OpenDSSInterface:
             load_data, total_load = get_loads(self.dss, self.circuit)
 
             # FIXED: Add EV charging station loads with proper unit handling
+            # current_load = power_measured × active_ports (total station draw in kW)
             ev_load_kw = 0.0
             for station in self.ev_stations:
-                # Ensure consistent kW units for station.current_load
                 station_load_kw = 0.0
-                if hasattr(station, 'power_measured') and station.power_measured > 0:
-                    # power_measured is in kW
+                if hasattr(station, 'current_load') and station.current_load > 0:
+                    # current_load is already scaled by active ports (kW)
+                    station_load_kw = station.current_load
+                elif hasattr(station, 'power_measured') and station.power_measured > 0:
+                    # Fallback: per-EV power only (not scaled by ports)
                     station_load_kw = station.power_measured
-                elif hasattr(station, 'current_load') and station.current_load > 0:
-                    # current_load might be in W or kW - detect and convert
-                    if station.current_load > 1000:  # Likely in Watts
-                        station_load_kw = station.current_load / 1000.0
-                    else:  # Likely in kW
-                        station_load_kw = station.current_load
                 
                 ev_load_kw += station_load_kw
             
@@ -4033,11 +4242,15 @@ class OpenDSSInterface:
             der_adjustment_kw = storage_charge_kw - storage_discharge_kw - pv_kw
             total_system_load = (total_load + ev_load_kw + der_adjustment_kw) / 1000
             
-            # FIXED: Log total load for debugging attack impact
-            if any(hasattr(station, 'attack_active') and station.attack_active for station in self.ev_stations):
-                print(f" System {self.system_id} Total Load: Base={total_load/1000:.2f}MW, "
-                      f"EV={ev_load_kw/1000:.2f}MW, PV={pv_kw/1000:.2f}MW, "
-                      f"StorageΔ={(der_adjustment_kw)/1000:.2f}MW, Total={total_system_load:.2f}MW")
+            # Periodic debug logging for load verification (every 60 calls)
+            _call_count = getattr(self, '_get_total_load_calls', 0) + 1
+            self._get_total_load_calls = _call_count
+            if _call_count % 60 == 1:
+                print(f"  📊 System {self.system_id} Load Breakdown: "
+                      f"Base={total_load/1000:.2f}MW, EV={ev_load_kw/1000:.2f}MW, "
+                      f"DER={der_adjustment_kw/1000:.2f}MW → Total={total_system_load:.2f}MW "
+                      f"(stations={len(self.ev_stations)}, "
+                      f"loads=[{', '.join(f'{s.current_load:.0f}kW' for s in self.ev_stations[:3])}...])")
             
             return total_system_load
             
@@ -4075,7 +4288,7 @@ class OpenDSSInterface:
     
     def launch_cyber_attack(self, attack_config: Dict):
         """Launch cyber attack on charging management system with dynamics-aware targeting"""
-        attack_type = attack_config.get('type', 'demand_increase')
+        attack_type = attack_config.get('type', 'current_injection')
         magnitude = attack_config.get('magnitude', 0.5)
         target_percentage = attack_config.get('target_percentage', 100)  # Default to 100%
         start_time = attack_config.get('start_time', 0.0)
@@ -4186,12 +4399,14 @@ class HierarchicalCoSimulation:
         self.transmission_system = IEEE14BusAGC()
         self.central_coordinator = CentralChargingCoordinator()
         self.distribution_systems = {}
-        self.simulation_time = 3600.0  # 1 hour simulation
-        self.dist_dt = 1.0  # Distribution system time step: 1 second
-        self.agc_dt = 5.0   # AGC time step: 5 seconds
-        self.coordination_dt = 5.0  # Central coordination time step: 10 seconds
-        self.customer_arrival_dt = 20  # Customer arrival and queue processing: 10 seconds
-        self.total_duration = 3600.0  # Total simulation: 3600 seconds (1 hour)
+        self.simulation_time = 0.0
+        # --- Hierarchical timing parameters ---
+        # Ref: EPRI QSTS guidelines, NERC BAL-001-2, IEEE C37.1
+        self.dist_dt = 1.0            # Distribution QSTS time step: 1 s (Ref: OpenDSS QSTS manual)
+        self.agc_dt = 4.0             # AGC cycle: 4 s (Ref: NERC BAL-001-2, typical 2-4 s)
+        self.coordination_dt = 4.0    # SCADA/coordination scan: 4 s (Ref: IEEE C37.1, typical 4-10 s)
+        self.customer_arrival_dt = 60  # Customer arrival check: 60 s (realistic queue processing interval)
+        self.total_duration = 7200.0  # Total simulation: 7200 s (2 hours) for diagnostic
         
         # Real-time RL attack controller
         self.realtime_rl_controller = realtime_rl_controller
@@ -4269,21 +4484,21 @@ class HierarchicalCoSimulation:
                         pinn_model.load_model(model_path)
                         
                         self.enhanced_pinn_models[sys_id] = pinn_model
-                        print(f"  ✅ System {sys_id}: Enhanced PINN model loaded from {model_path}")
+                        print(f"  ## System {sys_id}: Enhanced PINN model loaded from {model_path}")
                         
                     except Exception as e:
-                        print(f"  ⚠️  System {sys_id}: Failed to load enhanced PINN model: {e}")
+                        print(f"  ##  System {sys_id}: Failed to load enhanced PINN model: {e}")
                 else:
-                    print(f"  ⚠️  System {sys_id}: No enhanced PINN model found at {model_path}")
+                    print(f"  ##  System {sys_id}: No enhanced PINN model found at {model_path}")
             
             if self.enhanced_pinn_models:
-                print(f"  🎯 Loaded {len(self.enhanced_pinn_models)} enhanced PINN models")
+                print(f"  ## Loaded {len(self.enhanced_pinn_models)} enhanced PINN models")
                 print("  🚀 Co-simulation will use real EVCS dynamics from trained models!")
             else:
-                print("  ⚠️  No enhanced PINN models loaded, using standard co-simulation")
+                print("  ##  No enhanced PINN models loaded, using standard co-simulation")
                 
         except Exception as e:
-            print(f"  ⚠️  Failed to load federated models: {e}")
+            print(f"  ##  Failed to load federated models: {e}")
             print("  🔄 Falling back to standard co-simulation")
         
     def add_distribution_system(self, system_id: int, dss_file: str, connection_bus: int):
@@ -4326,85 +4541,88 @@ class HierarchicalCoSimulation:
             if not hasattr(dist_sys, 'ev_stations') or len(dist_sys.ev_stations) == 0:
                 print(f"No EVCS stations found, adding 10 stations for distribution system {sys_id}")
                 
-                # System-specific EVCS configurations (different for each distribution system)
+                # System-specific EVCS configurations — L2 ACN-matched
+                # max_power = num_ports × 7.68 kW (240 V × 32 A, SAE J1772 L2 max)
+                # Ref: Caltech ACN-Data (ev.caltech.edu/dataset)
+                _L2 = 7.68  # kW per L2 port
                 system_specific_configs = {
-                    # Distribution System 1 - Urban Area
+                    # Distribution System 1 - Urban Area (workplace L2 lots)
                     1: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Mega charging hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Shopping center
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Residential area
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Business district
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Industrial area
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Suburban area
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Industrial area
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Suburban area
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Shopping center
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Residential area
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Large parking structure
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Shopping center
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Residential area
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Business district
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Office lot
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Suburban area
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Office lot
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Suburban area
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Shopping center
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Residential area
                     ],
                     # Distribution System 2 - Highway Corridor
                     2: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Highway mega hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Rest area
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Service station
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Truck stop
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Highway service
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Travel center
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Highway service
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Travel center
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Rest area
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Service station
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Large lot
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Rest area
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Service area
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Truck stop
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Highway service
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Travel center
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Highway service
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Travel center
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Rest area
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Service area
                     ],
                     # Distribution System 3 - Mixed Area
                     3: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Mixed mega hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Commercial
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Residential
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Office complex
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Mixed use
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Community
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Mixed use
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Community
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Commercial
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Residential
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Mixed hub
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Commercial
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Residential
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Office complex
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Mixed use
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Community
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Mixed use
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Community
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Commercial
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Residential
                     ],
                     # Distribution System 4 - Industrial Zone
                     4: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Industrial mega hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Factory area
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Warehouse district
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Logistics center
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Manufacturing
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Industrial park
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Manufacturing
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Industrial park
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Factory area
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Warehouse district
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Fleet lot
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Factory area
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Warehouse
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Logistics center
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Manufacturing
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Industrial park
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Manufacturing
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Industrial park
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Factory area
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Warehouse
                     ],
                     # Distribution System 5 - Commercial District
                     5: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Commercial mega hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Mall
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Strip mall
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Business park
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Retail center
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Shopping district
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Retail center
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Shopping district
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Mall
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Strip mall
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Mall hub
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Mall
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Strip mall
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Business park
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Retail center
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Shopping district
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Retail center
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Shopping district
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Mall
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Strip mall
                     ],
                     # Distribution System 6 - Residential Complex
                     6: [
-                        {'bus': '890', 'max_power': 1000, 'num_ports': 25},  # Residential mega hub
-                        {'bus': '844', 'max_power': 300, 'num_ports': 6},   # Apartment complex
-                        {'bus': '860', 'max_power': 200, 'num_ports': 4},    # Neighborhood
-                        {'bus': '840', 'max_power': 400, 'num_ports': 10},   # Community center
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Housing development
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Residential area
-                        {'bus': '848', 'max_power': 250, 'num_ports': 5},   # Housing development
-                        {'bus': '830', 'max_power': 300, 'num_ports': 6},   # Residential area
-                        {'bus': '824', 'max_power': 300, 'num_ports': 6},   # Apartment complex
-                        {'bus': '826', 'max_power': 200, 'num_ports': 4},    # Neighborhood
+                        {'bus': '890', 'max_power': round(25 * _L2, 1), 'num_ports': 25},  # Community hub
+                        {'bus': '844', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Apartment complex
+                        {'bus': '860', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Neighborhood
+                        {'bus': '840', 'max_power': round(10 * _L2, 1), 'num_ports': 10},  # Community center
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Housing development
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Residential area
+                        {'bus': '848', 'max_power': round(5  * _L2, 1), 'num_ports': 5},   # Housing development
+                        {'bus': '830', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Residential area
+                        {'bus': '824', 'max_power': round(6  * _L2, 1), 'num_ports': 6},   # Apartment complex
+                        {'bus': '826', 'max_power': round(4  * _L2, 1), 'num_ports': 4},   # Neighborhood
                     ]
                 }
                 
@@ -4459,9 +4677,9 @@ class HierarchicalCoSimulation:
                                                f"kW=0.1 "
                                                f"kvar=0.02 "
                                                f"Model=1")
-                            print(f"      ✅ Created Load.{load_name} at bus {station.bus_name}")
+                            print(f"      ## Created Load.{load_name} at bus {station.bus_name}")
                         except Exception as e:
-                            print(f"      ⚠️  Failed to create Load.{load_name}: {e}")
+                            print(f"      ##  Failed to create Load.{load_name}: {e}")
 
             # Add PV and storage DER assets to each distribution system
             self._setup_additional_der_assets(sys_id, dist_sys)
@@ -4488,7 +4706,7 @@ class HierarchicalCoSimulation:
             if storage_configs:
                 print(f"    Added {len(storage_configs)} storage devices to distribution system {sys_id}")
         except Exception as e:
-            print(f"    ⚠️  Failed to add DER assets for system {sys_id}: {e}")
+            print(f"    ##  Failed to add DER assets for system {sys_id}: {e}")
 
     def _default_distribution_der_configs(self, sys_id: int) -> Tuple[List[Dict], List[Dict]]:
         """Return default PV and storage configurations per distribution system"""
@@ -4589,10 +4807,10 @@ class HierarchicalCoSimulation:
             self.dqn_sac_trainer.train_coordinated_agents(total_timesteps=4000)
             
             self.security_evasion_active = True
-            print("✅ Coordinated DQN/SAC Security Evasion System initialized successfully")
+            print("## Coordinated DQN/SAC Security Evasion System initialized successfully")
             
         except Exception as e:
-            print(f"⚠️  Failed to setup coordinated DQN/SAC system: {e}")
+            print(f"##  Failed to setup coordinated DQN/SAC system: {e}")
             self.security_evasion_active = False
     
     def execute_dqn_sac_attack(self, system_id: int, attack_params: dict, current_time: float):
@@ -4605,9 +4823,9 @@ class HierarchicalCoSimulation:
             if system_id in self.distribution_systems:
                 dist_sys = self.distribution_systems[system_id]['system']
                 baseline_outputs = {
-                    'power_reference': 10.0,
-                    'voltage_reference': 400.0,
-                    'current_reference': 25.0,
+                    'power_reference': 3.84,
+                    'voltage_reference': 240.0,
+                    'current_reference': 16.0,
                     'soc': 0.5,
                     'grid_voltage': 1.0,
                     'grid_frequency': 60.0,
@@ -4631,7 +4849,7 @@ class HierarchicalCoSimulation:
                             dist_sys.cms, attack_params_combined, current_time
                         )
                         
-                        print(f"🎯 Coordinated DQN/SAC attack executed on system {system_id}: "
+                        print(f"## Coordinated DQN/SAC attack executed on system {system_id}: "
                               f"Type={attack_params_combined.get('type', 'unknown')}, "
                               f"Success={attack_success}")
                         
@@ -4640,37 +4858,45 @@ class HierarchicalCoSimulation:
             return False
             
         except Exception as e:
-            print(f"⚠️ Failed to execute coordinated DQN/SAC attack: {e}")
+            print(f"## Failed to execute coordinated DQN/SAC attack: {e}")
             return False
     
     def _apply_coordinated_attack_to_cms(self, cms, attack_params: dict, current_time: float):
-        """Apply coordinated attack parameters to CMS inputs"""
+        """Apply coordinated attack parameters to CMS inputs (canonical 6-type taxonomy)."""
         try:
-            attack_type = attack_params.get('type', 'demand_increase')
-            magnitude = attack_params.get('magnitude', 1.0)
+            _raw = attack_params.get('type', 'current_injection')
+            _ALIAS = {
+                'demand_increase': 'current_injection', 'demand_decrease': 'power_disruption',
+                'oscillating_demand': 'protocol_manipulation', 'voltage_spoofing': 'voltage_manipulation',
+                'frequency_spoofing': 'data_injection', 'soc_manipulation': 'communication_spoofing',
+                'power_manipulation': 'power_disruption', 'load_manipulation': 'current_injection',
+                'cyber_attack': 'communication_spoofing', 'ramp_demand': 'current_injection',
+                'thermal_attack': 'protocol_manipulation',
+            }
+            attack_type  = _ALIAS.get(_raw, _raw)
+            magnitude    = attack_params.get('magnitude', 1.0)
             stealth_factor = attack_params.get('stealth_factor', 0.5)
-            
-            # Apply attack based on DQN strategic decision and SAC continuous control
-            if attack_type == 'demand_increase':
-                # Manipulate demand factor with SAC-controlled magnitude
-                cms.demand_factor = 1.0 + (magnitude * 0.4 * (1.0 - stealth_factor))
-            elif attack_type == 'demand_decrease':
-                cms.demand_factor = 1.0 - (magnitude * 0.3 * (1.0 - stealth_factor))
-            elif attack_type == 'voltage_spoofing':
-                cms.grid_voltage = 1.0 + (magnitude * 0.1 * (1.0 - stealth_factor))
-            elif attack_type == 'frequency_spoofing':
-                cms.grid_frequency = 60.0 + (magnitude * 2.0 * (1.0 - stealth_factor))
-            elif attack_type == 'soc_manipulation':
-                cms.soc_override = min(1.0, 0.5 + magnitude * 0.2 * (1.0 - stealth_factor))
-            elif attack_type == 'oscillating_demand':
+            eff = magnitude * (1.0 - stealth_factor)
+
+            if attack_type == 'current_injection':
+                cms.demand_factor = 1.0 + (eff * 0.4)
+            elif attack_type == 'power_disruption':
+                cms.demand_factor = 1.0 - (eff * 0.3)
+            elif attack_type == 'voltage_manipulation':
+                cms.grid_voltage = 1.0 - (eff * 0.1)
+            elif attack_type == 'data_injection':
+                cms.grid_frequency = 60.0 + (eff * 2.0)
+            elif attack_type == 'communication_spoofing':
+                cms.soc_override = min(1.0, 0.5 + eff * 0.2)
+            elif attack_type == 'protocol_manipulation':
                 import math
-                oscillation = math.sin(current_time * 0.5) * magnitude * (1.0 - stealth_factor)
+                oscillation = math.sin(current_time * 0.5) * eff
                 cms.demand_factor = 1.0 + oscillation * 0.3
-            
+
             return True
-            
+
         except Exception as e:
-            print(f"⚠️ Failed to apply coordinated attack to CMS: {e}")
+            print(f"## Failed to apply coordinated attack to CMS: {e}")
             return False
         
         return False
@@ -4684,7 +4910,7 @@ class HierarchicalCoSimulation:
         
         # Truncate to the same length if they differ
         if len(time_data) != len(y_data):
-            print(f"⚠️ Array length mismatch: time_data={len(time_data)}, y_data={len(y_data)}, using min_length={min_length}")
+            print(f"## Array length mismatch: time_data={len(time_data)}, y_data={len(y_data)}, using min_length={min_length}")
             time_data = time_data[:min_length]
             y_data = y_data[:min_length]
         
@@ -4830,17 +5056,28 @@ class HierarchicalCoSimulation:
                         if hasattr(dist_sys, 'cms') and dist_sys.cms:
                             # Activate real-time RL attack
                             dist_sys.cms.attack_active = True
+                            target_station_ids = list(range(min(len(dist_sys.ev_stations), 
+                                                        int(len(dist_sys.ev_stations) * attack_params['target_percentage'] / 100))))
                             dist_sys.cms.attack_params = {
                                 'type': attack_params['type'],
                                 'magnitude': attack_params['magnitude'],
-                                'targets': list(range(min(len(dist_sys.ev_stations), 
-                                                        int(len(dist_sys.ev_stations) * attack_params['target_percentage'] / 100)))),
+                                'targets': target_station_ids,
                                 'start_time': attack_params['start_time'],
                                 'duration': attack_params['duration'],
                                 'rl_decision_id': attack_params['decision_id']
                             }
+                            
+                            # Propagate attack state to individual stations so that
+                            # _calculate_real_charging_time sees attack_active=True
+                            for sid in target_station_ids:
+                                station = dist_sys.ev_stations[sid]
+                                station.attack_active = True
+                                station.attack_type = attack_params['type']
+                                station.attack_magnitude = attack_params['magnitude']
+                            
                             print(f" Real-time RL attack launched on system {target_sys} at t={self.simulation_time:.1f}s")
                             print(f"   Type: {attack_params['type']}, Magnitude: {attack_params['magnitude']:.2f}, Duration: {attack_params['duration']}s")
+                            print(f"   Affected {len(target_station_ids)} stations")
                             
                             # Log attack decision
                             self.results['rl_attack_decisions'].append({
@@ -4857,13 +5094,28 @@ class HierarchicalCoSimulation:
                         attack_update = self.realtime_rl_controller.update_attack_parameters(sys_id, self.simulation_time)
                         
                         if attack_update.get('stop_attack', False):
-                            # Stop attack
+                            # Stop attack on CMS and clear station-level attack state
                             dist_sys.cms.attack_active = False
                             dist_sys.cms.attack_params = {}
+                            for station in dist_sys.ev_stations:
+                                if hasattr(station, 'attack_active') and station.attack_active:
+                                    station.attack_active = False
+                                    station.attack_type = None
+                                    station.attack_magnitude = 1.0
+                                    station.attack_manipulation_factor = 1.0
                             print(f" Real-time RL attack stopped on system {sys_id} at t={self.simulation_time:.1f}s")
                         elif attack_update:
                             # Update attack parameters
                             dist_sys.cms.attack_params.update(attack_update)
+                            # Re-propagate attack state to ALL stations every timestep
+                            # so that newly connected customers also see the attack
+                            attack_type = dist_sys.cms.attack_params.get('type', None)
+                            attack_mag = attack_update.get('magnitude',
+                                         dist_sys.cms.attack_params.get('magnitude', 0.7))
+                            for station in dist_sys.ev_stations:
+                                station.attack_active = True
+                                station.attack_type = attack_type
+                                station.attack_magnitude = attack_mag
                 
                 # Log current RL attack status
                 if self.simulation_time % 30.0 == 0:  # Every 30 seconds
@@ -4905,10 +5157,14 @@ class HierarchicalCoSimulation:
                                     for station in dist_sys.ev_stations:
                                         station.attack_active = True
                                         station.attack_type = attack['type']
+                                        station.attack_magnitude = attack['magnitude']
                                         station.rl_attack_impact = rl_attack_impact
-                                        print(f"🚨 DEBUG: Station {station.evcs_id} attack_active = {station.attack_active}, attack_type = {station.attack_type}")
+                                        # NOTE: attack_manipulation_factor will be set from
+                                        # CMS input_attack_cumulative_factor in update_ev_loads()
+                                        # once the CMS processes this attack.
+                                        print(f"## DEBUG: Station {station.evcs_id} attack_active = {station.attack_active}, attack_type = {station.attack_type}")
                                     
-                                    print(f"🚨 RL-Enhanced attack activated on system {target_sys} at t={self.simulation_time:.1f}s")
+                                    print(f"## RL-Enhanced attack activated on system {target_sys} at t={self.simulation_time:.1f}s")
                                     print(f"   Type: {attack['type']}, Magnitude: {attack['magnitude']:.2f}")
                                     print(f"   Affected {len(dist_sys.ev_stations)} stations")
                                     if 'rl_magnitude' in rl_attack_impact:
@@ -4925,17 +5181,36 @@ class HierarchicalCoSimulation:
                                     # Deactivate attack in CMS
                                     dist_sys.cms.attack_active = False
                                     dist_sys.cms.attack_params = {}
-                                    print(f" Legacy attack deactivated on system {target_sys} at t={self.simulation_time:.1f}s")
+                                
+                                # FIXED: Also clear station-level attack flags so that
+                                # _calculate_real_charging_time(), PINN integration, and
+                                # voltage/power collection stop seeing stale attack state.
+                                if hasattr(dist_sys, 'ev_stations'):
+                                    for station in dist_sys.ev_stations:
+                                        station.attack_active = False
+                                        station.attack_type = None
+                                        station.attack_magnitude = 0
+                                        station.attack_manipulation_factor = 1.0
+                                
+                                print(f" Legacy attack deactivated on system {target_sys} at t={self.simulation_time:.1f}s (CMS + all stations cleared)")
                             attack['stopped'] = True
             
             # Update distribution systems (every 1 second) - EV loads update continuously
             dist_loads = {}
             system_frequency = getattr(self.transmission_system, 'frequency', 60.0)
+            # Guard against NaN frequency from divergent AGC
+            if not np.isfinite(system_frequency):
+                system_frequency = 60.0
             for sys_id, dist_info in self.distribution_systems.items():
                 dist_sys = dist_info['system']
                 
                 # Update EV loads based on CMS control
-                dist_sys.update_ev_loads(self.simulation_time, system_frequency=system_frequency)
+                # Wrapped in try/except to survive transient I/O errors (e.g. OneDrive sync)
+                try:
+                    dist_sys.update_ev_loads(self.simulation_time, system_frequency=system_frequency)
+                except OSError as e:
+                    print(f"  ## I/O error updating system {sys_id} at t={self.simulation_time:.0f}s: {e} (continuing)")
+                    continue
                 
                 # FIXED: Update recovery for all stations to ensure attack recovery progresses
                 if hasattr(dist_sys, 'ev_stations'):
@@ -4968,6 +5243,16 @@ class HierarchicalCoSimulation:
                                 system_frequency = 60.0  # Default frequency
                                 
                                 # Create input features for enhanced PINN
+                                # Clamp previous power to realistic range to prevent feedback explosion.
+                                # FIXED: Use rated capacity as anchor instead of raw current_load.
+                                # During/after attacks, current_load can swing wildly (e.g. 20x→1x),
+                                # causing PINN oscillations.  Use the station's rated capacity as a
+                                # stable reference, blended with actual load for normal variation.
+                                rated_station_mw = getattr(station, 'rated_power_per_port', 7.68) * station.num_ports * 0.7 / 1000.0
+                                raw_load_mw = min(station.current_load, 10000.0) / 1000.0
+                                # Blend: 70% rated capacity + 30% actual load for stability
+                                prev_power_mw = 0.7 * rated_station_mw + 0.3 * raw_load_mw
+                                
                                 input_features = [
                                     station.soc,  # Current SOC
                                     grid_voltage,  # Grid voltage (pu)
@@ -4978,7 +5263,7 @@ class HierarchicalCoSimulation:
                                     self.simulation_time / 3600.0,  # Time in hours
                                     grid_voltage,  # Bus voltage
                                     1.0,  # Base load factor
-                                    station.current_load / 1000.0,  # Previous power (MW)
+                                    prev_power_mw,  # Previous power (MW) - clamped
                                     0.0,  # AC power in (placeholder)
                                     0.85,  # System efficiency (placeholder)
                                     0.0,  # Power balance error (placeholder)
@@ -5001,10 +5286,23 @@ class HierarchicalCoSimulation:
                                         predicted_current = pinn_output[0, 1].item() if len(pinn_output.shape) > 1 else pinn_output[1].item()
                                         predicted_power = pinn_output[0, 2].item() if len(pinn_output.shape) > 1 else pinn_output[2].item()
                                         
-                                        # Update station with enhanced PINN predictions
-                                        station.voltage_measured = predicted_voltage
-                                        station.current_measured = predicted_current
-                                        station.power_measured = predicted_power
+                                        # Enforce per-port capacity floor: PINN may output
+                                        # values far below the station's design capacity.
+                                        rated_pp = getattr(station, 'rated_power_per_port', 7.68)
+                                        if predicted_power < rated_pp:
+                                            predicted_power = rated_pp
+                                            predicted_current = predicted_power * 1000.0 / max(predicted_voltage, 240.0)
+
+                                        # Update station with enhanced PINN predictions (clamped to L2 bounds)
+                                        station.voltage_measured = np.clip(predicted_voltage, 208.0, 240.0)
+                                        station.current_measured = np.clip(predicted_current, 0.0, 32.0)
+                                        station.power_measured = np.clip(predicted_power, 0.0, 7.68)
+                                        
+                                        # CRITICAL: Also update current_load (what get_total_load reads).
+                                        # Scale per-EV power by active ports for total station draw.
+                                        est_util = 0.70
+                                        active_p = max(1, int(station.num_ports * est_util))
+                                        station.current_load = station.power_measured * active_p
                                         
                                         # Update EVCS controller with enhanced references
                                         station.evcs_controller.set_references(predicted_voltage, predicted_current, predicted_power)
@@ -5017,7 +5315,7 @@ class HierarchicalCoSimulation:
                                 except Exception as e:
                                     # Fallback to standard dynamics if PINN fails
                                     if self.simulation_time % 60 == 0:
-                                        print(f"  ⚠️  System {sys_id} EVCS {station.evcs_id}: PINN failed, using standard dynamics: {e}")
+                                        print(f"  ##  System {sys_id} EVCS {station.evcs_id}: PINN failed, using standard dynamics: {e}")
                                     
                                     # Use standard EVCS dynamics as fallback
                                     if hasattr(station.evcs_controller, '_update_dynamics_euler'):
@@ -5027,18 +5325,22 @@ class HierarchicalCoSimulation:
                                             
                                             dynamics_result = station.evcs_controller._update_dynamics_euler(grid_voltage_v, dt_simulation)
                                             
-                                            # Update station with standard dynamics results
-                                            station.voltage_measured = dynamics_result.get('voltage_measured', station.voltage_measured)
-                                            station.current_measured = dynamics_result.get('current_measured', station.current_measured)
-                                            station.power_measured = dynamics_result.get('total_power', station.power_measured)
+                                            # Update station with standard dynamics results (clamped to L2 bounds)
+                                            station.voltage_measured = np.clip(dynamics_result.get('voltage_measured', station.voltage_measured), 208.0, 240.0)
+                                            station.current_measured = np.clip(dynamics_result.get('current_measured', station.current_measured), 0.0, 32.0)
+                                            station.power_measured = np.clip(dynamics_result.get('total_power', station.power_measured), 0.0, 7.68)
+                                            # Update current_load for get_total_load()
+                                            est_util_fb = 0.70
+                                            active_p_fb = max(1, int(station.num_ports * est_util_fb))
+                                            station.current_load = station.power_measured * active_p_fb
                                             
                                         except Exception as fallback_error:
                                             if self.simulation_time % 60 == 0:
-                                                print(f"    ⚠️  Standard dynamics also failed: {fallback_error}")
+                                                print(f"    ##  Standard dynamics also failed: {fallback_error}")
                     
                     except Exception as e:
                                 if self.simulation_time % 60 == 0:
-                                    print(f"  ⚠️  System {sys_id}: Enhanced PINN integration failed: {e}")
+                                    print(f"  ##  System {sys_id}: Enhanced PINN integration failed: {e}")
                 
                 # Update PV and storage DER state before computing total load
                 if hasattr(dist_sys, 'update_der_devices'):
@@ -5115,12 +5417,16 @@ class HierarchicalCoSimulation:
                             total_queue_length += metrics['queue_length']
                             total_utilization += metrics['utilization_rate']
                             station_count += 1
-
-                    
                         
-                    
-                    # NEW: Collect EVCS voltage and power measurements
+                        # NEW: Collect EVCS voltage and power measurements
                         if station_count > 0:
+                            # FIXED: Ensure this system's OpenDSS circuit is active
+                            # before querying bus voltages / load powers.  get_total_load()
+                            # activated it earlier, but another system may have been
+                            # activated in between (e.g. by the transmission update).
+                            if hasattr(dist_sys, '_activate_circuit'):
+                                dist_sys._activate_circuit()
+
                             # Calculate average EVCS voltage and power accounting for multiple ports per station
                             total_evcs_voltage = 0.0
                             total_evcs_power = 0.0
@@ -5132,7 +5438,7 @@ class HierarchicalCoSimulation:
                                 dynamics_state = station.get_charging_metrics(self.simulation_time)
                                 
                                 # Collect voltage measurement - ENHANCED to use actual OpenDSS bus voltage
-                                station_voltage = 400.0  # Default nominal voltage (fallback)
+                                station_voltage = 240.0  # Default L2 nominal voltage (fallback)
 
                                 # IMPROVED: Try to get actual bus voltage from OpenDSS simulation
                                 try:
@@ -5140,21 +5446,13 @@ class HierarchicalCoSimulation:
                                     # Get actual bus voltage from OpenDSS
                                     dist_sys.dss.Circuit.SetActiveBus(bus_name)
                                     bus_voltage_pu = dist_sys.dss.Bus.puVmagAngle()[0]  # Per-unit voltage magnitude
-                                    base_kv = dist_sys.dss.Bus.kVBase()  # Base voltage in kV
 
-                                    # Convert to actual voltage (OpenDSS gives line-to-ground in kV)
-                                    # For EVCS, we want line-to-line DC voltage (typically 400V DC)
-                                    # Grid voltage is AC, EVCS converts to DC
-                                    grid_voltage_kv = bus_voltage_pu * base_kv  # Actual grid voltage in kV
-                                    grid_voltage_v = grid_voltage_kv * 1000  # Convert to volts
+                                    # L2 EVSE provides 240V AC nominal; scale by actual grid p.u. voltage
+                                    # (grid loading appears as voltage sag/swell on the L2 secondary service)
+                                    station_voltage = 240.0 * bus_voltage_pu
 
-                                    # EVCS DC output voltage (after AC-DC conversion)
-                                    # Typical conversion: 480V AC (line-to-line) → 400V DC
-                                    conversion_factor = 0.833  # DC/AC ratio
-                                    station_voltage = grid_voltage_v * conversion_factor
-
-                                    # Ensure realistic bounds (350V to 450V for 400V nominal system)
-                                    station_voltage = np.clip(station_voltage, 350.0, 450.0)
+                                    # Realistic bounds: 216V–264V (±10% of 240V per NEC/NEMA)
+                                    station_voltage = np.clip(station_voltage, 216.0, 264.0)
 
                                 except Exception as e:
                                     # Fallback to measured values if OpenDSS query fails
@@ -5164,23 +5462,21 @@ class HierarchicalCoSimulation:
                                         station_voltage = station.voltage_ref
                                     else:
                                         # Use default with small variation
-                                        station_voltage = 400.0 + np.random.uniform(-5, 5)
+                                        station_voltage = 240.0 + np.random.uniform(-5, 5)
 
-                                # Apply attack-induced voltage drop ONLY if attack scenarios exist and station is under attack
-                                if attack_scenarios and hasattr(station, 'attack_active') and station.attack_active:
-                                    # During attacks, voltage drops based on attack type
-                                    voltage_drop_factor = 0.15  # Default 15% drop
-                                    for attack in attack_scenarios:
-                                        if (attack['start_time'] <= self.simulation_time <=
-                                            attack['start_time'] + attack['duration']):
-                                            voltage_drop_factor = attack.get('voltage_drop_factor', 0.15)
-                                            break
-                                    voltage_drop = station_voltage * voltage_drop_factor
-                                    station_voltage = max(300, station_voltage - voltage_drop)  # Min 300V during attack
-                                else:
-                                    # BENIGN scenario: Keep voltage within normal operating range (390-410V nominal)
-                                    station_voltage = np.clip(station_voltage, 390.0, 410.0)
+                                # Always clamp to physical L2 safety limits (216–264 V).
+                                # Do NOT apply an extra generic voltage drop here — OpenDSS bus
+                                # voltage already reflects load-driven sag/swell, and the
+                                # type-specific attack impact block below applies explicit drops
+                                # (voltage_manipulation, power_disruption, etc.).  Applying a
+                                # blanket 15% drop here AND in the impact block caused double-
+                                # dropping and step-to-step oscillations when attack_active
+                                # toggled every timestep.
+                                station_voltage = float(np.clip(station_voltage, ACN_VOLTAGE_MIN_V, ACN_VOLTAGE_MAX_V))
                                 
+                                # NOTE: V/I/P are written back to station after final
+                                # clamping and attack effects (see block below line 5659).
+
                                 # Collect power measurement - ENHANCED to try using OpenDSS load data
                                 station_power = 0.0
 
@@ -5203,133 +5499,133 @@ class HierarchicalCoSimulation:
                                 # ALWAYS determine active ports for metrics weighting (needed for line 5116)
                                 # Determine active ports based on connection status
                                 if hasattr(station, 'ev_connected') and station.ev_connected:
-                                    active_ports = getattr(station, 'num_ports', 16) - getattr(station, 'available_ports', 0)
+                                    active_ports = getattr(station, 'num_ports', 10) - getattr(station, 'available_ports', 0)
                                     active_ports = max(1, active_ports)
                                 else:
                                     active_sessions = len(getattr(station, 'charging_sessions', []))
                                     if active_sessions > 0:
                                         active_ports = active_sessions
                                     else:
-                                        total_ports = getattr(station, 'num_ports', 16)
+                                        total_ports = getattr(station, 'num_ports', 10)
                                         active_ports = max(1, int(total_ports * 0.8))
 
-                                # If OpenDSS didn't provide valid power, use heuristic calculation
-                                if station_power < 1.0:  # Less than 1 kW means likely failed
-                                    # Use measured/reference power if available
-                                    if hasattr(station, 'power_measured') and station.power_measured > 20.0:
-                                        station_power = station.power_measured
-                                    elif hasattr(station, 'power_reference') and station.power_reference > 20.0:
-                                        station_power = station.power_reference
-                                    else:
-                                        # Heuristic calculation using active_ports
-                                        utilization = dynamics_state.get('utilization', 0.7) if dynamics_state else 0.7
-                                        charging_efficiency = 0.85
-                                        max_power_per_port = 50.0  # kW per port
-                                        base_power = active_ports * max_power_per_port * utilization * charging_efficiency
-                                        variation_factor = np.random.uniform(0.9, 1.1)  # Reduced variation ±10%
-                                        station_power = base_power * variation_factor
+                                # If OpenDSS didn't provide valid power, derive from
+                                # per-port rated power × active ports × voltage-dependent efficiency.
+                                # This keeps P consistent with V (power scales with grid voltage).
+                                # Also reject implausibly large values — SetActiveElement() may silently
+                                # keep the previously active (feeder-level) element, returning MW-scale power.
+                                _station_max_kw = getattr(station, 'num_ports', 10) * ACN_P_MAX_KW * 1.1
+                                if station_power < 1.0 or station_power > _station_max_kw:
+                                    rated_power_per_port = getattr(station, 'rated_power_per_port', ACN_P_MAX_KW)  # kW (7.68)
+                                    # Charger output power scales with DC bus voltage relative to nominal
+                                    voltage_pu = station_voltage / ACN_EVSE_VOLTAGE_V  # per-unit (ACN L2 nominal 240V)
+                                    # Efficiency: AC-DC ~98% × DC-DC ~96% ≈ 94% overall
+                                    overall_efficiency = 0.94
+                                    station_power = active_ports * rated_power_per_port * voltage_pu * overall_efficiency
+                                    # Small stochastic variation: BMS negotiation, cable loss (±3%)
+                                    station_power *= float(np.clip(np.random.normal(1.0, 0.03), 0.90, 1.10))
                                 
                                 
                                 # Apply attack impacts to power, voltage, and current measurements
                                 # ONLY if attack scenarios exist (not in benign baseline)
                                 if attack_scenarios and hasattr(station, 'attack_active') and station.attack_active:
+                                    # Normalise station.attack_type to canonical name
+                                    _ST_ALIAS = {
+                                        'power_manipulation': 'power_disruption',
+                                        'load_manipulation':  'current_injection',
+                                        'demand_increase':    'current_injection',
+                                        'demand_decrease':    'power_disruption',
+                                        'frequency_manipulation': 'data_injection',
+                                        'voltage_spoofing':   'voltage_manipulation',
+                                        'frequency_spoofing': 'data_injection',
+                                        'soc_manipulation':   'communication_spoofing',
+                                        'cyber_attack':       'communication_spoofing',
+                                        'oscillating_demand': 'protocol_manipulation',
+                                        'thermal_attack':     'protocol_manipulation',
+                                    }
+                                    _st_atype = _ST_ALIAS.get(
+                                        getattr(station, 'attack_type', ''),
+                                        getattr(station, 'attack_type', ''))
+
                                     if hasattr(station, 'attack_type') and hasattr(station, 'rl_attack_impact'):
                                         rl_impact = station.rl_attack_impact
-                                        
-                                        if station.attack_type == 'power_manipulation':
-                                            # Apply DRAMATIC RL-suggested power efficiency reduction
-                                            power_reduction = rl_impact.get('power_efficiency_reduction', 0.6)  # 60% reduction
-                                            station_power *= (1.0 - power_reduction)
-                                            # Apply significant voltage drop due to power manipulation
-                                            voltage_drop = station_voltage * power_reduction * 0.3  # 3x more voltage drop
-                                            station_voltage = max(650, station_voltage - voltage_drop)  # Lower voltage floor
-                                            print(f"⚡ Power Attack: {power_reduction*100:.0f}% power reduction, voltage drop to {station_voltage:.0f}V")
-                                            
-                                        elif station.attack_type == 'voltage_manipulation':
-                                            # Apply SEVERE RL-suggested voltage efficiency loss
-                                            voltage_loss = rl_impact.get('voltage_efficiency_loss', 0.5)  # 50% loss
-                                            voltage_drop = station_voltage * voltage_loss * 0.4  # 4x more voltage drop
-                                            station_voltage = max(600, station_voltage - voltage_drop)  # Much lower voltage floor
-                                            # Voltage drop severely affects power output
-                                            power_reduction = voltage_loss * 0.8  # 80% of voltage loss affects power
-                                            station_power *= (1.0 - power_reduction)
-                                            print(f"🔌 Voltage Attack: {voltage_loss*100:.0f}% voltage loss, power reduced by {power_reduction*100:.0f}%")
-                                            
-                                        elif station.attack_type == 'load_manipulation':
-                                            # Apply EXTREME RL-suggested load instability factor
-                                            load_factor = rl_impact.get('load_instability_factor', 3.0)  # 3x instability
-                                            power_variation = min(0.9, (load_factor - 1.0) * 0.8)  # Up to 90% variation
+
+                                        if _st_atype == 'power_disruption':
+                                            power_reduction = rl_impact.get('power_efficiency_reduction', 0.6)
+                                            station_power  *= (1.0 - power_reduction)
+                                            voltage_drop    = station_voltage * power_reduction * 0.3
+                                            station_voltage = max(216.0, station_voltage - voltage_drop)  # L2 min: 0.9 pu × 240 V
+                                            print(f" Power Disruption: {power_reduction*100:.0f}% power reduction, V={station_voltage:.1f}V")
+
+                                        elif _st_atype == 'voltage_manipulation':
+                                            voltage_loss     = rl_impact.get('voltage_efficiency_loss', 0.5)
+                                            voltage_drop     = station_voltage * voltage_loss * 0.4
+                                            station_voltage  = max(200.0, station_voltage - voltage_drop)  # L2 floor
+                                            power_reduction  = voltage_loss * 0.8
+                                            station_power   *= (1.0 - power_reduction)
+                                            print(f" Voltage Manipulation: {voltage_loss*100:.0f}% loss, P reduced {power_reduction*100:.0f}%")
+
+                                        elif _st_atype == 'current_injection':
+                                            load_factor    = rl_impact.get('load_instability_factor', 3.0)
+                                            power_variation = min(0.9, (load_factor - 1.0) * 0.8)
                                             power_multiplier = np.random.uniform(1.0 - power_variation, 1.0 + power_variation)
-                                            station_power *= power_multiplier
-                                            print(f"📊 Load Attack: {load_factor}x instability, power varied by {(power_multiplier-1)*100:.0f}%")
-                                            # Load instability causes severe voltage fluctuations
+                                            station_power  *= power_multiplier
                                             voltage_variation = power_variation * 0.3
                                             voltage_factor = np.random.uniform(1.0 - voltage_variation, 1.0 + voltage_variation)
-                                            station_voltage *= voltage_factor
-                                            station_voltage = max(720, min(850, station_voltage))
-                                            
-                                        elif station.attack_type in ['demand_increase', 'demand_decrease']:
-                                            # Apply RL-suggested demand instability factor
-                                            demand_factor = rl_impact.get('demand_instability_factor', 1.3)
-                                            if station.attack_type == 'demand_increase':
-                                                power_reduction = min(0.4, (demand_factor - 1.0) * 0.8)
-                                                station_power *= (1.0 - power_reduction)
-                                            else:  # demand_decrease
-                                                power_variation = min(0.3, (demand_factor - 1.0) * 0.6)
-                                                station_power *= np.random.uniform(1.0 - power_variation, 1.0 + power_variation)
-                                            # Demand changes affect voltage stability
-                                            voltage_variation = min(0.1, (demand_factor - 1.0) * 0.2)
-                                            voltage_factor = np.random.uniform(1.0 - voltage_variation, 1.0 + voltage_variation)
-                                            station_voltage *= voltage_factor
-                                            station_voltage = max(750, min(830, station_voltage))
-                                            
-                                        elif station.attack_type == 'frequency_manipulation':
-                                            # Apply RL-suggested frequency efficiency loss
+                                            station_voltage = np.clip(station_voltage * voltage_factor, 216.0, 264.0)  # L2 ±10%
+                                            print(f" Current Injection: power varied {(power_multiplier-1)*100:.0f}%")
+
+                                        elif _st_atype == 'data_injection':
                                             freq_loss = rl_impact.get('frequency_efficiency_loss', 0.15)
                                             station_power *= (1.0 - freq_loss)
-                                            # Frequency issues cause minor voltage variations
                                             voltage_variation = freq_loss * 0.5
                                             voltage_factor = np.random.uniform(1.0 - voltage_variation, 1.0 + voltage_variation)
-                                            station_voltage *= voltage_factor
-                                            station_voltage = max(770, min(820, station_voltage))
-                                    
-                                    # Fallback for attacks without RL impact data - DRAMATIC EFFECTS
-                                    elif hasattr(station, 'attack_type'):
-                                        if station.attack_type == 'power_manipulation':
-                                            attack_factor = getattr(station, 'attack_manipulation_factor', 0.3)  # 70% power reduction
-                                            station_power *= attack_factor
-                                            station_voltage *= 0.75  # 25% voltage drop
-                                            print(f"⚡ Fallback Power Attack: {(1-attack_factor)*100:.0f}% power reduction")
-                                        elif station.attack_type == 'load_manipulation':
-                                            station_power *= np.random.uniform(0.2, 2.5)  # More extreme variation
-                                            station_voltage *= np.random.uniform(0.8, 1.15)  # Wider voltage swing
-                                            print(f"📊 Fallback Load Attack: Extreme power/voltage variation")
-                                        elif station.attack_type == 'voltage_manipulation':
-                                            station_voltage *= np.random.uniform(0.6, 0.8)  # 20-40% voltage drop
-                                            station_power *= 0.5  # 50% power drop with voltage
-                                            print(f"🔌 Fallback Voltage Attack: Severe voltage drop")
-                                
-                                # Collect current measurement - calculate from power and voltage
-                                station_current = 0.0
-                                
-                                # Use measured current if available and realistic
-                                if hasattr(station, 'current_measured') and station.current_measured > 1.0:
-                                    station_current = station.current_measured
-                                elif hasattr(station, 'ac_current_rms') and station.ac_current_rms > 1.0:
-                                    station_current = station.ac_current_rms
-                                elif station_power > 0 and station_voltage > 0:
-                                    # Calculate current from power and voltage (P = V*I)
-                                    station_current = station_power * 1000 / station_voltage  # Convert kW to W
-                                else:
-                                    # Minimal current for standby
-                                    station_current = np.random.uniform(1.0, 5.0)  # A
-                                
-                                # Apply minor voltage drop under heavy loading (realistic grid behavior)
-                                if station_power > 200:  # High power operation
-                                    power_factor = 1  # Normalize to max expected power
-                                    voltage_drop = 0 * power_factor  # Up to 5V drop under full load
-                                    station_voltage = max(780, station_voltage - voltage_drop)  # Keep above 780V
+                                            station_voltage = np.clip(station_voltage * voltage_factor, 216.0, 264.0)
 
+                                    # Fallback for attacks without RL impact data
+                                    elif hasattr(station, 'attack_type'):
+                                        if _st_atype == 'power_disruption':
+                                            attack_factor = getattr(station, 'attack_manipulation_factor', 0.3)
+                                            station_power  *= attack_factor
+                                            station_voltage = max(216.0, station_voltage * 0.9)
+                                            print(f" Fallback Power Disruption: {(1-attack_factor)*100:.0f}% reduction")
+                                        elif _st_atype == 'current_injection':
+                                            station_power   *= np.random.uniform(0.2, 2.5)
+                                            station_voltage  = np.clip(station_voltage * np.random.uniform(0.85, 1.10), 216.0, 264.0)
+                                            print(f" Fallback Current Injection: Power/voltage variation")
+                                        elif _st_atype == 'voltage_manipulation':
+                                            station_voltage  = max(200.0, station_voltage * np.random.uniform(0.7, 0.9))
+                                            station_power   *= 0.5
+                                            print(f" Fallback Voltage Manipulation: voltage drop")
+                                
+                                # ── CURRENT: always derived from final V and P ──
+                                # This guarantees V * I = P at every timestep.
+                                # Never use current_measured / ac_current_rms here because
+                                # those come from the ODE solver and may not match the
+                                # voltage and power values collected above.
+                                if station_power > 0 and station_voltage > 0:
+                                    station_current = (station_power * 1000.0) / station_voltage  # A = W / V
+                                else:
+                                    station_current = 0.0  # No power → no current
+
+                                # Clamp V and P to physically realistic bounds, then
+                                # re-derive I so that V*I=P is preserved after clamping.
+                                station_voltage = float(np.clip(station_voltage, 0.0, 1000.0))   # Max 1000V
+                                _p_max_kw = getattr(station, 'num_ports', 10) * ACN_P_MAX_KW * 1.1  # ~84 kW for 10-port L2
+                                station_power = float(np.clip(station_power, 0.0, _p_max_kw))
+                                if station_power > 0 and station_voltage > 0:
+                                    station_current = (station_power * 1000.0) / station_voltage
+                                # Station-level current limit: num_ports × ACN max pilot signal
+                                _max_station_i = getattr(station, 'num_ports', 10) * ACN_MAX_PILOT_A * 1.1
+                                station_current = float(np.clip(station_current, 0.0, _max_station_i))
+
+                                # FIXED: Write final clamped V/I/P back to the station so
+                                # that _calculate_real_charging_time() and other methods
+                                # always see the same OpenDSS-consistent values.
+                                station.voltage_measured = station_voltage
+                                station.current_measured = station_current
+                                station.power_measured = station_power
+                                
                                 # ADDED: Store per-station data for detailed plotting
                                 station_id = station.evcs_id
                                 if station_id not in self.results['evcs_voltage_data'][sys_id]:
@@ -5355,7 +5651,7 @@ class HierarchicalCoSimulation:
                                 avg_evcs_current = total_evcs_current / total_active_ports
                             else:
                                 # Fallback to station-based averaging if no active ports detected
-                                avg_evcs_voltage = total_evcs_voltage / station_count if station_count > 0 else 400.0
+                                avg_evcs_voltage = total_evcs_voltage / station_count if station_count > 0 else ACN_EVSE_VOLTAGE_V
                                 avg_evcs_power = total_evcs_power / station_count if station_count > 0 else 0.0
                                 avg_evcs_current = total_evcs_current / station_count if station_count > 0 else 0.0
                             
@@ -5388,15 +5684,24 @@ class HierarchicalCoSimulation:
                                 avg_utilization = total_utilization / max(station_count, 1)
                             except (ZeroDivisionError, ArithmeticError) as e:
                                 # Fallback values if division errors occur
-                                avg_charging_time = 30.0  # Default charging time
+                                avg_charging_time = 45.0  # Default DC fast baseline
                                 avg_queue_length = 0.0
                                 avg_utilization = 0.0
                             
                             # Calculate customer satisfaction based on charging time and queue length
-                            # Add safeguard against division by zero
+                            # Use each system's actual baseline (from rated_power_per_port) instead of hardcoded 45 min
                             try:
-                                satisfaction = max(0.0, 1.0 - (avg_charging_time - 30.0) / max(30.0, 1.0) - avg_queue_length * 0.1)
-                                satisfaction = max(0.0, min(1.0, satisfaction))
+                                # Compute system's average baseline charging time from station configs
+                                baseline_times = []
+                                for st in dist_sys.ev_stations:
+                                    rp = getattr(st, 'rated_power_per_port', 7.68)
+                                    baseline_times.append((36.0 / max(1.0, rp)) * 60.0)
+                                system_baseline = sum(baseline_times) / max(len(baseline_times), 1)
+                                
+                                # Satisfaction drops as charging time exceeds baseline, and as queue grows
+                                time_penalty = (avg_charging_time - system_baseline) / max(system_baseline, 1.0)
+                                queue_penalty = avg_queue_length * 0.1
+                                satisfaction = max(0.0, min(1.0, 1.0 - time_penalty - queue_penalty))
                             except (ZeroDivisionError, ArithmeticError):
                                 satisfaction = 0.5  # Default satisfaction
                             
@@ -5420,7 +5725,7 @@ class HierarchicalCoSimulation:
                                 self.current_metrics[sys_id] = {}
                             
                             self.current_metrics[sys_id].update({
-                                'charging_time': 30.0,
+                                'charging_time': 45.0,
                                 'queue_length': 0.0,
                                 'utilization': 0.0,
                                 'satisfaction': 1.0
@@ -5436,23 +5741,24 @@ class HierarchicalCoSimulation:
                             self.current_metrics[sys_id] = {}
                         
                         self.current_metrics[sys_id].update({
-                            'charging_time': 30.0,
+                            'charging_time': 45.0,
                             'queue_length': 0.0,
                             'utilization': 0.0,
                             'satisfaction': 1.0
                         })
             
-            # Update transmission system with distribution loads and current time
+            # Update transmission system with distribution loads
             self.transmission_system.current_simulation_time = self.simulation_time
             self.transmission_system.update_distribution_load(dist_loads)
-            self.transmission_system.update_frequency(self.dist_dt)
+            # NOTE: update_frequency() is called ONLY from within update_agc_reference()
+            # to avoid double-advancing the swing equation ODE state.
             
-            # AGC updates (every 5 seconds)
+            # AGC updates (every agc_dt seconds)
             if self.simulation_time % self.agc_dt == 0:
                 self.transmission_system.update_agc_reference(self.simulation_time)
                 self.results['agc_updates'].append(self.simulation_time)
             
-            # Central coordination updates (every 10 seconds)
+            # Central coordination updates (every coordination_dt seconds)
             if self.simulation_time % self.coordination_dt == 0:
                 # Update global status
                 self.central_coordinator.update_global_status(self.simulation_time)
@@ -5484,7 +5790,7 @@ class HierarchicalCoSimulation:
                             self.results['customer_satisfaction_timestamps'][sys_id].append(self.simulation_time)
                         else:
                             # Default values if no metrics available
-                            self.results['charging_time_data'][sys_id].append(30.0)
+                            self.results['charging_time_data'][sys_id].append(45.0)
                             self.results['charging_time_timestamps'][sys_id].append(self.simulation_time)
                             self.results['queue_management_data'][sys_id].append(0.0)
                             self.results['queue_management_timestamps'][sys_id].append(self.simulation_time)
@@ -5806,13 +6112,13 @@ class HierarchicalCoSimulation:
         # Check and fix all data arrays to have consistent length
         for key in ['reference_power', 'total_load', 'frequency']:
             if key in self.results and len(self.results[key]) != min_length:
-                print(f"⚠️ Array length mismatch: {key}={len(self.results[key])}, time={min_length}, using min_length={min_length}")
+                print(f"## Array length mismatch: {key}={len(self.results[key])}, time={min_length}, using min_length={min_length}")
                 self.results[key] = self.results[key][:min_length]
         
         # Fix distribution loads arrays
         for sys_id, loads in self.results['dist_loads'].items():
             if len(loads) != min_length:
-                print(f"⚠️ Array length mismatch: dist_loads[{sys_id}]={len(loads)}, time={min_length}, using min_length={min_length}")
+                print(f"## Array length mismatch: dist_loads[{sys_id}]={len(loads)}, time={min_length}, using min_length={min_length}")
                 self.results['dist_loads'][sys_id] = loads[:min_length]
         
         # Create a large figure with multiple subplots for comprehensive analysis
@@ -6103,7 +6409,7 @@ class HierarchicalCoSimulation:
         plt.savefig(f'sub_figures/utilization_rate_{timestamp}.pdf', format='pdf', bbox_inches='tight')
         plt.close(fig_7)
         
-        print(f"\n✅ First 7 hierarchical subplots saved as individual PDFs in 'sub_figures/' directory:")
+        print(f"\n## First 7 hierarchical subplots saved as individual PDFs in 'sub_figures/' directory:")
         print(f"   1. frequency_response_{timestamp}.pdf")
         print(f"   2. reference_vs_distribution_load_{timestamp}.pdf")
         print(f"   3. individual_distribution_loads_{timestamp}.pdf")
@@ -6382,22 +6688,23 @@ class HierarchicalCoSimulation:
                 axes[idx].set_ylabel('Voltage (V)', fontsize=18)
                 axes[idx].set_title(f'Distribution System {sys_id} ({station_count} EVCS)', fontsize=16, fontweight='bold')
 
-                # Add voltage reference line (400V rated voltage)
-                axes[idx].axhline(y=400.0, color='r', linestyle='--', alpha=0.7, linewidth=2,
-                                   label='Rated (400V)')
+                # Add voltage reference line (ACN L2 nominal: 240V)
+                axes[idx].axhline(y=ACN_EVSE_VOLTAGE_V, color='r', linestyle='--', alpha=0.7, linewidth=2,
+                                   label=f'Rated ({ACN_EVSE_VOLTAGE_V:.0f}V)')
 
-                # Add voltage bandwidth limits
-                axes[idx].axhline(y=410.0, color='orange', linestyle=':', alpha=0.5,
-                                   label='Upper (410V)')
-                axes[idx].axhline(y=390.0, color='orange', linestyle=':', alpha=0.5,
-                                   label='Lower (390V)')
+                # Add voltage bandwidth limits (ACN ±5% operating band)
+                axes[idx].axhline(y=ACN_EVSE_VOLTAGE_V * 1.05, color='orange', linestyle=':', alpha=0.5,
+                                   label=f'Upper ({ACN_EVSE_VOLTAGE_V * 1.05:.0f}V)')
+                axes[idx].axhline(y=ACN_EVSE_VOLTAGE_V * 0.95, color='orange', linestyle=':', alpha=0.5,
+                                   label=f'Lower ({ACN_EVSE_VOLTAGE_V * 0.95:.0f}V)')
 
                 # Add legend with smaller font if many stations
                 legend_fontsize = 10 if station_count > 6 else 12
                 axes[idx].legend(fontsize=legend_fontsize, loc='best', ncol=2)
 
-                # Set y-axis limits with some margin
-                all_voltages = [v for data in voltage_data_dict.values() for v in data]
+                # Set y-axis limits with some margin (filter NaN/Inf)
+                all_voltages = [v for data in voltage_data_dict.values() for v in data
+                                if isinstance(v, (int, float)) and math.isfinite(v)]
                 if len(all_voltages) > 0:
                     min_voltage = min(all_voltages)
                     max_voltage = max(all_voltages)
@@ -6476,8 +6783,9 @@ class HierarchicalCoSimulation:
                 legend_fontsize = 10 if station_count > 6 else 12
                 axes[idx].legend(fontsize=legend_fontsize, loc='best', ncol=2)
 
-                # Set y-axis limits with some margin
-                all_power = [v for data in power_data_dict.values() for v in data]
+                # Set y-axis limits with some margin (filter NaN/Inf)
+                all_power = [v for data in power_data_dict.values() for v in data
+                             if isinstance(v, (int, float)) and math.isfinite(v)]
                 if len(all_power) > 0:
                     min_power = min(all_power)
                     max_power = max(all_power)
@@ -6547,8 +6855,10 @@ class HierarchicalCoSimulation:
 
                 # Add current reference line (if available)
                 if hasattr(self, 'total_evcs_capacity') and self.total_evcs_capacity:
-                    axes[idx].axhline(y=self.total_evcs_capacity / 400.0 * 125, color='r', linestyle='--',
-                                       alpha=0.7, linewidth=2, label='Rated (125A)')
+                    # Rated station current = total_kW × 1000 / ACN_EVSE_VOLTAGE_V
+                    _rated_i = self.total_evcs_capacity * 1000.0 / ACN_EVSE_VOLTAGE_V
+                    axes[idx].axhline(y=_rated_i, color='r', linestyle='--',
+                                       alpha=0.7, linewidth=2, label=f'Rated ({ACN_MAX_PILOT_A:.0f}A/port)')
 
                 # Add zero current line for reference
                 axes[idx].axhline(y=0.0, color='k', linestyle='-', alpha=0.3,
@@ -6558,8 +6868,9 @@ class HierarchicalCoSimulation:
                 legend_fontsize = 10 if station_count > 6 else 12
                 axes[idx].legend(fontsize=legend_fontsize, loc='best', ncol=2)
 
-                # Set y-axis limits with some margin
-                all_current = [v for data in current_data_dict.values() for v in data]
+                # Set y-axis limits with some margin (filter NaN/Inf)
+                all_current = [v for data in current_data_dict.values() for v in data
+                               if isinstance(v, (int, float)) and math.isfinite(v)]
                 if len(all_current) > 0:
                     min_current = min(all_current)
                     max_current = max(all_current)
@@ -6821,7 +7132,7 @@ class HierarchicalCoSimulation:
             plt.savefig(f'sub_figures/attack_impact_summary_{timestamp}.pdf', format='pdf', bbox_inches='tight')
             plt.close(fig6)
         
-        print(f"✅ Individual subplot PDFs saved in 'sub_figures/' directory:")
+        print(f"## Individual subplot PDFs saved in 'sub_figures/' directory:")
         print(f"   1. frequency_response_{timestamp}.pdf")
         print(f"   2. reference_vs_distribution_load_{timestamp}.pdf")
         print(f"   3. individual_distribution_loads_{timestamp}.pdf")
@@ -6887,8 +7198,8 @@ class HierarchicalCoSimulation:
                     'min_charging_time': min(charging_times),
                     'max_charging_time': max(charging_times),
                     'charging_time_std': np.std(charging_times),
-                    'normal_charging_time': 30.0,  # Baseline
-                    'charging_time_variation': (max(charging_times) - min(charging_times)) / 30.0
+                    'normal_charging_time': 45.0,  # DC fast baseline (minutes)
+                    'charging_time_variation': (max(charging_times) - min(charging_times)) / 45.0
                 }
             
             # Queue management statistics
@@ -6958,7 +7269,7 @@ class HierarchicalCoSimulation:
         if all_charging_times:
             stats['global_charging_metrics'] = {
                 'avg_charging_time': np.mean(all_charging_times),
-                'charging_time_efficiency': 30.0 / np.mean(all_charging_times),  # Normalized to baseline
+                'charging_time_efficiency': 45.0 / np.mean(all_charging_times),  # Normalized to DC fast baseline
                 'avg_queue_length': np.mean(all_queue_lengths),
                 'avg_customer_satisfaction': np.mean(all_satisfaction),
                 'avg_utilization': np.mean(all_utilization),
@@ -6993,15 +7304,15 @@ if __name__ == "__main__":
         attack_scenarios = [
             {
                 'target_system': 0,  # System 0 (first system)
-                'type': 'power_manipulation',
-                'magnitude': 0.6,  # 40% power reduction
+                'type': 'power_disruption',
+                'magnitude': 0.6,
                 'start_time': 300.0,
                 'duration': 30.0
             },
             {
                 'target_system': 2,  # System 2 (third system)
-                'type': 'load_manipulation',
-                'magnitude': 0.7,  # 30% load increase
+                'type': 'current_injection',
+                'magnitude': 0.7,
                 'start_time': 500.0,
                 'duration': 25.0
             },

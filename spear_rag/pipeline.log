@@ -1,0 +1,1334 @@
+2026-02-04 19:31:01 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-04 19:31:01 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-04 19:31:01 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-04 19:31:01 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-04 19:31:01 | INFO     | Initialized MITRECollector
+2026-02-04 19:31:01 | INFO     | Initialized STRIDECollector
+2026-02-04 19:31:01 | INFO     | Initialized CICEVSECollector
+2026-02-04 19:31:01 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-04 19:31:01 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-04 19:31:04 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-04 19:31:04 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-04 19:31:04 | INFO     | Collection 'evse_vulnerability_db' initialized with 0 documents
+2026-02-04 19:31:04 | INFO     | ================================================================================
+2026-02-04 19:31:04 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-04 19:31:04 | INFO     | ================================================================================
+2026-02-04 19:31:04 | INFO     | ================================================================================
+2026-02-04 19:31:04 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-04 19:31:04 | INFO     | ================================================================================
+2026-02-04 19:31:04 | INFO     | Starting CVE collection from 2022-01-01, max results: 100
+2026-02-04 19:31:04 | ERROR    | NVD API error: 404
+2026-02-04 19:31:05 | ERROR    | NVD API error: 404
+2026-02-04 19:31:06 | ERROR    | NVD API error: 404
+2026-02-04 19:31:07 | ERROR    | NVD API error: 404
+2026-02-04 19:31:08 | ERROR    | NVD API error: 404
+2026-02-04 19:31:09 | ERROR    | NVD API error: 404
+2026-02-04 19:31:10 | ERROR    | NVD API error: 404
+2026-02-04 19:31:11 | ERROR    | NVD API error: 404
+2026-02-04 19:31:12 | ERROR    | NVD API error: 404
+2026-02-04 19:31:13 | ERROR    | NVD API error: 404
+2026-02-04 19:31:14 | ERROR    | NVD API error: 404
+2026-02-04 19:31:14 | ERROR    | NVD API error: 404
+2026-02-04 19:31:15 | ERROR    | NVD API error: 404
+2026-02-04 19:31:16 | ERROR    | NVD API error: 404
+2026-02-04 19:31:17 | ERROR    | NVD API error: 404
+2026-02-04 19:31:18 | ERROR    | NVD API error: 404
+2026-02-04 19:31:19 | ERROR    | NVD API error: 404
+2026-02-04 19:31:20 | ERROR    | NVD API error: 404
+2026-02-04 19:31:21 | ERROR    | NVD API error: 404
+2026-02-04 19:31:22 | ERROR    | NVD API error: 404
+2026-02-04 19:31:23 | ERROR    | NVD API error: 404
+2026-02-04 19:31:24 | ERROR    | NVD API error: 404
+2026-02-04 19:31:24 | INFO     | Collected 0 unique CVEs
+2026-02-04 19:31:24 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-04 19:31:24 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-04 19:31:24 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-04 19:31:24 | INFO     | ================================================================================
+2026-02-04 19:31:24 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-04 19:31:24 | INFO     | ================================================================================
+2026-02-04 19:31:24 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-04 19:31:25 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-04 19:31:25 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-04 19:31:25 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-04 19:31:25 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-04 19:31:25 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:31:25 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-04 19:31:25 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-04 19:31:25 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:31:25 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-04 19:31:25 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-04 19:31:25 | INFO     | ================================================================================
+2026-02-04 19:31:25 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-04 19:31:28 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-04 19:31:28 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-04 19:31:28 | INFO     | Identified 14 attack patterns
+2026-02-04 19:31:28 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-04 19:31:28 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-04 19:31:28 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-04 19:31:28 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-04 19:31:28 | INFO     | ================================================================================
+2026-02-04 19:31:28 | INFO     | PHASE 6: Generating Embeddings and Populating Vector DB
+2026-02-04 19:31:28 | INFO     | ================================================================================
+2026-02-04 19:31:28 | INFO     | Generating embeddings for 136 documents
+2026-02-04 19:31:28 | INFO     | Embedding 136 texts in batches of 32
+2026-02-04 19:31:30 | INFO     | Generated 136 embeddings
+2026-02-04 19:31:30 | INFO     | Populating vector database with 136 documents
+2026-02-04 19:31:30 | INFO     | Adding 136 documents to collection
+2026-02-04 19:31:30 | ERROR    | Failed to add documents: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:31:30 | ERROR    | Pipeline failed with error: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:31:30 | ERROR    | Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+Traceback (most recent call last):
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 140, in <module>
+    main()
+    └ <function main at 0x00000265EB117E20>
+
+> File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 107, in main
+    pipeline.run_full_pipeline(
+    │        └ <function VulnerabilityDBPipeline.run_full_pipeline at 0x00000265CB25B740>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x00000265EAF856A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 250, in run_full_pipeline
+    self.populate_vector_db(all_documents, embeddings)
+    │    │                  │              └ [[-0.06339219212532043, 0.06224927678704262, 0.0286185834556818, 0.037089962512254715, 0.043905533850193024, -0.0782487615942...
+    │    │                  └ [VulnerabilityDocument(doc_id='UNKNOWN', type='mitre_technique', title='Block Command Message', description='Adversaries may ...
+    │    └ <function VulnerabilityDBPipeline.populate_vector_db at 0x00000265CB25B6A0>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x00000265EAF856A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 190, in populate_vector_db
+    self.db_manager.add_documents(documents, embeddings)
+    │    │          │             │          └ [[-0.06339219212532043, 0.06224927678704262, 0.0286185834556818, 0.037089962512254715, 0.043905533850193024, -0.0782487615942...
+    │    │          │             └ [VulnerabilityDocument(doc_id='UNKNOWN', type='mitre_technique', title='Block Command Message', description='Adversaries may ...
+    │    │          └ <function ChromaDBManager.add_documents at 0x0000026595B92B60>
+    │    └ <vector_db.chroma_manager.ChromaDBManager object at 0x00000265CB633380>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x00000265EAF856A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\vector_db\chroma_manager.py", line 67, in add_documents
+    self.collection.add(
+    │    │          └ <function Collection.add at 0x0000026594524A40>
+    │    └ Collection(name=evse_vulnerability_db)
+    └ <vector_db.chroma_manager.ChromaDBManager object at 0x00000265CB633380>
+
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\Collection.py", line 106, in add
+    add_request = self._validate_and_prepare_add_request(
+                  │    └ <function CollectionCommon._validate_and_prepare_add_request at 0x00000265944FFB00>
+                  └ Collection(name=evse_vulnerability_db)
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\CollectionCommon.py", line 103, in wrapper
+    return func(self, *args, **kwargs)
+           │    │      │       └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+           │    │      └ ()
+           │    └ Collection(name=evse_vulnerability_db)
+           └ <function CollectionCommon._validate_and_prepare_add_request at 0x00000265944FFA60>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\CollectionCommon.py", line 235, in _validate_and_prepare_add_request
+    validate_insert_record_set(record_set=add_records)
+    │                                     └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+    └ <function validate_insert_record_set at 0x0000026593C88680>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\types.py", line 445, in validate_insert_record_set
+    validate_ids(record_set["ids"])
+    │            └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+    └ <function validate_ids at 0x0000026593C89D00>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\types.py", line 1014, in validate_ids
+    raise errors.DuplicateIDError(message)
+          │      │                └ 'Expected IDs to be unique, found duplicates of: UNKNOWN'
+          │      └ <class 'chromadb.errors.DuplicateIDError'>
+          └ <module 'chromadb.errors' from 'C:\\Users\\zakaria1\\AppData\\Roaming\\Python\\Python313\\site-packages\\chromadb\\errors.py'>
+
+chromadb.errors.DuplicateIDError: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:33:54 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-04 19:33:54 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-04 19:33:54 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-04 19:33:54 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-04 19:33:54 | INFO     | Initialized MITRECollector
+2026-02-04 19:33:54 | INFO     | Initialized STRIDECollector
+2026-02-04 19:33:54 | INFO     | Initialized CICEVSECollector
+2026-02-04 19:33:54 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-04 19:33:54 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-04 19:33:55 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-04 19:33:55 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-04 19:33:55 | INFO     | Collection 'evse_vulnerability_db' initialized with 0 documents
+2026-02-04 19:33:55 | INFO     | ================================================================================
+2026-02-04 19:33:55 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-04 19:33:55 | INFO     | ================================================================================
+2026-02-04 19:33:55 | INFO     | ================================================================================
+2026-02-04 19:33:55 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-04 19:33:55 | INFO     | ================================================================================
+2026-02-04 19:33:55 | INFO     | Starting CVE collection from 2022-01-01, max results: 100
+2026-02-04 19:33:55 | ERROR    | NVD API error: 404
+2026-02-04 19:33:56 | ERROR    | NVD API error: 404
+2026-02-04 19:33:57 | ERROR    | NVD API error: 404
+2026-02-04 19:33:58 | ERROR    | NVD API error: 404
+2026-02-04 19:33:59 | ERROR    | NVD API error: 404
+2026-02-04 19:34:00 | ERROR    | NVD API error: 404
+2026-02-04 19:34:01 | ERROR    | NVD API error: 404
+2026-02-04 19:34:02 | ERROR    | NVD API error: 404
+2026-02-04 19:34:03 | ERROR    | NVD API error: 404
+2026-02-04 19:34:04 | ERROR    | NVD API error: 404
+2026-02-04 19:34:05 | ERROR    | NVD API error: 404
+2026-02-04 19:34:06 | ERROR    | NVD API error: 404
+2026-02-04 19:34:07 | ERROR    | NVD API error: 404
+2026-02-04 19:34:08 | ERROR    | NVD API error: 404
+2026-02-04 19:34:08 | ERROR    | NVD API error: 404
+2026-02-04 19:34:09 | ERROR    | NVD API error: 404
+2026-02-04 19:34:10 | ERROR    | NVD API error: 404
+2026-02-04 19:34:11 | ERROR    | NVD API error: 404
+2026-02-04 19:34:12 | ERROR    | NVD API error: 404
+2026-02-04 19:34:13 | ERROR    | NVD API error: 404
+2026-02-04 19:34:14 | ERROR    | NVD API error: 404
+2026-02-04 19:34:15 | ERROR    | NVD API error: 404
+2026-02-04 19:34:15 | INFO     | Collected 0 unique CVEs
+2026-02-04 19:34:15 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-04 19:34:15 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-04 19:34:15 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-04 19:34:15 | INFO     | ================================================================================
+2026-02-04 19:34:15 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-04 19:34:15 | INFO     | ================================================================================
+2026-02-04 19:34:15 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-04 19:34:16 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-04 19:34:16 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-04 19:34:16 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-04 19:34:16 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-04 19:34:16 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:34:16 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-04 19:34:16 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-04 19:34:16 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:34:16 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-04 19:34:16 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-04 19:34:16 | INFO     | ================================================================================
+2026-02-04 19:34:16 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-04 19:34:18 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-04 19:34:18 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-04 19:34:19 | INFO     | Identified 14 attack patterns
+2026-02-04 19:34:19 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-04 19:34:19 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-04 19:34:19 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-04 19:34:19 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-04 19:34:19 | INFO     | ================================================================================
+2026-02-04 19:34:19 | INFO     | PHASE 6: Generating Embeddings and Populating Vector DB
+2026-02-04 19:34:19 | INFO     | ================================================================================
+2026-02-04 19:34:19 | INFO     | Generating embeddings for 136 documents
+2026-02-04 19:34:19 | INFO     | Embedding 136 texts in batches of 32
+2026-02-04 19:34:20 | INFO     | Generated 136 embeddings
+2026-02-04 19:34:20 | INFO     | Populating vector database with 136 documents
+2026-02-04 19:34:20 | INFO     | Adding 136 documents to collection
+2026-02-04 19:34:20 | ERROR    | Failed to add documents: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:34:20 | ERROR    | Pipeline failed with error: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:34:20 | ERROR    | Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+Traceback (most recent call last):
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 140, in <module>
+    main()
+    └ <function main at 0x000001DD15977E20>
+
+> File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 107, in main
+    pipeline.run_full_pipeline(
+    │        └ <function VulnerabilityDBPipeline.run_full_pipeline at 0x000001DD75A9B740>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x000001DD157956A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 250, in run_full_pipeline
+    self.populate_vector_db(all_documents, embeddings)
+    │    │                  │              └ [[-0.06339219212532043, 0.06224927678704262, 0.0286185834556818, 0.037089962512254715, 0.043905533850193024, -0.0782487615942...
+    │    │                  └ [VulnerabilityDocument(doc_id='UNKNOWN', type='mitre_technique', title='Block Command Message', description='Adversaries may ...
+    │    └ <function VulnerabilityDBPipeline.populate_vector_db at 0x000001DD75A9B6A0>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x000001DD157956A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 190, in populate_vector_db
+    self.db_manager.add_documents(documents, embeddings)
+    │    │          │             │          └ [[-0.06339219212532043, 0.06224927678704262, 0.0286185834556818, 0.037089962512254715, 0.043905533850193024, -0.0782487615942...
+    │    │          │             └ [VulnerabilityDocument(doc_id='UNKNOWN', type='mitre_technique', title='Block Command Message', description='Adversaries may ...
+    │    │          └ <function ChromaDBManager.add_documents at 0x000001DD40396B60>
+    │    └ <vector_db.chroma_manager.ChromaDBManager object at 0x000001DD75ABB230>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x000001DD157956A0>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\vector_db\chroma_manager.py", line 67, in add_documents
+    self.collection.add(
+    │    │          └ <function Collection.add at 0x000001DD3ED24A40>
+    │    └ Collection(name=evse_vulnerability_db)
+    └ <vector_db.chroma_manager.ChromaDBManager object at 0x000001DD75ABB230>
+
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\Collection.py", line 106, in add
+    add_request = self._validate_and_prepare_add_request(
+                  │    └ <function CollectionCommon._validate_and_prepare_add_request at 0x000001DD3ECFFB00>
+                  └ Collection(name=evse_vulnerability_db)
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\CollectionCommon.py", line 103, in wrapper
+    return func(self, *args, **kwargs)
+           │    │      │       └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+           │    │      └ ()
+           │    └ Collection(name=evse_vulnerability_db)
+           └ <function CollectionCommon._validate_and_prepare_add_request at 0x000001DD3ECFFA60>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\models\CollectionCommon.py", line 235, in _validate_and_prepare_add_request
+    validate_insert_record_set(record_set=add_records)
+    │                                     └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+    └ <function validate_insert_record_set at 0x000001DD3E48C680>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\types.py", line 445, in validate_insert_record_set
+    validate_ids(record_set["ids"])
+    │            └ {'ids': ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'UNKNO...
+    └ <function validate_ids at 0x000001DD3E48DD00>
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\chromadb\api\types.py", line 1014, in validate_ids
+    raise errors.DuplicateIDError(message)
+          │      │                └ 'Expected IDs to be unique, found duplicates of: UNKNOWN'
+          │      └ <class 'chromadb.errors.DuplicateIDError'>
+          └ <module 'chromadb.errors' from 'C:\\Users\\zakaria1\\AppData\\Roaming\\Python\\Python313\\site-packages\\chromadb\\errors.py'>
+
+chromadb.errors.DuplicateIDError: Expected IDs to be unique, found duplicates of: UNKNOWN in add.
+2026-02-04 19:38:31 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-04 19:38:31 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-04 19:38:31 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-04 19:38:31 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-04 19:38:31 | INFO     | Initialized MITRECollector
+2026-02-04 19:38:31 | INFO     | Initialized STRIDECollector
+2026-02-04 19:38:31 | INFO     | Initialized CICEVSECollector
+2026-02-04 19:38:31 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-04 19:38:31 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-04 19:38:32 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-04 19:38:32 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-04 19:38:32 | INFO     | Collection 'evse_vulnerability_db' initialized with 0 documents
+2026-02-04 19:38:32 | INFO     | ================================================================================
+2026-02-04 19:38:32 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-04 19:38:32 | INFO     | ================================================================================
+2026-02-04 19:38:32 | INFO     | ================================================================================
+2026-02-04 19:38:32 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-04 19:38:32 | INFO     | ================================================================================
+2026-02-04 19:38:32 | INFO     | Starting CVE collection from 2022-01-01, max results: 100
+2026-02-04 19:38:32 | INFO     | Using API key: Yes
+2026-02-04 19:38:32 | INFO     | NVD API endpoint: https://services.nvd.nist.gov/rest/json/cves/2.0
+2026-02-04 19:38:33 | DEBUG    | No results found for keyword: SCADA
+2026-02-04 19:38:33 | DEBUG    | No results found for keyword: ICS
+2026-02-04 19:38:34 | DEBUG    | No results found for keyword: industrial control
+2026-02-04 19:38:35 | DEBUG    | No results found for keyword: electric vehicle
+2026-02-04 19:38:36 | DEBUG    | No results found for keyword: EV charging
+2026-02-04 19:38:37 | DEBUG    | No results found for keyword: EVSE
+2026-02-04 19:38:38 | DEBUG    | No results found for keyword: charging station
+2026-02-04 19:38:39 | DEBUG    | No results found for keyword: power grid
+2026-02-04 19:38:40 | DEBUG    | No results found for keyword: smart grid
+2026-02-04 19:38:41 | DEBUG    | No results found for keyword: substation
+2026-02-04 19:38:42 | DEBUG    | No results found for keyword: distribution
+2026-02-04 19:38:42 | DEBUG    | No results found for keyword: DER
+2026-02-04 19:38:43 | DEBUG    | No results found for keyword: distributed energy
+2026-02-04 19:38:44 | DEBUG    | No results found for keyword: microgrid
+2026-02-04 19:38:45 | DEBUG    | No results found for keyword: EMS
+2026-02-04 19:38:46 | DEBUG    | No results found for keyword: energy management
+2026-02-04 19:38:47 | DEBUG    | No results found for keyword: ADMS
+2026-02-04 19:38:48 | DEBUG    | No results found for keyword: DMS
+2026-02-04 19:38:49 | DEBUG    | No results found for keyword: AGC
+2026-02-04 19:38:50 | DEBUG    | No results found for keyword: automatic generation control
+2026-02-04 19:38:51 | DEBUG    | No results found for keyword: charging management
+2026-02-04 19:38:52 | DEBUG    | No results found for keyword: billing system
+2026-02-04 19:38:52 | INFO     | Collected 0 unique CVEs from 0/22 keywords
+2026-02-04 19:38:52 | WARNING  | No CVEs collected. This might be due to:
+2026-02-04 19:38:52 | WARNING  |   1. NVD API endpoint changes
+2026-02-04 19:38:52 | WARNING  |   2. Network connectivity issues
+2026-02-04 19:38:52 | WARNING  |   3. API rate limiting
+2026-02-04 19:38:52 | WARNING  |   4. Invalid date range
+2026-02-04 19:38:52 | WARNING  | Consider running with --skip-nvd to use other data sources
+2026-02-04 19:38:52 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-04 19:38:52 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-04 19:38:52 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-04 19:38:52 | INFO     | ================================================================================
+2026-02-04 19:38:52 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-04 19:38:52 | INFO     | ================================================================================
+2026-02-04 19:38:52 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-04 19:38:53 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-04 19:38:53 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-04 19:38:53 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-04 19:38:53 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-04 19:38:53 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:38:53 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-04 19:38:53 | INFO     | Created 17 STRIDE pattern documents
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-04 19:38:53 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:38:53 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-04 19:38:53 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-04 19:38:53 | INFO     | ================================================================================
+2026-02-04 19:38:53 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-04 19:38:55 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-04 19:38:55 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-04 19:38:55 | INFO     | Identified 14 attack patterns
+2026-02-04 19:38:55 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-04 19:38:55 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-04 19:38:55 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-04 19:38:55 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-04 19:38:55 | INFO     | ================================================================================
+2026-02-04 19:38:55 | INFO     | PHASE 6: Generating Embeddings and Populating Vector DB
+2026-02-04 19:38:55 | INFO     | ================================================================================
+2026-02-04 19:38:55 | INFO     | Generating embeddings for 136 documents
+2026-02-04 19:38:55 | INFO     | Embedding 136 texts in batches of 32
+2026-02-04 19:38:57 | INFO     | Generated 136 embeddings
+2026-02-04 19:38:57 | INFO     | Populating vector database with 136 documents
+2026-02-04 19:38:57 | INFO     | Adding 136 documents to collection
+2026-02-04 19:38:57 | INFO     | Successfully added 136 documents
+2026-02-04 19:38:57 | INFO     | Vector database populated successfully
+2026-02-04 19:38:57 | INFO     | ================================================================================
+2026-02-04 19:38:57 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-04 19:38:57 | INFO     | ================================================================================
+2026-02-04 19:38:57 | INFO     | Total documents in database: 136
+2026-02-04 19:38:57 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-04 19:38:57 | INFO     | Severity distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-04 19:38:57 | INFO     | 
+================================================================================
+2026-02-04 19:38:57 | INFO     | DATABASE STATISTICS
+2026-02-04 19:38:57 | INFO     | ================================================================================
+2026-02-04 19:38:57 | INFO     | total_documents: 136
+2026-02-04 19:38:57 | INFO     | collection_name: evse_vulnerability_db
+2026-02-04 19:38:57 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-04 19:38:57 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-04 19:38:57 | INFO     | severity_distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-04 19:38:57 | INFO     | 
+================================================================================
+2026-02-04 19:38:57 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-04 19:38:57 | INFO     | ================================================================================
+2026-02-05 14:53:53 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 14:53:53 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 250, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 14:53:53 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 14:53:53 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 14:53:53 | INFO     | Initialized MITRECollector
+2026-02-05 14:53:53 | INFO     | Initialized STRIDECollector
+2026-02-05 14:53:53 | INFO     | Initialized CICEVSECollector
+2026-02-05 14:53:53 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 14:53:53 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 14:53:54 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 14:53:54 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 14:53:54 | INFO     | Collection 'evse_vulnerability_db' initialized with 136 documents
+2026-02-05 14:53:54 | INFO     | ================================================================================
+2026-02-05 14:53:54 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 14:53:54 | INFO     | ================================================================================
+2026-02-05 14:53:54 | INFO     | ================================================================================
+2026-02-05 14:53:54 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-05 14:53:54 | INFO     | ================================================================================
+2026-02-05 14:53:54 | INFO     | Starting CVE collection from 2022-01-01, max results: 250
+2026-02-05 14:53:54 | INFO     | Using API key: Yes
+2026-02-05 14:53:54 | INFO     | NVD API endpoint: https://services.nvd.nist.gov/rest/json/cves/2.0
+2026-02-05 14:53:55 | DEBUG    | No results found for keyword: SCADA
+2026-02-05 14:53:56 | DEBUG    | No results found for keyword: ICS
+2026-02-05 14:53:57 | DEBUG    | No results found for keyword: industrial control
+2026-02-05 14:53:57 | DEBUG    | No results found for keyword: electric vehicle
+2026-02-05 14:53:58 | DEBUG    | No results found for keyword: EV charging
+2026-02-05 14:53:59 | DEBUG    | No results found for keyword: EVSE
+2026-02-05 14:54:00 | DEBUG    | No results found for keyword: charging station
+2026-02-05 14:54:01 | DEBUG    | No results found for keyword: power grid
+2026-02-05 14:54:02 | DEBUG    | No results found for keyword: smart grid
+2026-02-05 14:54:03 | DEBUG    | No results found for keyword: substation
+2026-02-05 14:54:04 | DEBUG    | No results found for keyword: distribution
+2026-02-05 14:54:05 | DEBUG    | No results found for keyword: DER
+2026-02-05 14:54:07 | DEBUG    | No results found for keyword: distributed energy
+2026-02-05 14:54:08 | DEBUG    | No results found for keyword: microgrid
+2026-02-05 14:54:09 | DEBUG    | No results found for keyword: EMS
+2026-02-05 14:54:10 | DEBUG    | No results found for keyword: energy management
+2026-02-05 14:54:11 | DEBUG    | No results found for keyword: ADMS
+2026-02-05 14:54:12 | DEBUG    | No results found for keyword: DMS
+2026-02-05 14:54:13 | DEBUG    | No results found for keyword: AGC
+2026-02-05 14:54:14 | DEBUG    | No results found for keyword: automatic generation control
+2026-02-05 14:54:15 | DEBUG    | No results found for keyword: charging management
+2026-02-05 14:54:16 | DEBUG    | No results found for keyword: billing system
+2026-02-05 14:54:17 | INFO     | Collected 0 unique CVEs from 0/22 keywords
+2026-02-05 14:54:17 | WARNING  | No CVEs collected. This might be due to:
+2026-02-05 14:54:17 | WARNING  |   1. NVD API endpoint changes
+2026-02-05 14:54:17 | WARNING  |   2. Network connectivity issues
+2026-02-05 14:54:17 | WARNING  |   3. API rate limiting
+2026-02-05 14:54:17 | WARNING  |   4. Invalid date range
+2026-02-05 14:54:17 | WARNING  | Consider running with --skip-nvd to use other data sources
+2026-02-05 14:54:17 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-05 14:54:17 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-05 14:54:17 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-05 14:54:17 | INFO     | ================================================================================
+2026-02-05 14:54:17 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-05 14:54:17 | INFO     | ================================================================================
+2026-02-05 14:54:17 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-05 14:54:18 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-05 14:54:18 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-05 14:54:18 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-05 14:54:18 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-05 14:54:18 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 14:54:18 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-05 14:54:18 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-05 14:54:18 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 14:54:18 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-05 14:54:18 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-05 14:54:18 | INFO     | ================================================================================
+2026-02-05 14:54:18 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-05 14:54:22 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-05 14:54:22 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-05 14:54:24 | INFO     | Identified 14 attack patterns
+2026-02-05 14:54:24 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-05 14:54:24 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-05 14:54:24 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-05 14:54:24 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-05 14:54:24 | INFO     | ================================================================================
+2026-02-05 14:54:24 | INFO     | PHASE 6: Generating Embeddings and Populating Vector DB
+2026-02-05 14:54:24 | INFO     | ================================================================================
+2026-02-05 14:54:24 | INFO     | Generating embeddings for 136 documents
+2026-02-05 14:54:24 | INFO     | Embedding 136 texts in batches of 32
+2026-02-05 14:54:29 | INFO     | Generated 136 embeddings
+2026-02-05 14:54:29 | INFO     | Populating vector database with 136 documents
+2026-02-05 14:54:29 | INFO     | Adding 136 documents to collection
+2026-02-05 14:54:29 | INFO     | Successfully added 136 documents
+2026-02-05 14:54:29 | INFO     | Vector database populated successfully
+2026-02-05 14:54:29 | INFO     | ================================================================================
+2026-02-05 14:54:29 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 14:54:29 | INFO     | ================================================================================
+2026-02-05 14:54:29 | INFO     | Total documents in database: 136
+2026-02-05 14:54:29 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-05 14:54:29 | INFO     | Severity distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-05 14:54:29 | INFO     | 
+================================================================================
+2026-02-05 14:54:29 | INFO     | DATABASE STATISTICS
+2026-02-05 14:54:29 | INFO     | ================================================================================
+2026-02-05 14:54:29 | INFO     | total_documents: 136
+2026-02-05 14:54:29 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 14:54:29 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 14:54:29 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-05 14:54:29 | INFO     | severity_distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-05 14:54:29 | INFO     | 
+================================================================================
+2026-02-05 14:54:29 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 14:54:29 | INFO     | ================================================================================
+2026-02-05 15:45:45 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 15:45:45 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 250, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 15:45:45 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 15:45:45 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 15:45:45 | INFO     | Initialized MITRECollector
+2026-02-05 15:45:45 | INFO     | Initialized STRIDECollector
+2026-02-05 15:45:45 | INFO     | Initialized CICEVSECollector
+2026-02-05 15:45:45 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 15:45:45 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 15:45:46 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 15:45:46 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 15:45:46 | INFO     | Collection 'evse_vulnerability_db' initialized with 136 documents
+2026-02-05 15:45:46 | INFO     | ================================================================================
+2026-02-05 15:45:46 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 15:45:46 | INFO     | ================================================================================
+2026-02-05 15:45:46 | INFO     | ================================================================================
+2026-02-05 15:45:46 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-05 15:45:46 | INFO     | ================================================================================
+2026-02-05 15:45:46 | INFO     | Starting CVE collection from 2022-01-01, max results: 250
+2026-02-05 15:45:46 | INFO     | Using API key: Yes
+2026-02-05 15:45:46 | INFO     | NVD API endpoint: https://services.nvd.nist.gov/rest/json/cves/2.0
+2026-02-05 15:45:46 | DEBUG    | No results found for keyword: SCADA
+2026-02-05 15:45:47 | DEBUG    | No results found for keyword: ICS
+2026-02-05 15:45:48 | DEBUG    | No results found for keyword: industrial control
+2026-02-05 15:45:49 | DEBUG    | No results found for keyword: electric vehicle
+2026-02-05 15:45:50 | DEBUG    | No results found for keyword: EV charging
+2026-02-05 15:45:51 | DEBUG    | No results found for keyword: EVSE
+2026-02-05 15:45:52 | DEBUG    | No results found for keyword: charging station
+2026-02-05 15:45:52 | DEBUG    | No results found for keyword: power grid
+2026-02-05 15:45:53 | DEBUG    | No results found for keyword: smart grid
+2026-02-05 15:45:54 | DEBUG    | No results found for keyword: substation
+2026-02-05 15:45:55 | DEBUG    | No results found for keyword: distribution
+2026-02-05 15:45:56 | DEBUG    | No results found for keyword: DER
+2026-02-05 15:45:57 | DEBUG    | No results found for keyword: distributed energy
+2026-02-05 15:45:58 | DEBUG    | No results found for keyword: microgrid
+2026-02-05 15:45:59 | DEBUG    | No results found for keyword: EMS
+2026-02-05 15:45:59 | DEBUG    | No results found for keyword: energy management
+2026-02-05 15:46:00 | DEBUG    | No results found for keyword: ADMS
+2026-02-05 15:46:01 | DEBUG    | No results found for keyword: DMS
+2026-02-05 15:46:02 | DEBUG    | No results found for keyword: AGC
+2026-02-05 15:46:03 | DEBUG    | No results found for keyword: automatic generation control
+2026-02-05 15:46:04 | DEBUG    | No results found for keyword: charging management
+2026-02-05 15:46:05 | DEBUG    | No results found for keyword: billing system
+2026-02-05 15:46:05 | INFO     | Collected 0 unique CVEs from 0/22 keywords
+2026-02-05 15:46:05 | WARNING  | No CVEs collected. This might be due to:
+2026-02-05 15:46:05 | WARNING  |   1. NVD API endpoint changes
+2026-02-05 15:46:05 | WARNING  |   2. Network connectivity issues
+2026-02-05 15:46:05 | WARNING  |   3. API rate limiting
+2026-02-05 15:46:05 | WARNING  |   4. Invalid date range
+2026-02-05 15:46:05 | WARNING  | Consider running with --skip-nvd to use other data sources
+2026-02-05 15:46:05 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-05 15:46:05 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-05 15:46:05 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-05 15:46:05 | INFO     | ================================================================================
+2026-02-05 15:46:05 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-05 15:46:05 | INFO     | ================================================================================
+2026-02-05 15:46:05 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-05 15:46:06 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-05 15:46:06 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-05 15:46:06 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-05 15:46:06 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-05 15:46:06 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 15:46:06 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-05 15:46:06 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-05 15:46:06 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 15:46:06 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-05 15:46:06 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-05 15:46:06 | INFO     | ================================================================================
+2026-02-05 15:46:06 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-05 15:46:09 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-05 15:46:09 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-05 15:46:09 | INFO     | Identified 14 attack patterns
+2026-02-05 15:46:09 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-05 15:46:09 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-05 15:46:09 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-05 15:46:09 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-05 15:46:09 | INFO     | ================================================================================
+2026-02-05 15:46:09 | INFO     | PHASE 6: Generating Embeddings and Populating Vector DB
+2026-02-05 15:46:09 | INFO     | ================================================================================
+2026-02-05 15:46:09 | INFO     | Generating embeddings for 136 documents
+2026-02-05 15:46:09 | INFO     | Embedding 136 texts in batches of 32
+2026-02-05 15:46:11 | INFO     | Generated 136 embeddings
+2026-02-05 15:46:11 | INFO     | Populating vector database with 136 documents
+2026-02-05 15:46:11 | INFO     | Adding 136 documents to collection
+2026-02-05 15:46:11 | INFO     | Successfully added 136 documents
+2026-02-05 15:46:11 | INFO     | Vector database populated successfully
+2026-02-05 15:46:11 | INFO     | ================================================================================
+2026-02-05 15:46:11 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 15:46:11 | INFO     | ================================================================================
+2026-02-05 15:46:11 | INFO     | Total documents in database: 136
+2026-02-05 15:46:11 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-05 15:46:11 | INFO     | Severity distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-05 15:46:11 | INFO     | 
+================================================================================
+2026-02-05 15:46:11 | INFO     | DATABASE STATISTICS
+2026-02-05 15:46:11 | INFO     | ================================================================================
+2026-02-05 15:46:11 | INFO     | total_documents: 136
+2026-02-05 15:46:11 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 15:46:11 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 15:46:11 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14}
+2026-02-05 15:46:11 | INFO     | severity_distribution: {'High': 62, 'Medium': 60, 'Low': 14}
+2026-02-05 15:46:11 | INFO     | 
+================================================================================
+2026-02-05 15:46:11 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 15:46:11 | INFO     | ================================================================================
+2026-02-05 16:28:03 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 16:28:03 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 150, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 16:28:03 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 16:28:03 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 16:28:03 | INFO     | Initialized MITRECollector
+2026-02-05 16:28:03 | INFO     | Initialized STRIDECollector
+2026-02-05 16:28:03 | INFO     | Initialized CICEVSECollector
+2026-02-05 16:28:03 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 16:28:03 | INFO     | Initialized ICSCERTCollector
+2026-02-05 16:28:03 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 16:28:03 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 16:28:04 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 16:28:04 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:28:05 | INFO     | Collection 'evse_vulnerability_db' initialized with 0 documents
+2026-02-05 16:28:05 | INFO     | ================================================================================
+2026-02-05 16:28:05 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 16:28:05 | INFO     | ================================================================================
+2026-02-05 16:28:05 | INFO     | ================================================================================
+2026-02-05 16:28:05 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-05 16:28:05 | INFO     | ================================================================================
+2026-02-05 16:28:05 | INFO     | Starting CVE collection from 2022-01-01, max results: 150
+2026-02-05 16:28:05 | INFO     | Using API key: Yes
+2026-02-05 16:28:05 | INFO     | NVD API endpoint: https://services.nvd.nist.gov/rest/json/cves/2.0
+2026-02-05 16:28:05 | DEBUG    | No results found for keyword: SCADA
+2026-02-05 16:28:06 | DEBUG    | No results found for keyword: ICS
+2026-02-05 16:28:07 | DEBUG    | No results found for keyword: industrial control
+2026-02-05 16:28:08 | DEBUG    | No results found for keyword: electric vehicle
+2026-02-05 16:28:09 | DEBUG    | No results found for keyword: EV charging
+2026-02-05 16:28:10 | DEBUG    | No results found for keyword: EVSE
+2026-02-05 16:28:11 | DEBUG    | No results found for keyword: charging station
+2026-02-05 16:28:11 | DEBUG    | No results found for keyword: power grid
+2026-02-05 16:28:12 | DEBUG    | No results found for keyword: smart grid
+2026-02-05 16:28:13 | DEBUG    | No results found for keyword: substation
+2026-02-05 16:28:14 | DEBUG    | No results found for keyword: distribution
+2026-02-05 16:28:15 | DEBUG    | No results found for keyword: DER
+2026-02-05 16:28:16 | DEBUG    | No results found for keyword: distributed energy
+2026-02-05 16:28:17 | DEBUG    | No results found for keyword: microgrid
+2026-02-05 16:28:18 | DEBUG    | No results found for keyword: EMS
+2026-02-05 16:28:19 | DEBUG    | No results found for keyword: energy management
+2026-02-05 16:28:19 | DEBUG    | No results found for keyword: ADMS
+2026-02-05 16:28:20 | DEBUG    | No results found for keyword: DMS
+2026-02-05 16:28:21 | DEBUG    | No results found for keyword: AGC
+2026-02-05 16:28:22 | DEBUG    | No results found for keyword: automatic generation control
+2026-02-05 16:28:23 | DEBUG    | No results found for keyword: charging management
+2026-02-05 16:28:24 | DEBUG    | No results found for keyword: billing system
+2026-02-05 16:28:25 | INFO     | Collected 0 unique CVEs from 0/22 keywords
+2026-02-05 16:28:25 | WARNING  | No CVEs collected. This might be due to:
+2026-02-05 16:28:25 | WARNING  |   1. NVD API endpoint changes
+2026-02-05 16:28:25 | WARNING  |   2. Network connectivity issues
+2026-02-05 16:28:25 | WARNING  |   3. API rate limiting
+2026-02-05 16:28:25 | WARNING  |   4. Invalid date range
+2026-02-05 16:28:25 | WARNING  | Consider running with --skip-nvd to use other data sources
+2026-02-05 16:28:25 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-05 16:28:25 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-05 16:28:25 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-05 16:28:25 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-05 16:28:25 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-05 16:28:25 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-05 16:28:25 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-05 16:28:25 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 16:28:25 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-05 16:28:25 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-05 16:28:25 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 16:28:25 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-05 16:28:25 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-05 16:28:25 | INFO     | ================================================================================
+2026-02-05 16:28:25 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-05 16:28:28 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-05 16:28:28 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-05 16:28:28 | INFO     | Identified 14 attack patterns
+2026-02-05 16:28:28 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-05 16:28:28 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-05 16:28:28 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-05 16:28:28 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 16:28:28 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:28:28 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 16:28:28 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | Creating protocol vulnerability documents
+2026-02-05 16:28:28 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:28:28 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 16:28:28 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | PHASE 8: Generating Embeddings and Populating Vector DB
+2026-02-05 16:28:28 | INFO     | ================================================================================
+2026-02-05 16:28:28 | INFO     | Generating embeddings for 157 documents
+2026-02-05 16:28:28 | INFO     | Embedding 157 texts in batches of 32
+2026-02-05 16:28:30 | INFO     | Generated 157 embeddings
+2026-02-05 16:28:30 | INFO     | Populating vector database with 157 documents
+2026-02-05 16:28:30 | INFO     | Adding 157 documents to collection
+2026-02-05 16:28:30 | INFO     | Successfully added 157 documents
+2026-02-05 16:28:30 | INFO     | Vector database populated successfully
+2026-02-05 16:28:30 | INFO     | ================================================================================
+2026-02-05 16:28:30 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 16:28:30 | INFO     | ================================================================================
+2026-02-05 16:28:30 | INFO     | Total documents in database: 157
+2026-02-05 16:28:30 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:28:30 | INFO     | Severity distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:28:30 | INFO     | 
+================================================================================
+2026-02-05 16:28:30 | INFO     | DATABASE STATISTICS
+2026-02-05 16:28:30 | INFO     | ================================================================================
+2026-02-05 16:28:30 | INFO     | total_documents: 157
+2026-02-05 16:28:30 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 16:28:30 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:28:30 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:28:30 | INFO     | severity_distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:28:30 | INFO     | 
+================================================================================
+2026-02-05 16:28:30 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 16:28:30 | INFO     | ================================================================================
+2026-02-05 16:32:16 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 16:32:16 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 150, 'cicevse_dataset': 'data/CICEVSE2024_NT.csv', 'skip_nvd': False, 'skip_mitre': False, 'skip_stride': False, 'skip_mitre_stride': False, 'skip_cicevse': False, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 16:32:16 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 16:32:16 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 16:32:16 | INFO     | Initialized MITRECollector
+2026-02-05 16:32:16 | INFO     | Initialized STRIDECollector
+2026-02-05 16:32:16 | INFO     | Initialized CICEVSECollector
+2026-02-05 16:32:16 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 16:32:16 | INFO     | Initialized ICSCERTCollector
+2026-02-05 16:32:16 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 16:32:16 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 16:32:17 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 16:32:17 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:32:17 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 16:32:17 | INFO     | ================================================================================
+2026-02-05 16:32:17 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 16:32:17 | INFO     | ================================================================================
+2026-02-05 16:32:17 | INFO     | ================================================================================
+2026-02-05 16:32:17 | INFO     | PHASE 1: Collecting NVD CVE Data
+2026-02-05 16:32:17 | INFO     | ================================================================================
+2026-02-05 16:32:17 | INFO     | Starting CVE collection from 2022-01-01, max results: 150
+2026-02-05 16:32:17 | INFO     | Using API key: Yes
+2026-02-05 16:32:17 | INFO     | NVD API endpoint: https://services.nvd.nist.gov/rest/json/cves/2.0
+2026-02-05 16:32:17 | DEBUG    | No results found for keyword: SCADA
+2026-02-05 16:32:18 | DEBUG    | No results found for keyword: ICS
+2026-02-05 16:32:19 | DEBUG    | No results found for keyword: industrial control
+2026-02-05 16:32:20 | DEBUG    | No results found for keyword: electric vehicle
+2026-02-05 16:32:21 | DEBUG    | No results found for keyword: EV charging
+2026-02-05 16:32:21 | DEBUG    | No results found for keyword: EVSE
+2026-02-05 16:32:22 | DEBUG    | No results found for keyword: charging station
+2026-02-05 16:32:23 | DEBUG    | No results found for keyword: power grid
+2026-02-05 16:32:24 | DEBUG    | No results found for keyword: smart grid
+2026-02-05 16:32:25 | DEBUG    | No results found for keyword: substation
+2026-02-05 16:32:26 | DEBUG    | No results found for keyword: distribution
+2026-02-05 16:32:27 | DEBUG    | No results found for keyword: DER
+2026-02-05 16:32:28 | DEBUG    | No results found for keyword: distributed energy
+2026-02-05 16:32:28 | DEBUG    | No results found for keyword: microgrid
+2026-02-05 16:32:29 | DEBUG    | No results found for keyword: EMS
+2026-02-05 16:32:30 | DEBUG    | No results found for keyword: energy management
+2026-02-05 16:32:31 | DEBUG    | No results found for keyword: ADMS
+2026-02-05 16:32:32 | DEBUG    | No results found for keyword: DMS
+2026-02-05 16:32:33 | DEBUG    | No results found for keyword: AGC
+2026-02-05 16:32:34 | DEBUG    | No results found for keyword: automatic generation control
+2026-02-05 16:32:35 | DEBUG    | No results found for keyword: charging management
+2026-02-05 16:32:36 | DEBUG    | No results found for keyword: billing system
+2026-02-05 16:32:36 | INFO     | Collected 0 unique CVEs from 0/22 keywords
+2026-02-05 16:32:36 | WARNING  | No CVEs collected. This might be due to:
+2026-02-05 16:32:36 | WARNING  |   1. NVD API endpoint changes
+2026-02-05 16:32:36 | WARNING  |   2. Network connectivity issues
+2026-02-05 16:32:36 | WARNING  |   3. API rate limiting
+2026-02-05 16:32:36 | WARNING  |   4. Invalid date range
+2026-02-05 16:32:36 | WARNING  | Consider running with --skip-nvd to use other data sources
+2026-02-05 16:32:36 | INFO     | Saved 0 raw CVEs to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\nvd_cves_raw.json
+2026-02-05 16:32:36 | INFO     | Saved 0 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\nvd_documents.json
+2026-02-05 16:32:36 | INFO     | Collected and processed 0 NVD CVE documents
+2026-02-05 16:32:36 | INFO     | ================================================================================
+2026-02-05 16:32:36 | INFO     | PHASE 2: Collecting MITRE ATT&CK for ICS Data
+2026-02-05 16:32:36 | INFO     | ================================================================================
+2026-02-05 16:32:36 | INFO     | Downloading MITRE ATT&CK for ICS from https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json
+2026-02-05 16:32:37 | INFO     | Collected 95 MITRE ICS techniques
+2026-02-05 16:32:37 | INFO     | Saved 95 raw MITRE techniques to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\raw\mitre_techniques_raw.json
+2026-02-05 16:32:37 | INFO     | Saved 95 processed documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_documents.json
+2026-02-05 16:32:37 | INFO     | Collected and processed 95 MITRE technique documents
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | PHASE 3: Creating STRIDE Threat Patterns
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | Creating STRIDE patterns for EVSE and Power Systems
+2026-02-05 16:32:37 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 16:32:37 | INFO     | Saved 17 STRIDE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\stride_documents.json
+2026-02-05 16:32:37 | INFO     | Created 17 STRIDE pattern documents
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | PHASE 4: Creating MITRE-STRIDE Mappings
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | Creating comprehensive MITRE-STRIDE mappings
+2026-02-05 16:32:37 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 16:32:37 | INFO     | Saved 10 MITRE-STRIDE mapping documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\mitre_stride_mappings.json
+2026-02-05 16:32:37 | INFO     | Created 10 MITRE-STRIDE mapping documents
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | PHASE 5: Processing CICEVSE2024 Dataset
+2026-02-05 16:32:37 | INFO     | ================================================================================
+2026-02-05 16:32:37 | INFO     | Loading CICEVSE2024 dataset from data/CICEVSE2024_NT.csv
+2026-02-05 16:32:39 | INFO     | Loaded 1277367 records from CICEVSE2024 dataset
+2026-02-05 16:32:39 | INFO     | Analyzing attack patterns from CICEVSE2024
+2026-02-05 16:32:40 | INFO     | Identified 14 attack patterns
+2026-02-05 16:32:40 | INFO     | Creating documents from CICEVSE2024 attack patterns
+2026-02-05 16:32:40 | INFO     | Created 14 documents from CICEVSE2024 patterns
+2026-02-05 16:32:40 | INFO     | Saved 14 CICEVSE documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\cicevse_documents.json
+2026-02-05 16:32:40 | INFO     | Created 14 CICEVSE2024 documents
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 16:32:40 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:32:40 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 16:32:40 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | Creating protocol vulnerability documents
+2026-02-05 16:32:40 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:32:40 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 16:32:40 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | PHASE 8: Generating Embeddings and Populating Vector DB
+2026-02-05 16:32:40 | INFO     | ================================================================================
+2026-02-05 16:32:40 | INFO     | Generating embeddings for 157 documents
+2026-02-05 16:32:40 | INFO     | Embedding 157 texts in batches of 32
+2026-02-05 16:32:41 | INFO     | Generated 157 embeddings
+2026-02-05 16:32:41 | INFO     | Populating vector database with 157 documents
+2026-02-05 16:32:41 | INFO     | Adding 157 documents to collection
+2026-02-05 16:32:41 | INFO     | Successfully added 157 documents
+2026-02-05 16:32:41 | INFO     | Vector database populated successfully
+2026-02-05 16:32:41 | INFO     | ================================================================================
+2026-02-05 16:32:41 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 16:32:41 | INFO     | ================================================================================
+2026-02-05 16:32:41 | INFO     | Total documents in database: 157
+2026-02-05 16:32:41 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:32:41 | INFO     | Severity distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:32:41 | INFO     | 
+================================================================================
+2026-02-05 16:32:41 | INFO     | DATABASE STATISTICS
+2026-02-05 16:32:41 | INFO     | ================================================================================
+2026-02-05 16:32:41 | INFO     | total_documents: 157
+2026-02-05 16:32:41 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 16:32:41 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:32:41 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:32:41 | INFO     | severity_distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:32:41 | INFO     | 
+================================================================================
+2026-02-05 16:32:41 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 16:32:41 | INFO     | ================================================================================
+2026-02-05 16:45:41 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 16:45:41 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': None, 'skip_nvd': True, 'skip_mitre': True, 'skip_stride': True, 'skip_mitre_stride': True, 'skip_cicevse': True, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 16:45:41 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 16:45:41 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 16:45:41 | INFO     | Initialized MITRECollector
+2026-02-05 16:45:41 | INFO     | Initialized STRIDECollector
+2026-02-05 16:45:41 | INFO     | Initialized CICEVSECollector
+2026-02-05 16:45:41 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 16:45:41 | INFO     | Initialized ICSCERTCollector
+2026-02-05 16:45:41 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 16:45:41 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 16:45:42 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 16:45:42 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:45:42 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 16:45:42 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:45:42 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 16:45:42 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | Creating protocol vulnerability documents
+2026-02-05 16:45:42 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:45:42 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 16:45:42 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | PHASE 8: Generating Embeddings and Populating Vector DB
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | Generating embeddings for 21 documents
+2026-02-05 16:45:42 | INFO     | Embedding 21 texts in batches of 32
+2026-02-05 16:45:42 | INFO     | Generated 21 embeddings
+2026-02-05 16:45:42 | INFO     | Populating vector database with 21 documents
+2026-02-05 16:45:42 | INFO     | Adding 21 documents to collection
+2026-02-05 16:45:42 | INFO     | Successfully added 21 documents
+2026-02-05 16:45:42 | INFO     | Vector database populated successfully
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | Total documents in database: 157
+2026-02-05 16:45:42 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:45:42 | INFO     | Severity distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:45:42 | INFO     | 
+================================================================================
+2026-02-05 16:45:42 | INFO     | DATABASE STATISTICS
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 16:45:42 | INFO     | total_documents: 157
+2026-02-05 16:45:42 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 16:45:42 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 16:45:42 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 16:45:42 | INFO     | severity_distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 16:45:42 | INFO     | 
+================================================================================
+2026-02-05 16:45:42 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 16:45:42 | INFO     | ================================================================================
+2026-02-05 18:55:45 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 18:55:45 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': None, 'skip_nvd': True, 'skip_mitre': True, 'skip_stride': True, 'skip_mitre_stride': True, 'skip_cicevse': True, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 18:55:45 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 18:55:45 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 18:55:45 | INFO     | Initialized MITRECollector
+2026-02-05 18:55:45 | INFO     | Initialized STRIDECollector
+2026-02-05 18:55:45 | INFO     | Initialized CICEVSECollector
+2026-02-05 18:55:45 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 18:55:45 | INFO     | Initialized ICSCERTCollector
+2026-02-05 18:55:45 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 18:55:45 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 18:55:46 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 18:55:46 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:55:46 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 18:55:46 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:55:46 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 18:55:46 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | Creating protocol vulnerability documents
+2026-02-05 18:55:46 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:55:46 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 18:55:46 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | PHASE 8: Processing PDF Research Documents
+2026-02-05 18:55:46 | INFO     | ================================================================================
+2026-02-05 18:55:46 | INFO     | Found 5 PDF files to process
+2026-02-05 18:55:46 | INFO     | Processing PDF: Evidense Based Threat Modeling.pdf
+2026-02-05 18:55:47 | INFO     | Extracted 42688 characters using pdfplumber from Evidense Based Threat Modeling.pdf
+2026-02-05 18:55:47 | INFO     | Created 55 chunks from Evidense Based Threat Modeling.pdf
+2026-02-05 18:55:47 | ERROR    | Failed to process Evidense Based Threat Modeling.pdf: 2 validation errors for VulnerabilityDocument
+doc_id
+  Field required [type=missing, input_value={'id': 'PDF-EVIDENSE_BASE...eat', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+type
+  Field required [type=missing, input_value={'id': 'PDF-EVIDENSE_BASE...eat', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+2026-02-05 18:55:47 | INFO     | Processing PDF: PNNL-34280.pdf
+2026-02-05 18:55:48 | INFO     | Extracted 51420 characters using pdfplumber from PNNL-34280.pdf
+2026-02-05 18:55:48 | INFO     | Created 68 chunks from PNNL-34280.pdf
+2026-02-05 18:55:48 | ERROR    | Failed to process PNNL-34280.pdf: 2 validation errors for VulnerabilityDocument
+doc_id
+  Field required [type=missing, input_value={'id': 'PDF-PNNL-34280-CH..., 'threat', 'vehicle']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+type
+  Field required [type=missing, input_value={'id': 'PDF-PNNL-34280-CH..., 'threat', 'vehicle']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+2026-02-05 18:55:48 | INFO     | Processing PDF: Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:55:49 | INFO     | Extracted 19230 characters using pdfplumber from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:55:49 | INFO     | Created 25 chunks from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:55:49 | ERROR    | Failed to process Securing Vehicle Charging Infrastructure.pdf: 2 validation errors for VulnerabilityDocument
+doc_id
+  Field required [type=missing, input_value={'id': 'PDF-SECURING_VEHI...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+type
+  Field required [type=missing, input_value={'id': 'PDF-SECURING_VEHI...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+2026-02-05 18:55:49 | INFO     | Processing PDF: Sheppard_CSR_2025.pdf
+2026-02-05 18:55:50 | INFO     | Extracted 44255 characters using pdfplumber from Sheppard_CSR_2025.pdf
+2026-02-05 18:55:50 | INFO     | Created 57 chunks from Sheppard_CSR_2025.pdf
+2026-02-05 18:55:50 | ERROR    | Failed to process Sheppard_CSR_2025.pdf: 2 validation errors for VulnerabilityDocument
+doc_id
+  Field required [type=missing, input_value={'id': 'PDF-SHEPPARD_CSR_...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+type
+  Field required [type=missing, input_value={'id': 'PDF-SHEPPARD_CSR_...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+2026-02-05 18:55:50 | INFO     | Processing PDF: Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:55:51 | INFO     | Extracted 48434 characters using pdfplumber from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:55:51 | INFO     | Created 62 chunks from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:55:51 | ERROR    | Failed to process Structured_Threat_Modeling_Approach.pdf: 2 validation errors for VulnerabilityDocument
+doc_id
+  Field required [type=missing, input_value={'id': 'PDF-STRUCTURED_TH...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+type
+  Field required [type=missing, input_value={'id': 'PDF-STRUCTURED_TH...cle', 'vulnerability']}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+2026-02-05 18:55:51 | INFO     | Total PDF documents created: 0
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:55:51 | INFO     | PHASE 9: Generating Embeddings and Populating Vector DB
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:55:51 | INFO     | Generating embeddings for 21 documents
+2026-02-05 18:55:51 | INFO     | Embedding 21 texts in batches of 32
+2026-02-05 18:55:51 | INFO     | Generated 21 embeddings
+2026-02-05 18:55:51 | INFO     | Populating vector database with 21 documents
+2026-02-05 18:55:51 | INFO     | Adding 21 documents to collection
+2026-02-05 18:55:51 | INFO     | Successfully added 21 documents
+2026-02-05 18:55:51 | INFO     | Vector database populated successfully
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:55:51 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:55:51 | INFO     | Total documents in database: 157
+2026-02-05 18:55:51 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 18:55:51 | INFO     | Severity distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 18:55:51 | INFO     | 
+================================================================================
+2026-02-05 18:55:51 | INFO     | DATABASE STATISTICS
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:55:51 | INFO     | total_documents: 157
+2026-02-05 18:55:51 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 18:55:51 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:55:51 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13}
+2026-02-05 18:55:51 | INFO     | severity_distribution: {'High': 73, 'Medium': 62, 'Low': 14, 'Critical': 8}
+2026-02-05 18:55:51 | INFO     | 
+================================================================================
+2026-02-05 18:55:51 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 18:55:51 | INFO     | ================================================================================
+2026-02-05 18:57:06 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 18:57:06 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': None, 'skip_nvd': True, 'skip_mitre': True, 'skip_stride': True, 'skip_mitre_stride': True, 'skip_cicevse': True, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 18:57:06 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 18:57:06 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 18:57:06 | INFO     | Initialized MITRECollector
+2026-02-05 18:57:06 | INFO     | Initialized STRIDECollector
+2026-02-05 18:57:06 | INFO     | Initialized CICEVSECollector
+2026-02-05 18:57:06 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 18:57:06 | INFO     | Initialized ICSCERTCollector
+2026-02-05 18:57:06 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 18:57:06 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 18:57:07 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 18:57:07 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:57:07 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 18:57:07 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:57:07 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 18:57:07 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | Creating protocol vulnerability documents
+2026-02-05 18:57:07 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:57:07 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 18:57:07 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | PHASE 8: Processing PDF Research Documents
+2026-02-05 18:57:07 | INFO     | ================================================================================
+2026-02-05 18:57:07 | INFO     | Found 5 PDF files to process
+2026-02-05 18:57:07 | INFO     | Processing PDF: Evidense Based Threat Modeling.pdf
+2026-02-05 18:57:08 | INFO     | Extracted 42688 characters using pdfplumber from Evidense Based Threat Modeling.pdf
+2026-02-05 18:57:08 | INFO     | Created 55 chunks from Evidense Based Threat Modeling.pdf
+2026-02-05 18:57:08 | INFO     | Successfully processed Evidense Based Threat Modeling.pdf: 55 chunks created
+2026-02-05 18:57:08 | INFO     | Processing PDF: PNNL-34280.pdf
+2026-02-05 18:57:09 | INFO     | Extracted 51420 characters using pdfplumber from PNNL-34280.pdf
+2026-02-05 18:57:09 | INFO     | Created 68 chunks from PNNL-34280.pdf
+2026-02-05 18:57:09 | INFO     | Successfully processed PNNL-34280.pdf: 68 chunks created
+2026-02-05 18:57:09 | INFO     | Processing PDF: Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:57:09 | INFO     | Extracted 19230 characters using pdfplumber from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:57:09 | INFO     | Created 25 chunks from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:57:09 | INFO     | Successfully processed Securing Vehicle Charging Infrastructure.pdf: 25 chunks created
+2026-02-05 18:57:09 | INFO     | Processing PDF: Sheppard_CSR_2025.pdf
+2026-02-05 18:57:10 | INFO     | Extracted 44255 characters using pdfplumber from Sheppard_CSR_2025.pdf
+2026-02-05 18:57:10 | INFO     | Created 57 chunks from Sheppard_CSR_2025.pdf
+2026-02-05 18:57:10 | INFO     | Successfully processed Sheppard_CSR_2025.pdf: 57 chunks created
+2026-02-05 18:57:10 | INFO     | Processing PDF: Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:57:11 | INFO     | Extracted 48434 characters using pdfplumber from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:57:11 | INFO     | Created 62 chunks from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:57:11 | INFO     | Successfully processed Structured_Threat_Modeling_Approach.pdf: 62 chunks created
+2026-02-05 18:57:11 | INFO     | Total PDF documents created: 267
+2026-02-05 18:57:11 | ERROR    | Pipeline failed with error: 'VulnerabilityDocument' object has no attribute 'to_dict'
+2026-02-05 18:57:11 | ERROR    | 'VulnerabilityDocument' object has no attribute 'to_dict'
+Traceback (most recent call last):
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 140, in <module>
+    main()
+    └ <function main at 0x0000018DAE824D60>
+
+> File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 107, in main
+    pipeline.run_full_pipeline(
+    │        └ <function VulnerabilityDBPipeline.run_full_pipeline at 0x0000018D8F8BA340>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x0000018DAE809940>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 330, in run_full_pipeline
+    pdf_docs = self.collect_pdf_documents()
+               │    └ <function VulnerabilityDBPipeline.collect_pdf_documents at 0x0000018D8F8BA200>
+               └ <pipeline.VulnerabilityDBPipeline object at 0x0000018DAE809940>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 225, in collect_pdf_documents
+    json.dump([doc.to_dict() for doc in documents], f, indent=2, ensure_ascii=False)
+    │    │                              │           └ <_io.TextIOWrapper name='C:\\Users\\zakaria1\\OneDrive\\Desktop\\OneDrive\\PHD_2023_28\\1 Spring 26\\CIS_7910_Graduate_Resear...
+    │    │                              └ [VulnerabilityDocument(doc_id='PDF-EVIDENSE_BASED_THREAT_MODELING-CHUNK-001', type='pdf_document', title='Evidense Based Thre...
+    │    └ <function dump at 0x0000018DAE8040E0>
+    └ <module 'json' from 'C:\\Python313\\Lib\\json\\__init__.py'>
+
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 1026, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+                                 │                                          └ 'to_dict'
+                                 └ VulnerabilityDocument(doc_id='PDF-EVIDENSE_BASED_THREAT_MODELING-CHUNK-001', type='pdf_document', title='Evidense Based Threa...
+
+AttributeError: 'VulnerabilityDocument' object has no attribute 'to_dict'
+2026-02-05 18:58:09 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 18:58:09 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': None, 'skip_nvd': True, 'skip_mitre': True, 'skip_stride': True, 'skip_mitre_stride': True, 'skip_cicevse': True, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 18:58:09 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 18:58:09 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 18:58:09 | INFO     | Initialized MITRECollector
+2026-02-05 18:58:09 | INFO     | Initialized STRIDECollector
+2026-02-05 18:58:09 | INFO     | Initialized CICEVSECollector
+2026-02-05 18:58:09 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 18:58:09 | INFO     | Initialized ICSCERTCollector
+2026-02-05 18:58:09 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 18:58:09 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 18:58:10 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 18:58:10 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:58:10 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 18:58:10 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:58:10 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 18:58:10 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | Creating protocol vulnerability documents
+2026-02-05 18:58:10 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:58:10 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 18:58:10 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | PHASE 8: Processing PDF Research Documents
+2026-02-05 18:58:10 | INFO     | ================================================================================
+2026-02-05 18:58:10 | INFO     | Found 5 PDF files to process
+2026-02-05 18:58:10 | INFO     | Processing PDF: Evidense Based Threat Modeling.pdf
+2026-02-05 18:58:11 | INFO     | Extracted 42688 characters using pdfplumber from Evidense Based Threat Modeling.pdf
+2026-02-05 18:58:11 | INFO     | Created 55 chunks from Evidense Based Threat Modeling.pdf
+2026-02-05 18:58:11 | INFO     | Successfully processed Evidense Based Threat Modeling.pdf: 55 chunks created
+2026-02-05 18:58:11 | INFO     | Processing PDF: PNNL-34280.pdf
+2026-02-05 18:58:12 | INFO     | Extracted 51420 characters using pdfplumber from PNNL-34280.pdf
+2026-02-05 18:58:12 | INFO     | Created 68 chunks from PNNL-34280.pdf
+2026-02-05 18:58:12 | INFO     | Successfully processed PNNL-34280.pdf: 68 chunks created
+2026-02-05 18:58:12 | INFO     | Processing PDF: Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:58:13 | INFO     | Extracted 19230 characters using pdfplumber from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:58:13 | INFO     | Created 25 chunks from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:58:13 | INFO     | Successfully processed Securing Vehicle Charging Infrastructure.pdf: 25 chunks created
+2026-02-05 18:58:13 | INFO     | Processing PDF: Sheppard_CSR_2025.pdf
+2026-02-05 18:58:14 | INFO     | Extracted 44255 characters using pdfplumber from Sheppard_CSR_2025.pdf
+2026-02-05 18:58:14 | INFO     | Created 57 chunks from Sheppard_CSR_2025.pdf
+2026-02-05 18:58:14 | INFO     | Successfully processed Sheppard_CSR_2025.pdf: 57 chunks created
+2026-02-05 18:58:14 | INFO     | Processing PDF: Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:58:15 | INFO     | Extracted 48434 characters using pdfplumber from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:58:15 | INFO     | Created 62 chunks from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:58:15 | INFO     | Successfully processed Structured_Threat_Modeling_Approach.pdf: 62 chunks created
+2026-02-05 18:58:15 | INFO     | Total PDF documents created: 267
+2026-02-05 18:58:15 | ERROR    | Pipeline failed with error: 'VulnerabilityDocument' object has no attribute 'to_dict'
+2026-02-05 18:58:15 | ERROR    | 'VulnerabilityDocument' object has no attribute 'to_dict'
+Traceback (most recent call last):
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 140, in <module>
+    main()
+    └ <function main at 0x000001BC90514D60>
+
+> File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\main.py", line 107, in main
+    pipeline.run_full_pipeline(
+    │        └ <function VulnerabilityDBPipeline.run_full_pipeline at 0x000001BCF0E2E340>
+    └ <pipeline.VulnerabilityDBPipeline object at 0x000001BC904F9940>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 330, in run_full_pipeline
+    pdf_docs = self.collect_pdf_documents()
+               │    └ <function VulnerabilityDBPipeline.collect_pdf_documents at 0x000001BCF0E2E200>
+               └ <pipeline.VulnerabilityDBPipeline object at 0x000001BC904F9940>
+
+  File "C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\pipeline.py", line 225, in collect_pdf_documents
+    json.dump([doc.to_dict() for doc in documents], f, indent=2, ensure_ascii=False)
+    │    │                              │           └ <_io.TextIOWrapper name='C:\\Users\\zakaria1\\OneDrive\\Desktop\\OneDrive\\PHD_2023_28\\1 Spring 26\\CIS_7910_Graduate_Resear...
+    │    │                              └ [VulnerabilityDocument(doc_id='PDF-EVIDENSE_BASED_THREAT_MODELING-CHUNK-001', type='pdf_document', title='Evidense Based Thre...
+    │    └ <function dump at 0x000001BC904F40E0>
+    └ <module 'json' from 'C:\\Python313\\Lib\\json\\__init__.py'>
+
+  File "C:\Users\zakaria1\AppData\Roaming\Python\Python313\site-packages\pydantic\main.py", line 1026, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+                                 │                                          └ 'to_dict'
+                                 └ VulnerabilityDocument(doc_id='PDF-EVIDENSE_BASED_THREAT_MODELING-CHUNK-001', type='pdf_document', title='Evidense Based Threa...
+
+AttributeError: 'VulnerabilityDocument' object has no attribute 'to_dict'
+2026-02-05 18:59:11 | INFO     | Starting EVSE Vulnerability Vector Database Creation
+2026-02-05 18:59:11 | INFO     | Configuration: {'nvd_start_date': '2022-01-01', 'nvd_max_results': 100, 'cicevse_dataset': None, 'skip_nvd': True, 'skip_mitre': True, 'skip_stride': True, 'skip_mitre_stride': True, 'skip_cicevse': True, 'export_db': None, 'log_file': 'pipeline.log'}
+2026-02-05 18:59:11 | INFO     | Initializing Vulnerability DB Pipeline
+2026-02-05 18:59:11 | INFO     | Initialized NVDCollector with API key: Yes
+2026-02-05 18:59:11 | INFO     | Initialized MITRECollector
+2026-02-05 18:59:11 | INFO     | Initialized STRIDECollector
+2026-02-05 18:59:11 | INFO     | Initialized CICEVSECollector
+2026-02-05 18:59:11 | INFO     | Initialized MITRESTRIDEMapper
+2026-02-05 18:59:11 | INFO     | Initialized ICSCERTCollector
+2026-02-05 18:59:11 | INFO     | Initialized ProtocolVulnerabilityCollector
+2026-02-05 18:59:11 | INFO     | Loading embedding model: all-MiniLM-L6-v2
+2026-02-05 18:59:12 | INFO     | Embedding model loaded. Dimension: 384
+2026-02-05 18:59:12 | INFO     | Initializing ChromaDB at C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:59:13 | INFO     | Collection 'evse_vulnerability_db' initialized with 157 documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | PHASE 6: Creating ICS-CERT Advisory Documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | Creating ICS-CERT advisory documents
+2026-02-05 18:59:13 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:59:13 | INFO     | Saved 8 ICS-CERT documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\ics_cert_documents.json
+2026-02-05 18:59:13 | INFO     | Created 8 ICS-CERT advisory documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | PHASE 7: Creating Protocol Vulnerability Documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | Creating protocol vulnerability documents
+2026-02-05 18:59:13 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:59:13 | INFO     | Saved 13 protocol vulnerability documents to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\protocol_documents.json
+2026-02-05 18:59:13 | INFO     | Created 13 protocol vulnerability documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | PHASE 8: Processing PDF Research Documents
+2026-02-05 18:59:13 | INFO     | ================================================================================
+2026-02-05 18:59:13 | INFO     | Found 5 PDF files to process
+2026-02-05 18:59:13 | INFO     | Processing PDF: Evidense Based Threat Modeling.pdf
+2026-02-05 18:59:13 | INFO     | Extracted 42688 characters using pdfplumber from Evidense Based Threat Modeling.pdf
+2026-02-05 18:59:13 | INFO     | Created 55 chunks from Evidense Based Threat Modeling.pdf
+2026-02-05 18:59:13 | INFO     | Successfully processed Evidense Based Threat Modeling.pdf: 55 chunks created
+2026-02-05 18:59:13 | INFO     | Processing PDF: PNNL-34280.pdf
+2026-02-05 18:59:14 | INFO     | Extracted 51420 characters using pdfplumber from PNNL-34280.pdf
+2026-02-05 18:59:14 | INFO     | Created 68 chunks from PNNL-34280.pdf
+2026-02-05 18:59:14 | INFO     | Successfully processed PNNL-34280.pdf: 68 chunks created
+2026-02-05 18:59:14 | INFO     | Processing PDF: Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:59:15 | INFO     | Extracted 19230 characters using pdfplumber from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:59:15 | INFO     | Created 25 chunks from Securing Vehicle Charging Infrastructure.pdf
+2026-02-05 18:59:15 | INFO     | Successfully processed Securing Vehicle Charging Infrastructure.pdf: 25 chunks created
+2026-02-05 18:59:15 | INFO     | Processing PDF: Sheppard_CSR_2025.pdf
+2026-02-05 18:59:16 | INFO     | Extracted 44255 characters using pdfplumber from Sheppard_CSR_2025.pdf
+2026-02-05 18:59:16 | INFO     | Created 57 chunks from Sheppard_CSR_2025.pdf
+2026-02-05 18:59:16 | INFO     | Successfully processed Sheppard_CSR_2025.pdf: 57 chunks created
+2026-02-05 18:59:16 | INFO     | Processing PDF: Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:59:17 | INFO     | Extracted 48434 characters using pdfplumber from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:59:17 | INFO     | Created 62 chunks from Structured_Threat_Modeling_Approach.pdf
+2026-02-05 18:59:17 | INFO     | Successfully processed Structured_Threat_Modeling_Approach.pdf: 62 chunks created
+2026-02-05 18:59:17 | INFO     | Total PDF documents created: 267
+2026-02-05 18:59:17 | INFO     | Saved 267 PDF document chunks to C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\data\processed\pdf_documents.json
+2026-02-05 18:59:17 | INFO     | ================================================================================
+2026-02-05 18:59:17 | INFO     | PHASE 9: Generating Embeddings and Populating Vector DB
+2026-02-05 18:59:17 | INFO     | ================================================================================
+2026-02-05 18:59:17 | INFO     | Generating embeddings for 288 documents
+2026-02-05 18:59:17 | INFO     | Embedding 288 texts in batches of 32
+2026-02-05 18:59:21 | INFO     | Generated 288 embeddings
+2026-02-05 18:59:21 | INFO     | Populating vector database with 288 documents
+2026-02-05 18:59:21 | INFO     | Adding 288 documents to collection
+2026-02-05 18:59:21 | INFO     | Successfully added 288 documents
+2026-02-05 18:59:21 | INFO     | Vector database populated successfully
+2026-02-05 18:59:21 | INFO     | ================================================================================
+2026-02-05 18:59:21 | INFO     | PIPELINE COMPLETED SUCCESSFULLY
+2026-02-05 18:59:21 | INFO     | ================================================================================
+2026-02-05 18:59:21 | INFO     | Total documents in database: 424
+2026-02-05 18:59:21 | INFO     | Document types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13, 'pdf_document': 267}
+2026-02-05 18:59:21 | INFO     | Severity distribution: {'High': 116, 'Medium': 81, 'Low': 219, 'Critical': 8}
+2026-02-05 18:59:21 | INFO     | 
+================================================================================
+2026-02-05 18:59:21 | INFO     | DATABASE STATISTICS
+2026-02-05 18:59:21 | INFO     | ================================================================================
+2026-02-05 18:59:21 | INFO     | total_documents: 424
+2026-02-05 18:59:21 | INFO     | collection_name: evse_vulnerability_db
+2026-02-05 18:59:21 | INFO     | persist_directory: C:\Users\zakaria1\OneDrive\Desktop\OneDrive\PHD_2023_28\1 Spring 26\CIS_7910_Graduate_Research\Week-6 (VehicleSec)\ares_rag\chroma_db
+2026-02-05 18:59:21 | INFO     | document_types: {'mitre_technique': 95, 'stride_pattern': 17, 'mitre_stride_mapping': 10, 'dataset': 14, 'ics_cert_advisory': 8, 'protocol_vulnerability': 13, 'pdf_document': 267}
+2026-02-05 18:59:21 | INFO     | severity_distribution: {'High': 116, 'Medium': 81, 'Low': 219, 'Critical': 8}
+2026-02-05 18:59:21 | INFO     | 
+================================================================================
+2026-02-05 18:59:21 | INFO     | PIPELINE COMPLETED SUCCESSFULLY!
+2026-02-05 18:59:21 | INFO     | ================================================================================

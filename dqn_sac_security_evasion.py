@@ -13,66 +13,94 @@ from collections import deque
 class SecurityEvasionRewardCalculator:
     """Calculate rewards for RL agents learning to bypass anomaly detection"""
     
+    # IDS decision threshold — matches best_ids_model_meta.json
+    IDS_THRESHOLD = 0.465
+
     def __init__(self):
-        self.detection_penalty = -100.0  # Heavy penalty for being detected
+        self.detection_penalty = -30.0   # Reduced: was -100, which made every episode identical
         self.evasion_bonus = 50.0        # Bonus for successful evasion
         self.impact_multiplier = 10.0    # Multiplier for actual system impact
         self.stealth_bonus = 25.0        # Bonus for staying under detection thresholds
-        
-    def calculate_evasion_reward(self, attack_result: Dict, security_result: Dict, 
+
+        # Load actual IDS threshold from meta file so reward signal stays aligned
+        import json, os
+        _meta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "models", "best_ids_model_meta.json")
+        try:
+            with open(_meta) as _f:
+                SecurityEvasionRewardCalculator.IDS_THRESHOLD = float(
+                    json.load(_f).get("threshold", 0.465))
+        except Exception:
+            pass
+
+    def calculate_evasion_reward(self, attack_result: Dict, security_result: Dict,
                                evcs_output_change: Dict) -> float:
         """Calculate reward based on security evasion and system impact"""
-        
+
         total_reward = 0.0
-        
+        anomaly_score = security_result.get('anomaly_score', 0.0)
+        thr = self.IDS_THRESHOLD
+
         # 1. Security Evasion Component
         if security_result.get('attack_detected', False):
             total_reward += self.detection_penalty
-            detection_time = security_result.get('detection_time', 1)
-            total_reward += -50.0 / max(detection_time, 1)
+            # Continuous gradient: reward closeness to boundary even when detected.
+            # Agent learns that score=0.47 is better than score=0.97.
+            total_reward += (thr - anomaly_score) * 20.0   # negative (score > thr)
         else:
             total_reward += self.evasion_bonus
-            
+            # Extra margin bonus: how far below threshold (up to +18.6)
+            total_reward += max(0.0, (thr - anomaly_score)) * 40.0
+
         # 2. System Impact Component (only if not detected)
         if not security_result.get('attack_detected', False):
             voltage_change = abs(evcs_output_change.get('voltage_deviation', 0.0))
             power_change = abs(evcs_output_change.get('power_deviation', 0.0))
             current_change = abs(evcs_output_change.get('current_deviation', 0.0))
-            
             impact_reward = (voltage_change + power_change + current_change) * self.impact_multiplier
             total_reward += impact_reward
-            
-        # 3. Stealth Bonus
-        anomaly_score = security_result.get('anomaly_score', 0.0)
-        detection_threshold = security_result.get('detection_threshold', 0.3)
-        
-        if anomaly_score < detection_threshold * 0.8:
-            stealth_factor = (detection_threshold - anomaly_score) / detection_threshold
+
+        # 3. Stealth Bonus (uses actual IDS threshold, not hardcoded 0.3)
+        if anomaly_score < thr * 0.8:
+            stealth_factor = (thr - anomaly_score) / thr
             total_reward += self.stealth_bonus * stealth_factor
-            
+
         # 4. Consecutive Evasion Bonus
         consecutive_evasions = security_result.get('consecutive_evasions', 0)
         if consecutive_evasions > 3:
             total_reward += consecutive_evasions * 5.0
-            
+
         return total_reward
 
 class SecurityEvasionEnvironment(gym.Env):
     """Gym environment for training DQN/SAC agents to bypass security"""
     
-    def __init__(self, cms_system, num_stations: int = 6):
+    def __init__(self, cms_system, num_stations: int = 6, anomaly_detector=None, system_id: int = 1):
         super(SecurityEvasionEnvironment, self).__init__()
         
         self.cms = cms_system
         self.num_stations = num_stations
         self.reward_calculator = SecurityEvasionRewardCalculator()
+        # Real 3-layer IDS (physical + pattern + LSTM) — same as Phase 3
+        self.anomaly_detector = anomaly_detector
+        self.system_id = system_id
         
         # Track security state for RL learning
         self.security_history = deque(maxlen=20)
         self.consecutive_evasions = 0
         self.consecutive_detections = 0
         self.current_step = 0
-        self.max_steps = 1000
+        self.max_steps = 200  # Realistic episode length for attack campaigns
+        
+        # Done condition thresholds
+        self.max_consecutive_detections = 25  # Increased from 5: gives agent longer episodes for gradient signal
+        self.mission_success_evasions = 10   # Mission success: 10 consecutive undetected attacks
+        self.mission_success_impact = 0.5    # Minimum cumulative impact for mission success
+        
+        # Episode metrics tracking
+        self.episode_cumulative_reward = 0.0
+        self.episode_cumulative_impact = 0.0
+        self.done_reason = "running"
         
         # Define observation space: [system_state(15) + security_state(10)]
         self.observation_space = spaces.Box(
@@ -98,6 +126,9 @@ class SecurityEvasionEnvironment(gym.Env):
         self.current_station = np.random.randint(0, self.num_stations)
         self.consecutive_evasions = 0
         self.consecutive_detections = 0
+        self.episode_cumulative_reward = 0.0
+        self.episode_cumulative_impact = 0.0
+        self.done_reason = "running"
         
         # Initialize baseline outputs
         for station_id in range(self.num_stations):
@@ -107,6 +138,25 @@ class SecurityEvasionEnvironment(gym.Env):
                 'soc': 0.5, 'grid_voltage': 1.0, 'grid_frequency': 60.0,
                 'demand_factor': 1.0, 'voltage_priority': 0.0, 'urgency_factor': 1.0
             }
+        
+        # Reset and warm up the real IDS (matching Phase 3 pattern)
+        if self.anomaly_detector:
+            self.anomaly_detector.reset_state()
+            # Warm up LSTM sequence buffer with benign samples so the
+            # detector can score from step 1
+            if getattr(self.anomaly_detector, 'lstm_enabled', False):
+                seq_len = getattr(self.anomaly_detector, 'sequence_length', 10)
+                for _ in range(seq_len):
+                    benign_ids = {
+                        'soc': 0.5, 'voltage': 400.0, 'current': 25.0,
+                        'power': 10.0, 'temperature': 25.0,
+                        'demand_factor': 0.5, 'load_factor': 0.5,
+                        'grid_voltage': 1.0, 'grid_frequency': 60.0,
+                        'queue_length': 3, 'utilization': 0.5,
+                        'urgency_factor': 1.0, 'time_of_day': 12.0,
+                        'system_id': self.system_id
+                    }
+                    self.anomaly_detector.detect_lstm_anomaly(benign_ids)
         
         observation = self._get_observation()
         info = {'station_id': self.current_station}
@@ -175,9 +225,31 @@ class SecurityEvasionEnvironment(gym.Env):
             'output_change': evcs_output_change
         })
         
-        # Check termination
-        terminated = self.current_step >= self.max_steps
+        # Check termination with meaningful done conditions
+        terminated = False
         truncated = False
+        
+        # Update cumulative metrics
+        self.episode_cumulative_reward += reward
+        self.episode_cumulative_impact += evcs_output_change.get('total_impact', 0.0)
+        
+        # Done condition 1: Agent is "blown" - too many consecutive detections
+        if self.consecutive_detections >= self.max_consecutive_detections:
+            terminated = True
+            self.done_reason = "agent_detected"
+            reward -= 100.0  # Terminal penalty (reduced from 200; per-step penalties already signal detection)
+        
+        # Done condition 2: Mission success - sustained undetected high-impact attacks
+        elif (self.consecutive_evasions >= self.mission_success_evasions and 
+              self.episode_cumulative_impact >= self.mission_success_impact):
+            terminated = True
+            self.done_reason = "mission_success"
+            reward += 500.0  # Large bonus for successful mission
+        
+        # Done condition 3: Max steps reached (truncation, not termination)
+        elif self.current_step >= self.max_steps:
+            truncated = True
+            self.done_reason = "max_steps"
         
         # Get next observation
         observation = self._get_observation()
@@ -187,7 +259,12 @@ class SecurityEvasionEnvironment(gym.Env):
             'attack_detected': security_result.get('attack_detected', False),
             'evcs_impact': evcs_output_change.get('total_impact', 0.0),
             'consecutive_evasions': self.consecutive_evasions,
-            'security_result': security_result
+            'consecutive_detections': self.consecutive_detections,
+            'security_result': security_result,
+            'episode_step': self.current_step,
+            'done_reason': self.done_reason if (terminated or truncated) else 'running',
+            'cumulative_reward': self.episode_cumulative_reward,
+            'cumulative_impact': self.episode_cumulative_impact
         }
         
         # Switch to random station for next step
@@ -476,16 +553,50 @@ class SecurityEvasionEnvironment(gym.Env):
             else:
                 voltage_ref, current_ref, power_ref = 400.0, 25.0, 10.0
             
-            # Apply security validation if available
-            if self.cms and hasattr(self.cms, '_security_validation'):
-                final_v, final_i, final_p, not_detected = self.cms._security_validation(
-                    station_id, voltage_ref, current_ref, power_ref, attacked_data, time.time()
+            final_v, final_i, final_p = voltage_ref, current_ref, power_ref
+            
+            # --- Real 3-layer IDS detection (matching Phase 3) ---
+            attack_detected = False
+            ids_lstm_score = 0.0
+            ids_layer = None
+            
+            if self.anomaly_detector:
+                # Build IDS input from attacked data + CMS response
+                _temperature = 25.0 + max(0, final_p - 10.0) * 0.3
+                _load_factor = float(np.clip(final_p / 50.0, 0.2, 1.3))
+                _utilization = float(np.clip(final_p / 75.0, 0.1, 1.0))
+                
+                ids_input = {
+                    'soc': float(np.clip(attacked_data.get('soc', 0.5), 0.0, 1.0)),
+                    'voltage': float(final_v),
+                    'current': float(final_i),
+                    'power': float(final_p),
+                    'temperature': float(np.clip(_temperature, 20.0, 45.0)),
+                    'demand_factor': float(np.clip(attacked_data.get('demand_factor', 0.5), 0.1, 1.5)),
+                    'load_factor': _load_factor,
+                    'grid_voltage': float(np.clip(attacked_data.get('grid_voltage', 1.0), 0.85, 1.15)),
+                    'grid_frequency': float(np.clip(attacked_data.get('grid_frequency', 60.0), 59.0, 61.0)),
+                    'queue_length': 3,
+                    'utilization': _utilization,
+                    'urgency_factor': float(np.clip(attacked_data.get('urgency_factor', 1.0), 0.5, 2.0)),
+                    'time_of_day': float((self.current_step * 0.1) % 24.0),
+                    'system_id': self.system_id
+                }
+                
+                attack_detected, det_results = self.anomaly_detector.multi_layer_detection(
+                    ids_input, self.system_id
                 )
-                attack_detected = not not_detected
+                ids_layer = det_results.get('detection_layer', None)
+                ids_lstm_score = det_results.get('layer3_lstm', {}).get('score', 0.0)
             else:
-                # Simulate security detection based on deviation magnitude
-                final_v, final_i, final_p = voltage_ref, current_ref, power_ref
-                attack_detected = magnitude > 1.5  # Simple threshold-based detection
+                # Fallback: CMS security validation or simple threshold
+                if self.cms and hasattr(self.cms, '_security_validation'):
+                    final_v, final_i, final_p, not_detected = self.cms._security_validation(
+                        station_id, voltage_ref, current_ref, power_ref, attacked_data, time.time()
+                    )
+                    attack_detected = not not_detected
+                else:
+                    attack_detected = magnitude > 1.5
             
             # Calculate output changes
             evcs_output_change = {
@@ -499,10 +610,13 @@ class SecurityEvasionEnvironment(gym.Env):
             security_result = {
                 'attack_detected': attack_detected,
                 'detection_time': 1,
-                'anomaly_score': self._calculate_anomaly_score(attacked_data, station_data),
+                'anomaly_score': ids_lstm_score if self.anomaly_detector else self._calculate_anomaly_score(attacked_data, station_data),
                 'detection_threshold': getattr(self.cms, 'anomaly_threshold', 0.3) if self.cms else 0.3,
                 'consecutive_evasions': self.consecutive_evasions if not attack_detected else 0,
-                'consecutive_detections': self.consecutive_detections if attack_detected else 0
+                'consecutive_detections': self.consecutive_detections if attack_detected else 0,
+                'ids_detected': attack_detected,
+                'ids_layer': ids_layer,
+                'ids_lstm_score': float(ids_lstm_score)
             }
             
             return security_result, evcs_output_change, {
@@ -539,8 +653,8 @@ class SecurityEvasionEnvironment(gym.Env):
 class DiscreteSecurityEvasionEnv(SecurityEvasionEnvironment):
     """Discrete action space version for DQN"""
     
-    def __init__(self, cms_system, num_stations):
-        super().__init__(cms_system, num_stations)
+    def __init__(self, cms_system, num_stations, anomaly_detector=None, system_id: int = 1):
+        super().__init__(cms_system, num_stations, anomaly_detector=anomaly_detector, system_id=system_id)
         # Discrete actions: attack_type(6) * magnitude_levels(5) * duration_levels(6) = 180 actions
         self.action_space = spaces.Discrete(180)
         
@@ -564,13 +678,13 @@ class DiscreteSecurityEvasionEnv(SecurityEvasionEnvironment):
 class DQNSACSecurityEvasionTrainer:
     """Trainer using DQN and SAC agents to learn security bypass"""
     
-    def __init__(self, cms_system, num_stations: int = 6, use_both: bool = True):
+    def __init__(self, cms_system, num_stations: int = 6, use_both: bool = True, anomaly_detector=None, system_id: int = 1):
         self.cms = cms_system
         self.num_stations = num_stations
         
-        # Create environments
-        self.sac_env = SecurityEvasionEnvironment(cms_system, num_stations)
-        self.dqn_env = DiscreteSecurityEvasionEnv(cms_system, num_stations)
+        # Create environments (with real IDS if available)
+        self.sac_env = SecurityEvasionEnvironment(cms_system, num_stations, anomaly_detector=anomaly_detector, system_id=system_id)
+        self.dqn_env = DiscreteSecurityEvasionEnv(cms_system, num_stations, anomaly_detector=anomaly_detector, system_id=system_id)
         
         # Initialize agents
         self.sac_agent = None
@@ -810,19 +924,19 @@ class DQNSACSecurityEvasionTrainer:
                 dqn_path = f"{save_dir}/dqn_security_evasion.zip"
                 if os.path.exists(dqn_path):
                     self.dqn_agent = DQN.load(dqn_path)
-                    print(f"✅ DQN agent loaded from {dqn_path}")
+                    print(f"## DQN agent loaded from {dqn_path}")
                 else:
-                    print(f"⚠️ DQN model not found at {dqn_path}, using fresh agent")
+                    print(f"## DQN model not found at {dqn_path}, using fresh agent")
             
             if self.sac_agent:
                 sac_path = f"{save_dir}/sac_security_evasion.zip"
                 if os.path.exists(sac_path):
                     self.sac_agent = SAC.load(sac_path)
-                    print(f"✅ SAC agent loaded from {sac_path}")
+                    print(f"## SAC agent loaded from {sac_path}")
                 else:
-                    print(f"⚠️ SAC model not found at {sac_path}, using fresh agent")
+                    print(f"## SAC model not found at {sac_path}, using fresh agent")
         except Exception as e:
-            print(f"⚠️ Error loading agents: {e}")
+            print(f"## Error loading agents: {e}")
             print("   Using fresh agents instead")
 
 def create_dqn_sac_evasion_system(cms_system):

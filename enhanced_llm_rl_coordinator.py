@@ -34,6 +34,18 @@ except ImportError:
     print("Warning: LangChain not available. Install with: pip install langchain langchain-core")
     LANGCHAIN_AVAILABLE = False
 
+# Attack-specific deployment imports (NEW)
+try:
+    from gemini_attack_deployment import (
+        create_gemini_deployment_prompt,
+        create_gemini_adaptation_prompt,
+        parse_gemini_deployment_response
+    )
+    ATTACK_DEPLOYMENT_AVAILABLE = True
+except ImportError:
+    print("Warning: Attack-specific deployment not available")
+    ATTACK_DEPLOYMENT_AVAILABLE = False
+
 class AttackType(Enum):
     """Standardized attack types for both LLM and RL agents"""
     # Communication Attacks
@@ -193,10 +205,17 @@ class EnhancedLLMRLCoordinator:
     
     def __init__(self, llm_analyzer, rl_coordinator, hierarchical_sim, federated_manager, enhanced_system=None):
         self.llm_analyzer = llm_analyzer
-        self.rl_coordinator = rl_coordinator
+        self.rl_coordinator = rl_coordinator  # OLD system-specific coordinator
         self.hierarchical_sim = hierarchical_sim
         self.federated_manager = federated_manager
         self.enhanced_system = enhanced_system  # Add reference to enhanced system
+        
+        # NEW: Get attack-specific coordinator if available
+        self.attack_specific_coordinator = None
+        if enhanced_system and hasattr(enhanced_system, 'attack_specific_coordinator'):
+            self.attack_specific_coordinator = enhanced_system.attack_specific_coordinator
+            if self.attack_specific_coordinator:
+                print("   ✅ Using Attack-Specific Coordinator (RECOMMENDED)")
         
         # Analysis components
         self.stride_analyzer = STRIDEThreatAnalyzer()
@@ -314,7 +333,10 @@ class EnhancedLLMRLCoordinator:
         """Run complete attack episode using LangGraph workflow"""
         print(f"\n🎯 Enhanced Attack Episode {episode_num} with LangGraph Workflow")
         print("=" * 60)
-        
+
+        # Track the current episode so the deployment cache can detect episode changes
+        self._current_episode_num = episode_num
+
         if LANGGRAPH_AVAILABLE and self.app:
             return self._run_langgraph_workflow(scenario, episode_num)
         else:
@@ -367,9 +389,12 @@ class EnhancedLLMRLCoordinator:
                 adaptation_results={},
                 
                 # Workflow Control
+                # During inference the SAC policy is frozen, so repeated
+                # iterations produce identical outcomes.  Cap to 1 iteration
+                # unless explicitly overridden by setting self._max_langgraph_iterations.
                 current_phase="system_analysis",
                 episode_number=episode_num,
-                max_iterations=5,
+                max_iterations=getattr(self, '_max_langgraph_iterations', 1),
                 iteration_count=0,
                 workflow_completed=False,
                 
@@ -423,17 +448,64 @@ class EnhancedLLMRLCoordinator:
         print("🔍 Phase 2: STRIDE/MITRE Threat Analysis")
         threat_analysis = self._perform_stride_mitre_analysis(system_analysis)
         
-        print("🧠 Phase 3: LLM Strategic Planning")
-        llm_instructions = self._get_llm_strategic_instructions(system_analysis, threat_analysis, scenario)
+        # NEW: Use attack-specific coordination if available
+        if self.attack_specific_coordinator and ATTACK_DEPLOYMENT_AVAILABLE:
+            print("🎯 Phase 3: Attack-Specific Agent Coordination (NEW ARCHITECTURE)")
+            
+            # Extract STRIDE/MITRE data
+            stride_threats = threat_analysis.get('stride_threats', {})
+            mitre_tactics = threat_analysis.get('mitre_tactics', {})
+            
+            # Use new attack-specific coordination
+            rl_results = self._coordinate_attack_specific_agents(
+                system_analysis, 
+                stride_threats, 
+                mitre_tactics
+            )
+            
+            success_rate = rl_results.get('success_rate', 0.0)
+            total_impact = rl_results.get('total_impact', 0.0)
+            detection_risk = rl_results.get('avg_detection_risk', 0.0)
+            stealth_score = 1.0 - detection_risk
+            coord_eff = rl_results.get('coordination_metrics', {}).get('effectiveness', 0.0)
+            
+            composite_reward = (
+                success_rate * 1000.0 +
+                total_impact * 500.0 +
+                stealth_score * 300.0 +
+                coord_eff * 200.0
+            )
+            
+            exec_results = rl_results.get('execution_results', [])
+            
+            return {
+                'episode_number': episode_num,
+                'system_analysis': system_analysis,
+                'threat_analysis': threat_analysis,
+                'rl_results': rl_results,
+                'architecture': 'attack_specific',
+                'steps': len(exec_results) if isinstance(exec_results, list) else 0,
+                'success_metrics': {
+                    'success_rate': success_rate,
+                    'total_impact': total_impact,
+                    'detection_risk': detection_risk,
+                    'composite_reward': composite_reward
+                }
+            }
         
-        print("🤖 Phase 4: RL Agent Coordination")
-        rl_results = self._coordinate_rl_agents(llm_instructions, system_analysis)
-        
-        print("🔄 Phase 5: Feedback Analysis")
-        feedback = self._analyze_rl_feedback(rl_results, llm_instructions)
-        
-        print("🎯 Phase 6: LLM Adaptation")
-        adaptation_results = self._perform_llm_adaptation(feedback, system_analysis)
+        # OLD: Fallback to system-specific coordination
+        else:
+            print("🧠 Phase 3: LLM Strategic Planning (OLD ARCHITECTURE)")
+            llm_instructions = self._get_llm_strategic_instructions(system_analysis, threat_analysis, scenario)
+            
+            print("🤖 Phase 4: RL Agent Coordination (OLD)")
+            rl_results = self._coordinate_rl_agents(llm_instructions, system_analysis)
+            
+            print("🔄 Phase 5: Feedback Analysis")
+            feedback = self._analyze_rl_feedback(rl_results, llm_instructions)
+            
+            print("🎯 Phase 6: LLM Adaptation")
+            adaptation_results = self._perform_llm_adaptation(feedback, system_analysis)
         
         return {
             'episode_number': episode_num,
@@ -953,6 +1025,205 @@ Provide specific, actionable guidance that RL agents can execute.
         print(f"  ✅ RL coordination complete: {rl_results['success_rate']:.1%} success rate")
         return rl_results
     
+    def _coordinate_attack_specific_agents(self, system_analysis,
+                                          stride_threats: Dict,
+                                          mitre_tactics: Dict) -> Dict:
+        """
+        NEW: Coordinate attack-specific agents using Gemini deployment prompts.
+
+        During the *inference* phase the SAC policy is frozen, so calling Gemini
+        for a deployment plan on every LangGraph iteration within the same episode
+        produces identical results and wastes API quota.  We cache the Gemini
+        deployment response the first time it is obtained for this episode and
+        reuse it on subsequent iterations, only asking Gemini again when the
+        episode number changes.
+        """
+        print("  🎯 Coordinating Attack-Specific Agents (NEW ARCHITECTURE)...")
+        
+        # Convert SystemAnalysisData dataclass to dict if needed
+        from dataclasses import asdict
+        if hasattr(system_analysis, '__dataclass_fields__'):
+            try:
+                system_analysis_dict = asdict(system_analysis)
+            except Exception:
+                system_analysis_dict = {k: getattr(system_analysis, k, None) for k in system_analysis.__dataclass_fields__}
+        elif isinstance(system_analysis, dict):
+            system_analysis_dict = system_analysis
+        else:
+            system_analysis_dict = {'raw': str(system_analysis)}
+        
+        # Check if attack-specific coordinator is available
+        if not self.attack_specific_coordinator:
+            print("    ⚠️ Attack-specific coordinator not available, falling back to old coordination")
+            # Create dummy instructions for fallback
+            dummy_instructions = LLMInstructions(
+                recommended_attacks=[],
+                coordination_type="simultaneous",
+                stealth_level=0.7,
+                success_metrics={},
+                abort_conditions=[]
+            )
+            return self._coordinate_rl_agents(dummy_instructions, system_analysis)
+        
+        if not ATTACK_DEPLOYMENT_AVAILABLE:
+            print("    ⚠️ Attack deployment functions not available")
+            return {'status': 'failed', 'reason': 'no_attack_deployment'}
+        
+        # ── Episode-level deployment cache ───────────────────────────────
+        # Re-use the Gemini response obtained in the first LangGraph iteration
+        # of this episode.  The cache key is the episode number stored on self.
+        _cache_ep  = getattr(self, '_deployment_cache_episode', None)
+        _cache_dep = getattr(self, '_deployment_cache_deployments', None)
+        _cur_ep    = getattr(self, '_current_episode_num', None)
+
+        if _cache_dep is not None and _cache_ep == _cur_ep:
+            print("    ♻️  Reusing cached Gemini deployment plan "
+                  f"(episode {_cur_ep}, {len(_cache_dep)} deployments)")
+            deployments = _cache_dep
+            llm_response = getattr(self, '_deployment_cache_response', None)
+        else:
+            # Step 1: Create Gemini deployment prompt (NEW)
+            print("    📝 Creating Gemini deployment prompt for attack specialists...")
+            deployment_prompt = create_gemini_deployment_prompt(
+                system_analysis=system_analysis_dict,
+                stride_threats=stride_threats,
+                mitre_tactics=mitre_tactics
+            )
+
+            # Step 2: Get Gemini's deployment strategy
+            print("    🧠 Asking Gemini to deploy attack specialists...")
+            try:
+                gemini_input = {
+                    'system_analysis': system_analysis_dict,
+                    'stride_threats': stride_threats,
+                    'mitre_tactics': mitre_tactics,
+                    'deployment_prompt': deployment_prompt
+                }
+                llm_response = self.llm_analyzer.analyze_threats(gemini_input)
+                print(f"    ✅ Gemini response received ({len(str(llm_response))} chars)")
+            except Exception as e:
+                print(f"    ❌ Gemini analysis failed: {e}")
+                llm_response = None
+
+            # Step 3: Parse Gemini's deployment response
+            print("    🔍 Parsing Gemini's deployment strategy...")
+            if isinstance(llm_response, dict) and 'llm_response' in llm_response:
+                llm_response_text = llm_response['llm_response']
+            else:
+                llm_response_text = llm_response
+
+            deployments = parse_gemini_deployment_response(llm_response_text)
+            print(f"    ✅ Parsed {len(deployments)} attack deployments")
+
+            # Store in cache for subsequent iterations of the same episode
+            self._deployment_cache_episode    = _cur_ep
+            self._deployment_cache_deployments = deployments
+            self._deployment_cache_response   = llm_response
+        
+        for i, dep in enumerate(deployments, 1):
+            print(f"       {i}. {dep.attack_type} → systems {dep.target_systems}")
+        
+        # Step 4: Execute deployments using attack-specific coordinator
+        print("    🚀 Executing attack deployments...")
+        all_results = []
+        
+        for deployment in deployments:
+            try:
+                results = self.attack_specific_coordinator.execute_deployment(deployment)
+                all_results.extend(results)
+                
+                success_count = sum(1 for r in results if r['result']['success'])
+                print(f"       ✅ {deployment.attack_type}: {success_count}/{len(results)} successful")
+                
+            except Exception as e:
+                print(f"       ❌ Deployment failed for {deployment.attack_type}: {e}")
+        
+        # Step 5: Calculate metrics
+        total_attacks = len(all_results)
+        successful_attacks = sum(1 for r in all_results if r['result']['success'])
+        total_impact = sum(r['result']['impact'] for r in all_results)
+        avg_detection = np.mean([r['result']['detection_risk'] for r in all_results]) if all_results else 0.0
+        
+        coordination_results = {
+            'deployments': deployments,
+            'execution_results': all_results,
+            'success_rate': successful_attacks / max(total_attacks, 1),
+            'total_impact': total_impact,
+            'avg_detection_risk': avg_detection,
+            'total_attacks': total_attacks,
+            'architecture': 'attack_specific',  # Mark as new architecture
+            'gemini_strategy': llm_response
+        }
+        
+        print(f"  ✅ Attack-specific coordination complete:")
+        print(f"     Success rate: {coordination_results['success_rate']:.1%}")
+        print(f"     Total impact: {total_impact:.2f}")
+        print(f"     Avg detection risk: {avg_detection:.2%}")
+        
+        return coordination_results
+    
+    def _calculate_episode_success_metrics(self, rl_results: Dict, llm_instructions) -> Dict:
+        """Calculate success metrics for an episode from RL results and LLM instructions.
+        
+        This method was previously missing, causing AttributeError in the fallback
+        coordination path and resulting in all episode rewards being 0.0.
+        """
+        try:
+            execution_results = rl_results.get('execution_results', [])
+            
+            # Calculate success rate from execution results
+            total_attacks = len(execution_results)
+            successful_attacks = len([r for r in execution_results if r.get('success', False)])
+            success_rate = successful_attacks / max(total_attacks, 1)
+            
+            # Calculate total impact
+            total_impact = sum(r.get('impact', 0.0) for r in execution_results)
+            
+            # Calculate detection rate
+            detected_attacks = len([r for r in execution_results if r.get('detected', False)])
+            detection_rate = detected_attacks / max(total_attacks, 1)
+            
+            # Calculate stealth score (inverse of detection)
+            stealth_score = 1.0 - detection_rate
+            
+            # Calculate coordination effectiveness
+            coordination_metrics = rl_results.get('coordination_metrics', {})
+            coordination_effectiveness = coordination_metrics.get('effectiveness', 0.0)
+            
+            # Composite reward: weighted combination of success, impact, stealth, coordination
+            composite_reward = (
+                success_rate * 1000.0 +
+                total_impact * 500.0 +
+                stealth_score * 300.0 +
+                coordination_effectiveness * 200.0
+            )
+            
+            return {
+                'success_rate': success_rate,
+                'total_impact': total_impact,
+                'detection_rate': detection_rate,
+                'stealth_score': stealth_score,
+                'coordination_effectiveness': coordination_effectiveness,
+                'total_attacks': total_attacks,
+                'successful_attacks': successful_attacks,
+                'detected_attacks': detected_attacks,
+                'composite_reward': composite_reward
+            }
+            
+        except Exception as e:
+            print(f"⚠️ Error calculating episode success metrics: {e}")
+            return {
+                'success_rate': 0.0,
+                'total_impact': 0.0,
+                'detection_rate': 0.0,
+                'stealth_score': 0.0,
+                'coordination_effectiveness': 0.0,
+                'total_attacks': 0,
+                'successful_attacks': 0,
+                'detected_attacks': 0,
+                'composite_reward': 0.0
+            }
+    
     def _convert_instructions_to_rl_actions(self, instructions: LLMInstructions, 
                                           system_analysis: SystemAnalysisData) -> List[Dict]:
         """Convert LLM instructions to RL-compatible actions"""
@@ -1361,18 +1632,54 @@ Provide specific, actionable guidance that RL agents can execute.
             
             # Extract RL execution results - CRITICAL: Include executed_actions for hierarchical sim
             if 'execution_results' in final_state:
+                exec_res = final_state['execution_results']
+                # Unwrap nested result structure from execute_deployment:
+                # {'attack_type': ..., 'result': {'success': ..., 'impact': ...}}
+                def _inner(r):
+                    return r.get('result', r) if isinstance(r, dict) else r
                 results['rl_results'] = {
                     'executed_actions': final_state.get('rl_actions', []),  # CRITICAL: needed for attack extraction
-                    'execution_results': final_state['execution_results'],
+                    'execution_results': exec_res,
                     'coordination_metrics': final_state.get('coordination_metrics', {}),
-                    'success_rate': len([r for r in final_state['execution_results'] if r.get('success', False)]) / max(len(final_state['execution_results']), 1),
-                    'total_impact': sum([r.get('impact', 0.0) for r in final_state['execution_results']]),
-                    'detection_events': [r for r in final_state['execution_results'] if r.get('detected', False)]
+                    'success_rate': len([r for r in exec_res if _inner(r).get('success', False)]) / max(len(exec_res), 1),
+                    'total_impact': sum([_inner(r).get('impact', 0.0) for r in exec_res]),
+                    'detection_events': [r for r in exec_res if _inner(r).get('detected', False)]
                 }
             
-            # Extract success metrics
+            # Extract success metrics - ensure composite_reward is always present
             if 'success_metrics' in final_state:
                 results['success_metrics'] = final_state['success_metrics']
+            
+            # Ensure success_metrics always has composite_reward for reward extraction
+            if 'rl_results' in results:
+                rl = results['rl_results']
+                success_rate = rl.get('success_rate', 0.0)
+                total_impact = rl.get('total_impact', 0.0)
+                detection_events = len(rl.get('detection_events', []))
+                exec_count = len(rl.get('execution_results', []))
+                detection_rate = detection_events / max(exec_count, 1)
+                stealth_score = 1.0 - detection_rate
+                coord_effectiveness = rl.get('coordination_metrics', {}).get('effectiveness', 0.0)
+                
+                composite_reward = (
+                    success_rate * 1000.0 +
+                    total_impact * 500.0 +
+                    stealth_score * 300.0 +
+                    coord_effectiveness * 200.0
+                )
+                
+                if 'success_metrics' not in results:
+                    results['success_metrics'] = {}
+                
+                # Only add composite_reward if not already present
+                if 'composite_reward' not in results['success_metrics']:
+                    results['success_metrics']['composite_reward'] = composite_reward
+                    results['success_metrics']['success_rate'] = success_rate
+                    results['success_metrics']['total_impact'] = total_impact
+                    results['success_metrics']['detection_rate'] = detection_rate
+                
+                # Add step count
+                results['steps'] = exec_count
             
             # Extract stealth metrics
             if 'stealth_metrics' in final_state:
@@ -2108,39 +2415,74 @@ Return ONLY the JSON array, no other text."""
         try:
             print("🤖 LangGraph Node: RL Coordination")
             
-            llm_instructions = state.get('llm_instructions', {})
-            
-            # Convert LLM instructions to RL actions
-            rl_actions = self._convert_langgraph_instructions_to_rl_actions(llm_instructions)
-            
-            # Execute RL actions and UPDATE the actions with actual SAC parameters
-            execution_results = []
-            updated_actions = []
-            for action in rl_actions:
-                result = self._execute_langgraph_rl_action(action)
-                execution_results.append(result)
+            # NEW: Check if attack-specific coordinator is available
+            if self.attack_specific_coordinator and ATTACK_DEPLOYMENT_AVAILABLE:
+                print("   🎯 Using Attack-Specific Coordination (NEW ARCHITECTURE)")
                 
-                # Update action with actual parameters from result (if available)
-                if 'sac_params' in result:
-                    action['magnitude'] = result['sac_params'].get('magnitude', action.get('magnitude', 0.5))
-                    action['duration'] = result['sac_params'].get('duration', action.get('duration', 60.0))
-                    action['stealth_level'] = result['sac_params'].get('stealth', action.get('stealth_level', 0.5))
-                if 'attack_type' in result:
-                    action['attack_type'] = result['attack_type']
+                # Extract analysis data from state
+                system_analysis = state.get('system_analysis', {})
+                threat_analysis = state.get('threat_analysis', {})
+                stride_threats = threat_analysis.get('stride_threats', {})
+                mitre_tactics = threat_analysis.get('mitre_tactics', {})
                 
-                updated_actions.append(action)
+                # Use new attack-specific coordination
+                rl_results = self._coordinate_attack_specific_agents(
+                    system_analysis,
+                    stride_threats,
+                    mitre_tactics
+                )
+                
+                # Update state with attack-specific results
+                state['rl_actions'] = self._ensure_json_serializable(rl_results.get('deployments', []))
+                state['execution_results'] = self._ensure_json_serializable(rl_results.get('execution_results', []))
+                state['coordination_metrics'] = self._ensure_json_serializable({
+                    'success_rate': rl_results.get('success_rate', 0.0),
+                    'total_impact': rl_results.get('total_impact', 0.0),
+                    'avg_detection_risk': rl_results.get('avg_detection_risk', 0.0),
+                    'architecture': 'attack_specific'
+                })
+                state['current_phase'] = 'execution_monitoring'
+                state['debug_info'].append(f"Attack-specific coordination: {rl_results.get('total_attacks', 0)} attacks executed")
+                
+                return state
             
-            # Calculate coordination metrics
-            coordination_metrics = self._calculate_langgraph_coordination_metrics(execution_results)
-            
-            # Update state with UPDATED actions containing actual SAC parameters
-            state['rl_actions'] = self._ensure_json_serializable(updated_actions)  # Use updated actions with SAC params
-            state['execution_results'] = self._ensure_json_serializable(execution_results)
-            state['coordination_metrics'] = self._ensure_json_serializable(coordination_metrics)
-            state['current_phase'] = 'execution_monitoring'
-            state['debug_info'].append(f"RL coordination completed: {len(updated_actions)} actions executed")
-            
-            return state
+            # OLD: Fallback to system-specific coordination
+            else:
+                print("   ⚠️ Using System-Specific Coordination (OLD ARCHITECTURE)")
+                
+                llm_instructions = state.get('llm_instructions', {})
+                
+                # Convert LLM instructions to RL actions
+                rl_actions = self._convert_langgraph_instructions_to_rl_actions(llm_instructions)
+                
+                # Execute RL actions and UPDATE the actions with actual SAC parameters
+                execution_results = []
+                updated_actions = []
+                for action in rl_actions:
+                    result = self._execute_langgraph_rl_action(action)
+                    execution_results.append(result)
+                    
+                    # Update action with actual parameters from result (if available)
+                    if 'sac_params' in result:
+                        action['magnitude'] = result['sac_params'].get('magnitude', action.get('magnitude', 0.5))
+                        action['duration'] = result['sac_params'].get('duration', action.get('duration', 60.0))
+                        action['stealth_level'] = result['sac_params'].get('stealth', action.get('stealth_level', 0.5))
+                    if 'attack_type' in result:
+                        action['attack_type'] = result['attack_type']
+                    
+                    updated_actions.append(action)
+                
+                # Calculate coordination metrics
+                coordination_metrics = self._calculate_langgraph_coordination_metrics(execution_results)
+                
+                # Update state with UPDATED actions containing actual SAC parameters
+                state['rl_actions'] = self._ensure_json_serializable(updated_actions)  # Use updated actions with SAC params
+                state['execution_results'] = self._ensure_json_serializable(execution_results)
+                state['coordination_metrics'] = self._ensure_json_serializable(coordination_metrics)
+                state['current_phase'] = 'execution_monitoring'
+                state['debug_info'].append(f"RL coordination completed: {len(updated_actions)} actions executed")
+                
+                return state
             
         except Exception as e:
             print(f"❌ RL coordination node failed: {e}")
@@ -2154,17 +2496,22 @@ Return ONLY the JSON array, no other text."""
             
             execution_results = state.get('execution_results', [])
             
+            # Unwrap nested result structure from execute_deployment:
+            # {'attack_type': ..., 'result': {'success': ..., 'impact': ..., 'detection_risk': ...}}
+            def _inner(r):
+                return r.get('result', r) if isinstance(r, dict) else r
+            
             # Calculate stealth metrics
             stealth_metrics = {
-                'detection_risk': float(np.mean([r.get('detection_risk', 0.5) for r in execution_results])) if execution_results else 0.5,
-                'stealth_score': float(np.mean([r.get('stealth_factor', 0.5) for r in execution_results])) if execution_results else 0.5,
-                'anomaly_score': float(np.mean([r.get('anomaly_score', 0.0) for r in execution_results])) if execution_results else 0.0
+                'detection_risk': float(np.mean([_inner(r).get('detection_risk', 0.5) for r in execution_results])) if execution_results else 0.5,
+                'stealth_score': float(np.mean([_inner(r).get('stealth_factor', 0.5) for r in execution_results])) if execution_results else 0.5,
+                'anomaly_score': float(np.mean([_inner(r).get('anomaly_score', 0.0) for r in execution_results])) if execution_results else 0.0
             }
             
             # Calculate success metrics
             success_metrics = {
-                'success_rate': float(np.mean([1.0 if r.get('success', False) else 0.0 for r in execution_results])) if execution_results else 0.0,
-                'total_impact': float(sum([r.get('impact', 0.0) for r in execution_results])),
+                'success_rate': float(np.mean([1.0 if _inner(r).get('success', False) else 0.0 for r in execution_results])) if execution_results else 0.0,
+                'total_impact': float(sum([_inner(r).get('impact', 0.0) for r in execution_results])),
                 'coordination_effectiveness': float(state.get('coordination_metrics', {}).get('effectiveness', 0.0))
             }
             
@@ -2212,32 +2559,71 @@ Return ONLY the JSON array, no other text."""
             return state
     
     def _llm_adaptation_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
-        """LangGraph node: LLM strategy adaptation"""
+        """LangGraph node: LLM strategy adaptation.
+
+        Guard: if the SAC policy is frozen (inference phase) the execution
+        results are identical every iteration, so calling the LLM for
+        'adaptation' produces only wasted API calls and log spam.  We skip
+        the LLM call when *both* conditions hold:
+          1. success_rate is still 0 AND detection_risk is still ≥ 0.99
+             (i.e. the environment response has not changed at all)
+          2. this adaptation node has already been visited at least once in
+             this episode (tracked via state['_adaptation_call_count']).
+        In that case we reuse the previous adaptation result and move on.
+        """
         try:
             print("🔄 LangGraph Node: LLM Adaptation")
-            
-            rl_feedback = state.get('rl_feedback', {})
-            
+
+            rl_feedback    = state.get('rl_feedback', {})
+            success_rate   = rl_feedback.get('performance_score', 0.0)
+            detection_risk = rl_feedback.get('detection_risk', 0.0)
+
+            # Increment per-episode call counter stored in state
+            call_count = state.get('_adaptation_call_count', 0) + 1
+            state['_adaptation_call_count'] = call_count
+
+            # ── No-improvement guard ──────────────────────────────────────
+            # If the frozen SAC policy produced the exact same bad outcome
+            # as the previous iteration there is no point asking the LLM
+            # again — its advice cannot be acted upon until the SAC weights
+            # are updated.  Skip to workflow_completion immediately.
+            if call_count > 1 and success_rate == 0.0 and detection_risk >= 0.99:
+                print("    ⚡ Skipping LLM adaptation call: frozen SAC policy, "
+                      "no improvement since last iteration.")
+                state['current_phase'] = 'workflow_completion'
+                state['debug_info'].append(
+                    "LLM adaptation skipped (frozen policy, no-improve guard)")
+                return state
+
             # Create adaptation prompt
             adaptation_prompt = self._create_langgraph_adaptation_prompt(state, rl_feedback)
-            
-            # Get LLM adaptation response - ensure it returns a dict
-            adaptation_response = self.llm_analyzer.analyze_threats(adaptation_prompt)
-            
-            # Ensure adaptation_response is a dict (handle string responses)
-            if isinstance(adaptation_response, str):
-                adaptation_response = {'llm_response': adaptation_response, 'analysis_type': 'text_response'}
-            
-            # Parse adaptation
-            adaptation_results = self._parse_langgraph_adaptation_response(adaptation_response)
-            
-            # Update state with serializable data
+
+            adaptation_input = {
+                'adaptation_prompt': adaptation_prompt,
+                'rl_feedback': rl_feedback,
+                'current_phase': state.get('current_phase', 'adaptation')
+            }
+
+            # Get LLM adaptation response
+            adaptation_response = self.llm_analyzer.analyze_threats(adaptation_input)
+
+            if isinstance(adaptation_response, dict) and 'llm_response' in adaptation_response:
+                adaptation_text = adaptation_response['llm_response']
+            else:
+                adaptation_text = adaptation_response
+
+            if not isinstance(adaptation_text, str):
+                adaptation_text = str(adaptation_text)
+
+            adaptation_results = self._parse_langgraph_adaptation_response(adaptation_text)
+
             state['adaptation_results'] = self._ensure_json_serializable(adaptation_results)
             state['current_phase'] = 'workflow_completion'
-            state['debug_info'].append(f"LLM adaptation completed: {adaptation_results.get('strategy', 'unknown')}")
-            
+            state['debug_info'].append(
+                f"LLM adaptation completed: {adaptation_results.get('strategy', 'unknown')}")
+
             return state
-            
+
         except Exception as e:
             print(f"❌ LLM adaptation node failed: {e}")
             state['debug_info'].append(f"LLM adaptation failed: {e}")
@@ -2467,66 +2853,73 @@ Return ONLY the JSON array, no other text."""
         return actions
     
     def _execute_langgraph_rl_action(self, action: Dict) -> Dict:
-        """Execute RL action using TRAINED DQN/SAC agents"""
+        """Execute RL action using TRAINED DQN/SAC agents via their TRAINING environments.
+        
+        Uses env.reset() → agent.predict(obs) → env.step(action) to ensure
+        observation/action consistency between training and testing.
+        """
         try:
             system_id = action.get('system_id', 1)
             attack_type = action.get('attack_type', AttackType.VOLTAGE_MANIPULATION)
             stealth_req = action.get('stealth_requirement', 0.5)
 
-            # Try to use ACTUAL trained DQN/SAC agents
-            if self.rl_coordinator and hasattr(self.rl_coordinator, 'dqn_agents') and hasattr(self.rl_coordinator, 'sac_agents'):
-                if system_id in self.rl_coordinator.dqn_agents and system_id in self.rl_coordinator.sac_agents:
-
-                    # Get system observation for the agents
-                    obs = self._get_system_observation_for_agents(system_id)
-
-                    # Use DQN agent to select attack type (discrete action)
-                    dqn_agent = self.rl_coordinator.dqn_agents[system_id]
-                    dqn_action_idx, _ = dqn_agent.predict(obs, deterministic=True)
-                    dqn_action = self._convert_dqn_action_to_attack(dqn_action_idx)
-
-                    # Use SAC agent to generate continuous parameters (magnitude, stealth, etc.)
-                    sac_agent = self.rl_coordinator.sac_agents[system_id]
-                    sac_action, _ = sac_agent.predict(obs, deterministic=True)
-
-                    # Extract attack parameters from SAC action
-                    magnitude = float(np.clip(sac_action[0], 0.1, 2.0))  # Attack magnitude
-                    stealth_factor = float(np.clip(sac_action[1] if len(sac_action) > 1 else stealth_req, 0.0, 1.0))
-                    duration = float(np.clip(sac_action[2] if len(sac_action) > 2 else 30.0, 10.0, 120.0))
-
-                    # Execute attack on PINN model or hierarchical simulation
-                    attack_params = {
-                        'type': dqn_action.get('attack_type', attack_type),
-                        'magnitude': magnitude,
-                        'duration': duration,
-                        'stealth_factor': stealth_factor,
-                        'target_component': action.get('target_component', 'evcs_cms_link')
-                    }
-
-                    # Execute on PINN model if available
-                    if self.federated_manager and system_id in self.federated_manager.local_models:
-                        local_model = self.federated_manager.local_models[system_id]
-                        attack_result = self._execute_pinn_attack(local_model, attack_params)
-                    else:
-                        # Fallback to hierarchical simulation attack
-                        attack_result = self._execute_hierarchical_attack(system_id, attack_params)
-
-                    # Ensure all values are JSON-serializable (no numpy types)
+            # Try to use ACTUAL trained DQN/SAC agents with their TRAINING environments
+            if self.rl_coordinator and hasattr(self.rl_coordinator, 'sac_agents') and hasattr(self.rl_coordinator, 'sac_envs'):
+                has_sac = system_id in self.rl_coordinator.sac_agents and system_id in self.rl_coordinator.sac_envs
+                has_dqn = (hasattr(self.rl_coordinator, 'dqn_agents') and hasattr(self.rl_coordinator, 'dqn_envs') and
+                           system_id in self.rl_coordinator.dqn_agents and system_id in self.rl_coordinator.dqn_envs)
+                
+                if has_sac or has_dqn:
+                    dqn_action = {}
+                    sac_params = {}
+                    sac_reward = 0.0
+                    dqn_reward = 0.0
+                    sac_info = {}
+                    dqn_info = {}
+                    
+                    # --- DQN: use TRAINING environment ---
+                    if has_dqn:
+                        dqn_env = self.rl_coordinator.dqn_envs[system_id]
+                        dqn_obs, _ = dqn_env.reset()
+                        dqn_action_idx, _ = self.rl_coordinator.dqn_agents[system_id].predict(dqn_obs, deterministic=True)
+                        _, dqn_reward, _, _, dqn_info = dqn_env.step(dqn_action_idx)
+                        dqn_action = self._convert_dqn_action_to_attack(dqn_action_idx)
+                    
+                    # --- SAC: use TRAINING environment ---
+                    if has_sac:
+                        sac_env = self.rl_coordinator.sac_envs[system_id]
+                        sac_obs, _ = sac_env.reset()
+                        sac_raw_action, _ = self.rl_coordinator.sac_agents[system_id].predict(sac_obs, deterministic=True)
+                        _, sac_reward, _, _, sac_info = sac_env.step(sac_raw_action)
+                        
+                        # Extract SAC params from the raw action for logging
+                        sac_params = {
+                            'magnitude': float(np.clip(sac_raw_action[1] if len(sac_raw_action) > 1 else 0.5, 0.0, 2.0)),
+                            'stealth': float(np.clip(sac_raw_action[4] if len(sac_raw_action) > 4 else 0.5, 0.0, 1.0)),
+                            'duration': float(np.clip(sac_raw_action[2] if len(sac_raw_action) > 2 else 30.0, 5.0, 180.0))
+                        }
+                    
+                    # Combine results — prefer SAC (continuous, richer)
+                    best_info = sac_info if has_sac else dqn_info
+                    attack_detected = best_info.get('attack_detected', True)
+                    
                     result = {
                         'system_id': int(system_id),
                         'attack_type': str(dqn_action.get('attack_type', str(attack_type))),
-                        'success': bool(attack_result.get('success', False)),
-                        'impact': float(attack_result.get('impact', 0.0)),
-                        'detection_risk': float(attack_result.get('detection_risk', 0.5)),
-                        'stealth_factor': float(stealth_factor),
-                        'anomaly_score': float(attack_result.get('anomaly_score', 0.0)),
+                        'success': bool(not attack_detected),
+                        'impact': float(best_info.get('evcs_impact', 0.0)),
+                        'detection_risk': float(best_info.get('security_result', {}).get('anomaly_score', 0.5)),
+                        'stealth_factor': float(sac_params.get('stealth', stealth_req)),
+                        'anomaly_score': float(best_info.get('security_result', {}).get('anomaly_score', 0.0)),
                         'timestamp': float(time.time()),
                         'agent_used': 'DQN+SAC',
+                        'env_consistent': True,
                         'dqn_action': {'attack_type': str(dqn_action.get('attack_type', 'unknown')), 'action_idx': int(dqn_action.get('action_idx', 0))},
-                        'sac_params': {'magnitude': float(magnitude), 'stealth': float(stealth_factor), 'duration': float(duration)}
+                        'sac_params': sac_params
                     }
 
-                    print(f"    🤖 Used trained agents: DQN selected '{dqn_action.get('attack_type')}', SAC params: mag={magnitude:.2f}, stealth={stealth_factor:.2f}")
+                    print(f"    🤖 Used trained agents (via training envs): DQN='{dqn_action.get('attack_type')}', "
+                          f"SAC reward={sac_reward:.2f}, detected={attack_detected}")
                     return result
 
             # Fallback to simulation if agents not available
@@ -2664,8 +3057,11 @@ Return ONLY the JSON array, no other text."""
         if not execution_results:
             return ['No execution results available']
         
-        success_rate = np.mean([1.0 if r.get('success', False) else 0.0 for r in execution_results])
-        avg_detection = np.mean([r.get('detection_risk', 0.5) for r in execution_results])
+        # Unwrap nested result structure from execute_deployment
+        def _inner(r):
+            return r.get('result', r) if isinstance(r, dict) else r
+        success_rate = np.mean([1.0 if _inner(r).get('success', False) else 0.0 for r in execution_results])
+        avg_detection = np.mean([_inner(r).get('detection_risk', 0.5) for r in execution_results])
         
         if success_rate < 0.5:
             recommendations.append('Consider adjusting attack parameters for higher success rate')

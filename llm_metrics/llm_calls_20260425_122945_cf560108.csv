@@ -1,0 +1,37 @@
+run_id,call_id,timestamp_utc,provider,model_name,method_name,total_time_s,ttft_s,prompt_tokens,completion_tokens,total_tokens,cost_usd,is_valid_json,schema_valid,json_parse_error,mitre_id_count,stride_category_count,quality_score_rule,prompt_length_chars,response_length_chars,response_snippet,task_success,rl_plan_accepted,rl_reward_before,rl_reward_after,rl_reward_delta,grid_id,episode,step,is_fallback,error_message
+cf560108,83b14618-3215-46a5-97df-722590e08665,2026-04-25T16:29:45.796669+00:00,openrouter,anthropic/claude-3.5-haiku,analyze_threats,9.4424,,864,757,1621,0.0037192,True,True,,6,6,1.0,2704,2316,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [3],
+      ""magnitude"": 0.75,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.8,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""System 3 selected for initial voltage testing with moderate intensity""
+    },
+    {
+      ""attack_type"": ""current_injection"", 
+      ""target_systems"": [5],
+      ""magnitude"": 0.6,
+      ""duration""",True,True,0.0,2795.0192933717544,2795.019293,,,,False,
+cf560108,81c191f9-cf4a-4b75-af86-5de2af5972c2,2026-04-25T18:03:24.326780+00:00,openrouter,anthropic/claude-3.5-haiku,analyze_threats,9.6573,,975,770,1745,0.00386,True,True,,6,3,0.8,2727,2313,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [2],
+      ""magnitude"": 0.7,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.7,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Rotating from System 3 to untested System 2; maintaining high-reward parameters""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.95,
+      """,,,,,,,,,False,

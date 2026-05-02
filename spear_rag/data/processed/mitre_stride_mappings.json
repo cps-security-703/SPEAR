@@ -1,0 +1,828 @@
+[
+  {
+    "doc_id": "MITRE-STRIDE-T0866",
+    "type": "mitre_stride_mapping",
+    "title": "T0866: Exploitation of Remote Services - STRIDE Mapping",
+    "description": "Adversaries may exploit remote services to gain unauthorized access to EVSE or DMS systems. EVSE Context: Attackers exploit vulnerabilities in OCPP, OSCP, or proprietary charging protocols to gain access",
+    "source": "https://attack.mitre.org/techniques/T0866",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Spoofing",
+      "Elevation of Privilege"
+    ],
+    "mitre_tactics": [
+      "Initial Access"
+    ],
+    "mitre_techniques": [
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Regular patching and updates",
+      "Strong authentication mechanisms",
+      "Network segmentation",
+      "Disable unnecessary remote services"
+    ],
+    "detection_methods": [
+      "Monitor for unusual remote access attempts",
+      "Log authentication failures and successes",
+      "Detect exploitation attempts through IDS/IPS",
+      "Analyze network traffic for protocol anomalies"
+    ],
+    "defensive_actions": [
+      "Regular patching and updates",
+      "Strong authentication mechanisms",
+      "Network segmentation",
+      "Disable unnecessary remote services"
+    ],
+    "countermeasures": [
+      "Regular patching and updates",
+      "Strong authentication mechanisms",
+      "Network segmentation",
+      "Disable unnecessary remote services"
+    ],
+    "prerequisites": "",
+    "impact": "Attackers exploit vulnerabilities in OCPP, OSCP, or proprietary charging protocols to gain access",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0866"
+    ],
+    "embedding_text": "T0866 Exploitation of Remote Services Adversaries may exploit remote services to gain unauthorized access to EVSE or DMS systems Attackers exploit vulnerabilities in OCPP, OSCP, or proprietary charging protocols to gain access Exploiting unpatched OCPP WebSocket vulnerabilities Attacking weak authentication in charging station APIs Leveraging default credentials in EVSE management interfaces Regular patching and updates Strong authentication mechanisms Network segmentation Disable unnecessary remote services",
+    "keywords": [
+      "t0866",
+      "exploitation_of_remote_services",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Spoofing",
+      "Elevation of Privilege"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0836",
+    "type": "mitre_stride_mapping",
+    "title": "T0836: Modify Parameter - STRIDE Mapping",
+    "description": "Adversaries may modify parameters in control systems to disrupt operations. EVSE Context: Attackers modify charging parameters, load balancing settings, or AGC control parameters",
+    "source": "https://attack.mitre.org/techniques/T0836",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering"
+    ],
+    "mitre_tactics": [
+      "Impair Process Control"
+    ],
+    "mitre_techniques": [
+      "T0836"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Access control on parameter modification",
+      "Change management processes",
+      "Parameter validation and bounds checking",
+      "Cryptographic signing of configurations"
+    ],
+    "detection_methods": [
+      "Parameter change logging and alerting",
+      "Baseline deviation detection",
+      "Integrity checking of configuration files",
+      "Real-time monitoring of critical parameters"
+    ],
+    "defensive_actions": [
+      "Access control on parameter modification",
+      "Change management processes",
+      "Parameter validation and bounds checking",
+      "Cryptographic signing of configurations"
+    ],
+    "countermeasures": [
+      "Access control on parameter modification",
+      "Change management processes",
+      "Parameter validation and bounds checking",
+      "Cryptographic signing of configurations"
+    ],
+    "prerequisites": "",
+    "impact": "Attackers modify charging parameters, load balancing settings, or AGC control parameters",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0836"
+    ],
+    "embedding_text": "T0836 Modify Parameter Adversaries may modify parameters in control systems to disrupt operations Attackers modify charging parameters, load balancing settings, or AGC control parameters Modifying charging current limits to damage batteries Altering load balancing parameters to destabilize grid Changing AGC setpoints to cause frequency deviations Tampering with billing rate parameters Access control on parameter modification Change management processes Parameter validation and bounds checking Cryptographic signing of configurations",
+    "keywords": [
+      "t0836",
+      "modify_parameter",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Tampering"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0814",
+    "type": "mitre_stride_mapping",
+    "title": "T0814: Denial of Service - STRIDE Mapping",
+    "description": "Adversaries may perform DoS attacks to disrupt charging services or grid operations. EVSE Context: DoS attacks against charging stations, CCMS, or grid management systems",
+    "source": "https://attack.mitre.org/techniques/T0814",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Denial of Service"
+    ],
+    "mitre_tactics": [
+      "Inhibit Response Function"
+    ],
+    "mitre_techniques": [
+      "T0814"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "DDoS protection mechanisms",
+      "Rate limiting and throttling",
+      "Resource allocation controls",
+      "Redundant infrastructure"
+    ],
+    "detection_methods": [
+      "Network traffic anomaly detection",
+      "Resource utilization monitoring",
+      "Service availability monitoring",
+      "Rate-based detection algorithms"
+    ],
+    "defensive_actions": [
+      "DDoS protection mechanisms",
+      "Rate limiting and throttling",
+      "Resource allocation controls",
+      "Redundant infrastructure"
+    ],
+    "countermeasures": [
+      "DDoS protection mechanisms",
+      "Rate limiting and throttling",
+      "Resource allocation controls",
+      "Redundant infrastructure"
+    ],
+    "prerequisites": "",
+    "impact": "DoS attacks against charging stations, CCMS, or grid management systems",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0814"
+    ],
+    "embedding_text": "T0814 Denial of Service Adversaries may perform DoS attacks to disrupt charging services or grid operations DoS attacks against charging stations, CCMS, or grid management systems Network flooding of charging station interfaces Resource exhaustion attacks on CCMS Protocol-specific DoS (OCPP message flooding) Physical DoS through emergency stop abuse DDoS protection mechanisms Rate limiting and throttling Resource allocation controls Redundant infrastructure",
+    "keywords": [
+      "t0814",
+      "denial_of_service",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Denial of Service"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0868",
+    "type": "mitre_stride_mapping",
+    "title": "T0868: Detect Operating Mode - STRIDE Mapping",
+    "description": "Adversaries gather information about system operating modes for reconnaissance. EVSE Context: Attackers detect charging modes, grid state, or system configurations",
+    "source": "https://attack.mitre.org/techniques/T0868",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Information Disclosure"
+    ],
+    "mitre_tactics": [
+      "Collection"
+    ],
+    "mitre_techniques": [
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Access control on status information",
+      "Encryption of operational data",
+      "Network segmentation",
+      "Information classification and protection"
+    ],
+    "detection_methods": [
+      "Monitor for unusual information queries",
+      "Detect unauthorized access to status interfaces",
+      "Log all state information requests",
+      "Behavioral analysis of access patterns"
+    ],
+    "defensive_actions": [
+      "Access control on status information",
+      "Encryption of operational data",
+      "Network segmentation",
+      "Information classification and protection"
+    ],
+    "countermeasures": [
+      "Access control on status information",
+      "Encryption of operational data",
+      "Network segmentation",
+      "Information classification and protection"
+    ],
+    "prerequisites": "",
+    "impact": "Attackers detect charging modes, grid state, or system configurations",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0868"
+    ],
+    "embedding_text": "T0868 Detect Operating Mode Adversaries gather information about system operating modes for reconnaissance Attackers detect charging modes, grid state, or system configurations Monitoring charging station states for attack timing Detecting grid operating modes (normal, emergency) Identifying peak load periods Reconnaissance of DMS topology Access control on status information Encryption of operational data Network segmentation Information classification and protection",
+    "keywords": [
+      "t0868",
+      "detect_operating_mode",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Information Disclosure"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0831",
+    "type": "mitre_stride_mapping",
+    "title": "T0831: Manipulation of Control - STRIDE Mapping",
+    "description": "Adversaries manipulate control systems to alter physical processes. EVSE Context: Manipulation of charging control, load management, or AGC systems",
+    "source": "https://attack.mitre.org/techniques/T0831",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering",
+      "Repudiation"
+    ],
+    "mitre_tactics": [
+      "Impair Process Control"
+    ],
+    "mitre_techniques": [
+      "T0831"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Multi-factor authorization for critical commands",
+      "Command validation and bounds checking",
+      "Audit trails with non-repudiation",
+      "Physical process limits and safeguards"
+    ],
+    "detection_methods": [
+      "Control command logging and verification",
+      "Anomaly detection on control sequences",
+      "Physical process monitoring",
+      "Command source authentication"
+    ],
+    "defensive_actions": [
+      "Multi-factor authorization for critical commands",
+      "Command validation and bounds checking",
+      "Audit trails with non-repudiation",
+      "Physical process limits and safeguards"
+    ],
+    "countermeasures": [
+      "Multi-factor authorization for critical commands",
+      "Command validation and bounds checking",
+      "Audit trails with non-repudiation",
+      "Physical process limits and safeguards"
+    ],
+    "prerequisites": "",
+    "impact": "Manipulation of charging control, load management, or AGC systems",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0831"
+    ],
+    "embedding_text": "T0831 Manipulation of Control Adversaries manipulate control systems to alter physical processes Manipulation of charging control, load management, or AGC systems Unauthorized control of charging sessions Manipulation of load shedding commands Altering AGC control signals Tampering with demand response controls Multi-factor authorization for critical commands Command validation and bounds checking Audit trails with non-repudiation Physical process limits and safeguards",
+    "keywords": [
+      "t0831",
+      "manipulation_of_control",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Tampering",
+      "Repudiation"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0890",
+    "type": "mitre_stride_mapping",
+    "title": "T0890: Exploitation for Privilege Escalation - STRIDE Mapping",
+    "description": "Adversaries exploit vulnerabilities to gain higher privileges. EVSE Context: Escalating from user to admin in charging systems or DMS",
+    "source": "https://attack.mitre.org/techniques/T0890",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Elevation of Privilege"
+    ],
+    "mitre_tactics": [
+      "Privilege Escalation"
+    ],
+    "mitre_techniques": [
+      "T0890"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Regular vulnerability patching",
+      "Principle of least privilege",
+      "Application whitelisting",
+      "Exploit mitigation technologies"
+    ],
+    "detection_methods": [
+      "Monitor privilege changes",
+      "Detect exploitation attempts",
+      "Log all privilege escalation events",
+      "Behavioral analysis of user activities"
+    ],
+    "defensive_actions": [
+      "Regular vulnerability patching",
+      "Principle of least privilege",
+      "Application whitelisting",
+      "Exploit mitigation technologies"
+    ],
+    "countermeasures": [
+      "Regular vulnerability patching",
+      "Principle of least privilege",
+      "Application whitelisting",
+      "Exploit mitigation technologies"
+    ],
+    "prerequisites": "",
+    "impact": "Escalating from user to admin in charging systems or DMS",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0890"
+    ],
+    "embedding_text": "T0890 Exploitation for Privilege Escalation Adversaries exploit vulnerabilities to gain higher privileges Escalating from user to admin in charging systems or DMS Exploiting EVSE firmware vulnerabilities Privilege escalation in charging management software Gaining admin access to SCADA/DMS systems Exploiting API vulnerabilities for elevated access Regular vulnerability patching Principle of least privilege Application whitelisting Exploit mitigation technologies",
+    "keywords": [
+      "t0890",
+      "exploitation_for_privilege_escalation",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Elevation of Privilege"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0816",
+    "type": "mitre_stride_mapping",
+    "title": "T0816: Device Restart/Shutdown - STRIDE Mapping",
+    "description": "Adversaries restart or shutdown devices to disrupt operations. EVSE Context: Forcing restart/shutdown of charging stations or grid control systems",
+    "source": "https://attack.mitre.org/techniques/T0816",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Denial of Service"
+    ],
+    "mitre_tactics": [
+      "Inhibit Response Function"
+    ],
+    "mitre_techniques": [
+      "T0816"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Access control on shutdown commands",
+      "Physical security of devices",
+      "Redundant systems and failover",
+      "Restart authorization requirements"
+    ],
+    "detection_methods": [
+      "Monitor unexpected restarts/shutdowns",
+      "Log all shutdown commands",
+      "Detect coordinated shutdown patterns",
+      "Alert on critical system unavailability"
+    ],
+    "defensive_actions": [
+      "Access control on shutdown commands",
+      "Physical security of devices",
+      "Redundant systems and failover",
+      "Restart authorization requirements"
+    ],
+    "countermeasures": [
+      "Access control on shutdown commands",
+      "Physical security of devices",
+      "Redundant systems and failover",
+      "Restart authorization requirements"
+    ],
+    "prerequisites": "",
+    "impact": "Forcing restart/shutdown of charging stations or grid control systems",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0816"
+    ],
+    "embedding_text": "T0816 Device Restart/Shutdown Adversaries restart or shutdown devices to disrupt operations Forcing restart/shutdown of charging stations or grid control systems Remote shutdown of charging stations Forcing AGC system restarts during critical periods Coordinated shutdown of multiple EVSE units Disrupting DMS through system restarts Access control on shutdown commands Physical security of devices Redundant systems and failover Restart authorization requirements",
+    "keywords": [
+      "t0816",
+      "device_restart/shutdown",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Denial of Service"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0855",
+    "type": "mitre_stride_mapping",
+    "title": "T0855: Unauthorized Command Message - STRIDE Mapping",
+    "description": "Adversaries send unauthorized command messages to control systems. EVSE Context: Sending unauthorized OCPP commands or grid control messages",
+    "source": "https://attack.mitre.org/techniques/T0855",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Spoofing",
+      "Tampering"
+    ],
+    "mitre_tactics": [
+      "Impair Process Control"
+    ],
+    "mitre_techniques": [
+      "T0855"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Message authentication and signing",
+      "Encryption of command channels",
+      "Command whitelisting",
+      "Source authentication mechanisms"
+    ],
+    "detection_methods": [
+      "Command message authentication verification",
+      "Sequence number validation",
+      "Source verification",
+      "Protocol anomaly detection"
+    ],
+    "defensive_actions": [
+      "Message authentication and signing",
+      "Encryption of command channels",
+      "Command whitelisting",
+      "Source authentication mechanisms"
+    ],
+    "countermeasures": [
+      "Message authentication and signing",
+      "Encryption of command channels",
+      "Command whitelisting",
+      "Source authentication mechanisms"
+    ],
+    "prerequisites": "",
+    "impact": "Sending unauthorized OCPP commands or grid control messages",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0855"
+    ],
+    "embedding_text": "T0855 Unauthorized Command Message Adversaries send unauthorized command messages to control systems Sending unauthorized OCPP commands or grid control messages Injecting malicious OCPP commands Sending fraudulent demand response signals Unauthorized AGC control commands Spoofed emergency stop commands Message authentication and signing Encryption of command channels Command whitelisting Source authentication mechanisms",
+    "keywords": [
+      "t0855",
+      "unauthorized_command_message",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Spoofing",
+      "Tampering"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0873",
+    "type": "mitre_stride_mapping",
+    "title": "T0873: Project File Infection - STRIDE Mapping",
+    "description": "Adversaries infect project files to maintain persistence. EVSE Context: Infecting EVSE configuration files or DMS project files",
+    "source": "https://attack.mitre.org/techniques/T0873",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering"
+    ],
+    "mitre_tactics": [
+      "Persistence"
+    ],
+    "mitre_techniques": [
+      "T0873"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Code signing and verification",
+      "File integrity checking",
+      "Access control on project files",
+      "Regular security scanning"
+    ],
+    "detection_methods": [
+      "File integrity monitoring",
+      "Antivirus and anti-malware scanning",
+      "Digital signature verification",
+      "Behavioral analysis of file modifications"
+    ],
+    "defensive_actions": [
+      "Code signing and verification",
+      "File integrity checking",
+      "Access control on project files",
+      "Regular security scanning"
+    ],
+    "countermeasures": [
+      "Code signing and verification",
+      "File integrity checking",
+      "Access control on project files",
+      "Regular security scanning"
+    ],
+    "prerequisites": "",
+    "impact": "Infecting EVSE configuration files or DMS project files",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0873"
+    ],
+    "embedding_text": "T0873 Project File Infection Adversaries infect project files to maintain persistence Infecting EVSE configuration files or DMS project files Malware in charging station configuration files Infected DMS project files Backdoors in firmware update packages Compromised SCADA project databases Code signing and verification File integrity checking Access control on project files Regular security scanning",
+    "keywords": [
+      "t0873",
+      "project_file_infection",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Tampering"
+    ]
+  },
+  {
+    "doc_id": "MITRE-STRIDE-T0842",
+    "type": "mitre_stride_mapping",
+    "title": "T0842: Network Sniffing - STRIDE Mapping",
+    "description": "Adversaries sniff network traffic to gather sensitive information. EVSE Context: Capturing charging session data, credentials, or grid operational data",
+    "source": "https://attack.mitre.org/techniques/T0842",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Information Disclosure"
+    ],
+    "mitre_tactics": [
+      "Discovery"
+    ],
+    "mitre_techniques": [
+      "T0842"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "AGC",
+      "SCADA",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Encrypt all network communications (TLS/SSL)",
+      "Network segmentation",
+      "Physical security of network infrastructure",
+      "Use of VPNs for sensitive communications"
+    ],
+    "detection_methods": [
+      "Detect promiscuous mode on network interfaces",
+      "Monitor for unusual network traffic patterns",
+      "Detect unauthorized network taps",
+      "Encrypted traffic analysis"
+    ],
+    "defensive_actions": [
+      "Encrypt all network communications (TLS/SSL)",
+      "Network segmentation",
+      "Physical security of network infrastructure",
+      "Use of VPNs for sensitive communications"
+    ],
+    "countermeasures": [
+      "Encrypt all network communications (TLS/SSL)",
+      "Network segmentation",
+      "Physical security of network infrastructure",
+      "Use of VPNs for sensitive communications"
+    ],
+    "prerequisites": "",
+    "impact": "Capturing charging session data, credentials, or grid operational data",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://attack.mitre.org/techniques/T0842"
+    ],
+    "embedding_text": "T0842 Network Sniffing Adversaries sniff network traffic to gather sensitive information Capturing charging session data, credentials, or grid operational data Sniffing unencrypted OCPP traffic Capturing authentication credentials Intercepting billing information Monitoring grid control communications Encrypt all network communications (TLS/SSL) Network segmentation Physical security of network infrastructure Use of VPNs for sensitive communications",
+    "keywords": [
+      "t0842",
+      "network_sniffing",
+      "evse",
+      "power_systems",
+      "mitre",
+      "stride"
+    ],
+    "relevance_tags": [
+      "mitre",
+      "stride",
+      "mapping",
+      "evse",
+      "ics",
+      "Information Disclosure"
+    ]
+  }
+]

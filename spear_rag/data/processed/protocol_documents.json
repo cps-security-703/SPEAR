@@ -1,0 +1,1000 @@
+[
+  {
+    "doc_id": "PROTOCOL-OCPP-001",
+    "type": "protocol_vulnerability",
+    "title": "OCPP - Weak Authentication in OCPP 1.6",
+    "description": "OCPP 1.6 does not mandate mutual authentication between charging stations and central systems. Basic authentication (username/password) over WebSocket is optional and often not implemented, allowing unauthorized devices to connect.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0862"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS"
+    ],
+    "affected_components": [
+      "OCPP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement certificate-based mutual authentication",
+      "Use VPN tunnels for OCPP communication",
+      "Enable TLS 1.2+ with strong cipher suites"
+    ],
+    "detection_methods": [
+      "Monitor for unauthorized charging station connections",
+      "Log all authentication attempts",
+      "Detect connections without TLS",
+      "Alert on missing client certificates"
+    ],
+    "defensive_actions": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement certificate-based mutual authentication",
+      "Use VPN tunnels for OCPP communication",
+      "Enable TLS 1.2+ with strong cipher suites"
+    ],
+    "countermeasures": [
+      "Upgrade to OCPP 2.0.1 with Security Profile 3",
+      "Implement certificate-based mutual authentication",
+      "Use VPN tunnels for OCPP communication",
+      "Enable TLS 1.2+ with strong cipher suites"
+    ],
+    "prerequisites": "",
+    "impact": "OCPP 1.6 does not mandate mutual authentication between charging stations and central systems. Basic authentication (username/password) over WebSocket is optional and often not implemented, allowing unauthorized devices to connect.",
+    "cvss_score": 8.1,
+    "exploitability": "Medium",
+    "references": [
+      "OWASP EVSE Security Top 10",
+      "OCPP 1.6 Security Whitepaper"
+    ],
+    "embedding_text": "OCPP Weak Authentication in OCPP 1.6 OCPP 1.6 does not mandate mutual authentication between charging stations and central systems. Basic authentication (username/password) over WebSocket is optional and often not implemented, allowing unauthorized devices to connect. Upgrade to OCPP 2.0.1 with Security Profile 3 Implement certificate-based mutual authentication Use VPN tunnels for OCPP communication Enable TLS 1.2+ with strong cipher suites",
+    "keywords": [
+      "ocpp",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "ocpp",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-OCPP-002",
+    "type": "protocol_vulnerability",
+    "title": "OCPP - Lack of Message Integrity in OCPP 1.6",
+    "description": "OCPP 1.6 does not provide built-in message signing or integrity verification. Attackers performing man-in-the-middle attacks can modify OCPP messages (e.g., RemoteStartTransaction, ChangeConfiguration) without detection.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0855",
+      "T0831"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS"
+    ],
+    "affected_components": [
+      "OCPP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement application-level message signing",
+      "Use OCPP 2.0.1 with message authentication",
+      "Deploy network-level integrity checks",
+      "Monitor for message tampering indicators"
+    ],
+    "detection_methods": [
+      "Validate message sequence numbers",
+      "Check for unexpected message modifications",
+      "Monitor for replay attacks",
+      "Log all critical command messages"
+    ],
+    "defensive_actions": [
+      "Implement application-level message signing",
+      "Use OCPP 2.0.1 with message authentication",
+      "Deploy network-level integrity checks",
+      "Monitor for message tampering indicators"
+    ],
+    "countermeasures": [
+      "Implement application-level message signing",
+      "Use OCPP 2.0.1 with message authentication",
+      "Deploy network-level integrity checks",
+      "Monitor for message tampering indicators"
+    ],
+    "prerequisites": "",
+    "impact": "OCPP 1.6 does not provide built-in message signing or integrity verification. Attackers performing man-in-the-middle attacks can modify OCPP messages (e.g., RemoteStartTransaction, ChangeConfiguration) without detection.",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [
+      "OCPP Security Best Practices Guide"
+    ],
+    "embedding_text": "OCPP Lack of Message Integrity in OCPP 1.6 OCPP 1.6 does not provide built-in message signing or integrity verification. Attackers performing man-in-the-middle attacks can modify OCPP messages (e.g., RemoteStartTransaction, ChangeConfiguration) without detection. Implement application-level message signing Use OCPP 2.0.1 with message authentication Deploy network-level integrity checks Monitor for message tampering indicators",
+    "keywords": [
+      "ocpp",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "ocpp",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-OCPP-003",
+    "type": "protocol_vulnerability",
+    "title": "OCPP - OCPP 2.0.1 Security Profile Downgrade",
+    "description": "OCPP 2.0.1 defines three security profiles (1: Unsecured, 2: Basic Auth, 3: TLS with client certificates). If not properly configured, systems may downgrade to lower security profiles, negating security improvements.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "Medium",
+    "affected_systems": [
+      "EVSE",
+      "CCMS"
+    ],
+    "affected_components": [
+      "OCPP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Enforce Security Profile 3 in all deployments",
+      "Disable Security Profiles 1 and 2",
+      "Implement configuration management",
+      "Audit security profile settings regularly"
+    ],
+    "detection_methods": [
+      "Monitor for security profile changes",
+      "Alert on downgrade attempts",
+      "Verify TLS configuration",
+      "Check certificate usage"
+    ],
+    "defensive_actions": [
+      "Enforce Security Profile 3 in all deployments",
+      "Disable Security Profiles 1 and 2",
+      "Implement configuration management",
+      "Audit security profile settings regularly"
+    ],
+    "countermeasures": [
+      "Enforce Security Profile 3 in all deployments",
+      "Disable Security Profiles 1 and 2",
+      "Implement configuration management",
+      "Audit security profile settings regularly"
+    ],
+    "prerequisites": "",
+    "impact": "OCPP 2.0.1 defines three security profiles (1: Unsecured, 2: Basic Auth, 3: TLS with client certificates). If not properly configured, systems may downgrade to lower security profiles, negating security improvements.",
+    "cvss_score": 6.5,
+    "exploitability": "Medium",
+    "references": [
+      "OCPP 2.0.1 Security Specification"
+    ],
+    "embedding_text": "OCPP OCPP 2.0.1 Security Profile Downgrade OCPP 2.0.1 defines three security profiles (1: Unsecured, 2: Basic Auth, 3: TLS with client certificates). If not properly configured, systems may downgrade to lower security profiles, negating security improvements. Enforce Security Profile 3 in all deployments Disable Security Profiles 1 and 2 Implement configuration management Audit security profile settings regularly",
+    "keywords": [
+      "ocpp",
+      "protocol",
+      "vulnerability",
+      "medium"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "ocpp",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-ISO-15118-001",
+    "type": "protocol_vulnerability",
+    "title": "ISO_15118 - Plug & Charge Certificate Validation Issues",
+    "description": "ISO 15118 Plug & Charge relies on X.509 certificate chains for vehicle authentication. Improper certificate validation (e.g., not checking revocation, accepting expired certificates, weak signature algorithms) can allow unauthorized vehicles to charge.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0862",
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE"
+    ],
+    "affected_components": [
+      "ISO_15118"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement strict certificate validation (RFC 5280)",
+      "Check certificate revocation lists (CRL) or OCSP",
+      "Reject expired or self-signed certificates",
+      "Use strong signature algorithms (SHA-256+)",
+      "Implement certificate pinning for root CAs"
+    ],
+    "detection_methods": [
+      "Log all certificate validation failures",
+      "Monitor for expired certificate usage",
+      "Alert on revoked certificate attempts",
+      "Track certificate chain anomalies"
+    ],
+    "defensive_actions": [
+      "Implement strict certificate validation (RFC 5280)",
+      "Check certificate revocation lists (CRL) or OCSP",
+      "Reject expired or self-signed certificates",
+      "Use strong signature algorithms (SHA-256+)",
+      "Implement certificate pinning for root CAs"
+    ],
+    "countermeasures": [
+      "Implement strict certificate validation (RFC 5280)",
+      "Check certificate revocation lists (CRL) or OCSP",
+      "Reject expired or self-signed certificates",
+      "Use strong signature algorithms (SHA-256+)",
+      "Implement certificate pinning for root CAs"
+    ],
+    "prerequisites": "",
+    "impact": "ISO 15118 Plug & Charge relies on X.509 certificate chains for vehicle authentication. Improper certificate validation (e.g., not checking revocation, accepting expired certificates, weak signature algorithms) can allow unauthorized vehicles to charge.",
+    "cvss_score": 8.2,
+    "exploitability": "Medium",
+    "references": [
+      "ISO 15118-2 Security Annex",
+      "CharIN Security Guidelines"
+    ],
+    "embedding_text": "ISO_15118 Plug & Charge Certificate Validation Issues ISO 15118 Plug & Charge relies on X.509 certificate chains for vehicle authentication. Improper certificate validation (e.g., not checking revocation, accepting expired certificates, weak signature algorithms) can allow unauthorized vehicles to charge. Implement strict certificate validation (RFC 5280) Check certificate revocation lists (CRL) or OCSP Reject expired or self-signed certificates Use strong signature algorithms (SHA-256+) Implement certificate pinning for root CAs",
+    "keywords": [
+      "iso_15118",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "iso_15118",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-ISO-15118-002",
+    "type": "protocol_vulnerability",
+    "title": "ISO_15118 - TLS Configuration Weaknesses",
+    "description": "ISO 15118-20 mandates TLS 1.2+ for secure communication between EV and EVSE. Weak TLS configurations (e.g., supporting TLS 1.0/1.1, weak cipher suites like RC4, CBC mode) expose communications to attacks.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE"
+    ],
+    "affected_components": [
+      "ISO_15118"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Enforce TLS 1.2 minimum (TLS 1.3 preferred)",
+      "Use only strong cipher suites (AEAD modes)",
+      "Disable weak ciphers (RC4, 3DES, CBC)",
+      "Implement perfect forward secrecy (PFS)",
+      "Regular TLS configuration audits"
+    ],
+    "detection_methods": [
+      "Monitor TLS handshake negotiations",
+      "Alert on weak cipher usage",
+      "Detect TLS downgrade attempts",
+      "Log TLS version mismatches"
+    ],
+    "defensive_actions": [
+      "Enforce TLS 1.2 minimum (TLS 1.3 preferred)",
+      "Use only strong cipher suites (AEAD modes)",
+      "Disable weak ciphers (RC4, 3DES, CBC)",
+      "Implement perfect forward secrecy (PFS)",
+      "Regular TLS configuration audits"
+    ],
+    "countermeasures": [
+      "Enforce TLS 1.2 minimum (TLS 1.3 preferred)",
+      "Use only strong cipher suites (AEAD modes)",
+      "Disable weak ciphers (RC4, 3DES, CBC)",
+      "Implement perfect forward secrecy (PFS)",
+      "Regular TLS configuration audits"
+    ],
+    "prerequisites": "",
+    "impact": "ISO 15118-20 mandates TLS 1.2+ for secure communication between EV and EVSE. Weak TLS configurations (e.g., supporting TLS 1.0/1.1, weak cipher suites like RC4, CBC mode) expose communications to attacks.",
+    "cvss_score": 7.4,
+    "exploitability": "Medium",
+    "references": [
+      "ISO 15118-20 Specification",
+      "NIST TLS Guidelines"
+    ],
+    "embedding_text": "ISO_15118 TLS Configuration Weaknesses ISO 15118-20 mandates TLS 1.2+ for secure communication between EV and EVSE. Weak TLS configurations (e.g., supporting TLS 1.0/1.1, weak cipher suites like RC4, CBC mode) expose communications to attacks. Enforce TLS 1.2 minimum (TLS 1.3 preferred) Use only strong cipher suites (AEAD modes) Disable weak ciphers (RC4, 3DES, CBC) Implement perfect forward secrecy (PFS) Regular TLS configuration audits",
+    "keywords": [
+      "iso_15118",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "iso_15118",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-MODBUS-TCP-001",
+    "type": "protocol_vulnerability",
+    "title": "Modbus_TCP - Lack of Authentication in Modbus TCP",
+    "description": "Modbus TCP protocol has no built-in authentication mechanism. Any device with network access can send Modbus commands to PLCs, RTUs, or charging controllers, allowing unauthorized control of critical systems.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0831",
+      "T0836"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "EVSE",
+      "Grid"
+    ],
+    "affected_components": [
+      "Modbus_TCP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement Modbus/TCP Security (RFC 8551)",
+      "Use VPN or encrypted tunnels for Modbus traffic",
+      "Deploy firewall rules restricting Modbus access",
+      "Implement application-level authentication",
+      "Network segmentation (isolate Modbus devices)"
+    ],
+    "detection_methods": [
+      "Monitor all Modbus traffic sources",
+      "Alert on unauthorized Modbus connections",
+      "Detect unexpected write commands",
+      "Log all Modbus function codes"
+    ],
+    "defensive_actions": [
+      "Implement Modbus/TCP Security (RFC 8551)",
+      "Use VPN or encrypted tunnels for Modbus traffic",
+      "Deploy firewall rules restricting Modbus access",
+      "Implement application-level authentication",
+      "Network segmentation (isolate Modbus devices)"
+    ],
+    "countermeasures": [
+      "Implement Modbus/TCP Security (RFC 8551)",
+      "Use VPN or encrypted tunnels for Modbus traffic",
+      "Deploy firewall rules restricting Modbus access",
+      "Implement application-level authentication",
+      "Network segmentation (isolate Modbus devices)"
+    ],
+    "prerequisites": "",
+    "impact": "Modbus TCP protocol has no built-in authentication mechanism. Any device with network access can send Modbus commands to PLCs, RTUs, or charging controllers, allowing unauthorized control of critical systems.",
+    "cvss_score": 9.8,
+    "exploitability": "Medium",
+    "references": [
+      "Modbus Security Best Practices",
+      "ICS-CERT Modbus Advisories"
+    ],
+    "embedding_text": "Modbus_TCP Lack of Authentication in Modbus TCP Modbus TCP protocol has no built-in authentication mechanism. Any device with network access can send Modbus commands to PLCs, RTUs, or charging controllers, allowing unauthorized control of critical systems. Implement Modbus/TCP Security (RFC 8551) Use VPN or encrypted tunnels for Modbus traffic Deploy firewall rules restricting Modbus access Implement application-level authentication Network segmentation (isolate Modbus devices)",
+    "keywords": [
+      "modbus_tcp",
+      "protocol",
+      "vulnerability",
+      "critical"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "modbus_tcp",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-MODBUS-TCP-002",
+    "type": "protocol_vulnerability",
+    "title": "Modbus_TCP - Modbus Command Injection and Manipulation",
+    "description": "Modbus TCP lacks message integrity checks. Attackers can inject or modify Modbus commands (e.g., Write Single Coil, Write Multiple Registers) to manipulate charging parameters, grid controls, or cause equipment damage.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0831",
+      "T0836",
+      "T0814"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "EVSE",
+      "AGC"
+    ],
+    "affected_components": [
+      "Modbus_TCP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement command validation and bounds checking",
+      "Use digital signatures for critical commands",
+      "Deploy IDS/IPS with Modbus protocol awareness",
+      "Enable read-only mode where possible",
+      "Implement rate limiting on write operations"
+    ],
+    "detection_methods": [
+      "Monitor for unexpected register writes",
+      "Alert on out-of-bounds values",
+      "Detect rapid command sequences",
+      "Log all write operations with timestamps"
+    ],
+    "defensive_actions": [
+      "Implement command validation and bounds checking",
+      "Use digital signatures for critical commands",
+      "Deploy IDS/IPS with Modbus protocol awareness",
+      "Enable read-only mode where possible",
+      "Implement rate limiting on write operations"
+    ],
+    "countermeasures": [
+      "Implement command validation and bounds checking",
+      "Use digital signatures for critical commands",
+      "Deploy IDS/IPS with Modbus protocol awareness",
+      "Enable read-only mode where possible",
+      "Implement rate limiting on write operations"
+    ],
+    "prerequisites": "",
+    "impact": "Modbus TCP lacks message integrity checks. Attackers can inject or modify Modbus commands (e.g., Write Single Coil, Write Multiple Registers) to manipulate charging parameters, grid controls, or cause equipment damage.",
+    "cvss_score": 9.1,
+    "exploitability": "Medium",
+    "references": [
+      "CVE-2022-2003",
+      "Modbus Protocol Specification"
+    ],
+    "embedding_text": "Modbus_TCP Modbus Command Injection and Manipulation Modbus TCP lacks message integrity checks. Attackers can inject or modify Modbus commands (e.g., Write Single Coil, Write Multiple Registers) to manipulate charging parameters, grid controls, or cause equipment damage. Implement command validation and bounds checking Use digital signatures for critical commands Deploy IDS/IPS with Modbus protocol awareness Enable read-only mode where possible Implement rate limiting on write operations",
+    "keywords": [
+      "modbus_tcp",
+      "protocol",
+      "vulnerability",
+      "critical",
+      "cve-2022-2003"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "modbus_tcp",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-DNP3-001",
+    "type": "protocol_vulnerability",
+    "title": "DNP3 - DNP3 Authentication Bypass (SAv5 Weaknesses)",
+    "description": "DNP3 Secure Authentication v5 (SAv5) has known weaknesses including replay attacks, weak key management, and optional implementation. Many deployments don't enable SAv5, leaving communications unauthenticated.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0855",
+      "T0831"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "Grid"
+    ],
+    "affected_components": [
+      "DNP3"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Enable DNP3 SAv5 authentication",
+      "Use strong cryptographic keys (256-bit minimum)",
+      "Implement key rotation policies",
+      "Deploy DNP3 over TLS (DNP3-TLS)",
+      "Monitor for authentication failures"
+    ],
+    "detection_methods": [
+      "Alert on unauthenticated DNP3 sessions",
+      "Monitor for replay attack patterns",
+      "Detect SAv5 challenge-response failures",
+      "Log all DNP3 authentication events"
+    ],
+    "defensive_actions": [
+      "Enable DNP3 SAv5 authentication",
+      "Use strong cryptographic keys (256-bit minimum)",
+      "Implement key rotation policies",
+      "Deploy DNP3 over TLS (DNP3-TLS)",
+      "Monitor for authentication failures"
+    ],
+    "countermeasures": [
+      "Enable DNP3 SAv5 authentication",
+      "Use strong cryptographic keys (256-bit minimum)",
+      "Implement key rotation policies",
+      "Deploy DNP3 over TLS (DNP3-TLS)",
+      "Monitor for authentication failures"
+    ],
+    "prerequisites": "",
+    "impact": "DNP3 Secure Authentication v5 (SAv5) has known weaknesses including replay attacks, weak key management, and optional implementation. Many deployments don't enable SAv5, leaving communications unauthenticated.",
+    "cvss_score": 8.6,
+    "exploitability": "Medium",
+    "references": [
+      "IEEE 1815-2012 (DNP3 Specification)",
+      "DNP3 Security Best Practices"
+    ],
+    "embedding_text": "DNP3 DNP3 Authentication Bypass (SAv5 Weaknesses) DNP3 Secure Authentication v5 (SAv5) has known weaknesses including replay attacks, weak key management, and optional implementation. Many deployments don't enable SAv5, leaving communications unauthenticated. Enable DNP3 SAv5 authentication Use strong cryptographic keys (256-bit minimum) Implement key rotation policies Deploy DNP3 over TLS (DNP3-TLS) Monitor for authentication failures",
+    "keywords": [
+      "dnp3",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "dnp3",
+      "vulnerability",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-DNP3-002",
+    "type": "protocol_vulnerability",
+    "title": "DNP3 - DNP3 Unsolicited Response Exploitation",
+    "description": "DNP3 supports unsolicited responses where outstations send data without master requests. Attackers can exploit this to inject false data, trigger alarms, or cause operators to make incorrect decisions.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0832",
+      "T0855"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "AGC"
+    ],
+    "affected_components": [
+      "DNP3"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Disable unsolicited responses if not needed",
+      "Validate source of unsolicited messages",
+      "Implement data integrity checks",
+      "Use DNP3 SAv5 for message authentication",
+      "Deploy anomaly detection for data patterns"
+    ],
+    "detection_methods": [
+      "Monitor for unexpected unsolicited responses",
+      "Validate data against expected ranges",
+      "Alert on data quality flags",
+      "Correlate with other sensor data"
+    ],
+    "defensive_actions": [
+      "Disable unsolicited responses if not needed",
+      "Validate source of unsolicited messages",
+      "Implement data integrity checks",
+      "Use DNP3 SAv5 for message authentication",
+      "Deploy anomaly detection for data patterns"
+    ],
+    "countermeasures": [
+      "Disable unsolicited responses if not needed",
+      "Validate source of unsolicited messages",
+      "Implement data integrity checks",
+      "Use DNP3 SAv5 for message authentication",
+      "Deploy anomaly detection for data patterns"
+    ],
+    "prerequisites": "",
+    "impact": "DNP3 supports unsolicited responses where outstations send data without master requests. Attackers can exploit this to inject false data, trigger alarms, or cause operators to make incorrect decisions.",
+    "cvss_score": 7.8,
+    "exploitability": "Medium",
+    "references": [
+      "DNP3 Security Considerations"
+    ],
+    "embedding_text": "DNP3 DNP3 Unsolicited Response Exploitation DNP3 supports unsolicited responses where outstations send data without master requests. Attackers can exploit this to inject false data, trigger alarms, or cause operators to make incorrect decisions. Disable unsolicited responses if not needed Validate source of unsolicited messages Implement data integrity checks Use DNP3 SAv5 for message authentication Deploy anomaly detection for data patterns",
+    "keywords": [
+      "dnp3",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "dnp3",
+      "vulnerability",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-IEC-61850-001",
+    "type": "protocol_vulnerability",
+    "title": "IEC_61850 - IEC 61850 MMS Protocol Vulnerabilities",
+    "description": "IEC 61850 uses Manufacturing Message Specification (MMS) protocol which has buffer overflow, authentication bypass, and denial of service vulnerabilities affecting substation automation and grid-connected EV charging.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0814",
+      "T0836"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "Grid",
+      "EVSE"
+    ],
+    "affected_components": [
+      "IEC_61850"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Apply vendor patches for IEC 61850 stacks",
+      "Implement IEC 62351 security extensions",
+      "Use TLS for MMS communication",
+      "Deploy network segmentation",
+      "Enable authentication and access control"
+    ],
+    "detection_methods": [
+      "Monitor for malformed MMS messages",
+      "Detect buffer overflow attempts",
+      "Alert on authentication failures",
+      "Log all MMS transactions"
+    ],
+    "defensive_actions": [
+      "Apply vendor patches for IEC 61850 stacks",
+      "Implement IEC 62351 security extensions",
+      "Use TLS for MMS communication",
+      "Deploy network segmentation",
+      "Enable authentication and access control"
+    ],
+    "countermeasures": [
+      "Apply vendor patches for IEC 61850 stacks",
+      "Implement IEC 62351 security extensions",
+      "Use TLS for MMS communication",
+      "Deploy network segmentation",
+      "Enable authentication and access control"
+    ],
+    "prerequisites": "",
+    "impact": "IEC 61850 uses Manufacturing Message Specification (MMS) protocol which has buffer overflow, authentication bypass, and denial of service vulnerabilities affecting substation automation and grid-connected EV charging.",
+    "cvss_score": 9.4,
+    "exploitability": "Medium",
+    "references": [
+      "CVE-2022-4156",
+      "IEC 61850 Security Whitepaper"
+    ],
+    "embedding_text": "IEC_61850 IEC 61850 MMS Protocol Vulnerabilities IEC 61850 uses Manufacturing Message Specification (MMS) protocol which has buffer overflow, authentication bypass, and denial of service vulnerabilities affecting substation automation and grid-connected EV charging. Apply vendor patches for IEC 61850 stacks Implement IEC 62351 security extensions Use TLS for MMS communication Deploy network segmentation Enable authentication and access control",
+    "keywords": [
+      "iec_61850",
+      "protocol",
+      "vulnerability",
+      "critical",
+      "cve-2022-4156"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "iec_61850",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-IEC-61850-002",
+    "type": "protocol_vulnerability",
+    "title": "IEC_61850 - GOOSE Message Spoofing",
+    "description": "IEC 61850 GOOSE (Generic Object Oriented Substation Event) messages are multicast and lack authentication by default. Attackers can inject false GOOSE messages to trip breakers, manipulate protection relays, or disrupt grid operations.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0855",
+      "T0816"
+    ],
+    "attack_vector": "Network",
+    "severity": "Critical",
+    "affected_systems": [
+      "SCADA",
+      "Grid",
+      "DMS"
+    ],
+    "affected_components": [
+      "IEC_61850"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement IEC 62351-6 for GOOSE security",
+      "Use VLAN isolation for GOOSE traffic",
+      "Deploy GOOSE message authentication",
+      "Enable sequence number validation",
+      "Physical security for substation networks"
+    ],
+    "detection_methods": [
+      "Monitor for duplicate GOOSE messages",
+      "Validate GOOSE sequence numbers",
+      "Alert on unexpected GOOSE sources",
+      "Detect GOOSE message flooding"
+    ],
+    "defensive_actions": [
+      "Implement IEC 62351-6 for GOOSE security",
+      "Use VLAN isolation for GOOSE traffic",
+      "Deploy GOOSE message authentication",
+      "Enable sequence number validation",
+      "Physical security for substation networks"
+    ],
+    "countermeasures": [
+      "Implement IEC 62351-6 for GOOSE security",
+      "Use VLAN isolation for GOOSE traffic",
+      "Deploy GOOSE message authentication",
+      "Enable sequence number validation",
+      "Physical security for substation networks"
+    ],
+    "prerequisites": "",
+    "impact": "IEC 61850 GOOSE (Generic Object Oriented Substation Event) messages are multicast and lack authentication by default. Attackers can inject false GOOSE messages to trip breakers, manipulate protection relays, or disrupt grid operations.",
+    "cvss_score": 9.6,
+    "exploitability": "Medium",
+    "references": [
+      "IEC 62351-6 Security Standard",
+      "GOOSE Security Best Practices"
+    ],
+    "embedding_text": "IEC_61850 GOOSE Message Spoofing IEC 61850 GOOSE (Generic Object Oriented Substation Event) messages are multicast and lack authentication by default. Attackers can inject false GOOSE messages to trip breakers, manipulate protection relays, or disrupt grid operations. Implement IEC 62351-6 for GOOSE security Use VLAN isolation for GOOSE traffic Deploy GOOSE message authentication Enable sequence number validation Physical security for substation networks",
+    "keywords": [
+      "iec_61850",
+      "protocol",
+      "vulnerability",
+      "critical"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "iec_61850",
+      "vulnerability",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-MQTT-001",
+    "type": "protocol_vulnerability",
+    "title": "MQTT - MQTT Weak Authentication and Authorization",
+    "description": "MQTT brokers used in IoT-based charging infrastructure often have weak or default credentials, lack proper topic-level authorization, and allow anonymous connections, enabling unauthorized access to charging data and control.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0868"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CMS"
+    ],
+    "affected_components": [
+      "MQTT"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Disable anonymous MQTT connections",
+      "Implement strong authentication (TLS client certs)",
+      "Use topic-level ACLs (Access Control Lists)",
+      "Deploy MQTT over TLS (MQTTS)",
+      "Change default broker credentials"
+    ],
+    "detection_methods": [
+      "Monitor for anonymous connections",
+      "Alert on unauthorized topic subscriptions",
+      "Detect brute-force authentication attempts",
+      "Log all MQTT publish/subscribe events"
+    ],
+    "defensive_actions": [
+      "Disable anonymous MQTT connections",
+      "Implement strong authentication (TLS client certs)",
+      "Use topic-level ACLs (Access Control Lists)",
+      "Deploy MQTT over TLS (MQTTS)",
+      "Change default broker credentials"
+    ],
+    "countermeasures": [
+      "Disable anonymous MQTT connections",
+      "Implement strong authentication (TLS client certs)",
+      "Use topic-level ACLs (Access Control Lists)",
+      "Deploy MQTT over TLS (MQTTS)",
+      "Change default broker credentials"
+    ],
+    "prerequisites": "",
+    "impact": "MQTT brokers used in IoT-based charging infrastructure often have weak or default credentials, lack proper topic-level authorization, and allow anonymous connections, enabling unauthorized access to charging data and control.",
+    "cvss_score": 8.3,
+    "exploitability": "Medium",
+    "references": [
+      "MQTT Security Best Practices",
+      "OWASP IoT Top 10"
+    ],
+    "embedding_text": "MQTT MQTT Weak Authentication and Authorization MQTT brokers used in IoT-based charging infrastructure often have weak or default credentials, lack proper topic-level authorization, and allow anonymous connections, enabling unauthorized access to charging data and control. Disable anonymous MQTT connections Implement strong authentication (TLS client certs) Use topic-level ACLs (Access Control Lists) Deploy MQTT over TLS (MQTTS) Change default broker credentials",
+    "keywords": [
+      "mqtt",
+      "protocol",
+      "vulnerability",
+      "high"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "mqtt",
+      "vulnerability",
+      "evse"
+    ]
+  },
+  {
+    "doc_id": "PROTOCOL-COAP-001",
+    "type": "protocol_vulnerability",
+    "title": "CoAP - CoAP Amplification DDoS",
+    "description": "CoAP protocol used in IoT charging devices can be exploited for amplification DDoS attacks. Attackers send small requests to CoAP servers with spoofed source IPs, causing large responses to flood victims.",
+    "source": "ARES Protocol Vulnerability Database",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0814"
+    ],
+    "attack_vector": "Network",
+    "severity": "Medium",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure"
+    ],
+    "affected_components": [
+      "CoAP"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement rate limiting on CoAP servers",
+      "Use DTLS for CoAP (CoAPS)",
+      "Deploy ingress/egress filtering",
+      "Disable CoAP on public interfaces",
+      "Monitor for amplification patterns"
+    ],
+    "detection_methods": [
+      "Detect high-volume CoAP responses",
+      "Monitor for spoofed source addresses",
+      "Alert on unusual CoAP request rates",
+      "Track CoAP amplification ratios"
+    ],
+    "defensive_actions": [
+      "Implement rate limiting on CoAP servers",
+      "Use DTLS for CoAP (CoAPS)",
+      "Deploy ingress/egress filtering",
+      "Disable CoAP on public interfaces",
+      "Monitor for amplification patterns"
+    ],
+    "countermeasures": [
+      "Implement rate limiting on CoAP servers",
+      "Use DTLS for CoAP (CoAPS)",
+      "Deploy ingress/egress filtering",
+      "Disable CoAP on public interfaces",
+      "Monitor for amplification patterns"
+    ],
+    "prerequisites": "",
+    "impact": "CoAP protocol used in IoT charging devices can be exploited for amplification DDoS attacks. Attackers send small requests to CoAP servers with spoofed source IPs, causing large responses to flood victims.",
+    "cvss_score": 6.5,
+    "exploitability": "Medium",
+    "references": [
+      "CVE-2018-19417",
+      "CoAP Security Considerations RFC 7252"
+    ],
+    "embedding_text": "CoAP CoAP Amplification DDoS CoAP protocol used in IoT charging devices can be exploited for amplification DDoS attacks. Attackers send small requests to CoAP servers with spoofed source IPs, causing large responses to flood victims. Implement rate limiting on CoAP servers Use DTLS for CoAP (CoAPS) Deploy ingress/egress filtering Disable CoAP on public interfaces Monitor for amplification patterns",
+    "keywords": [
+      "coap",
+      "protocol",
+      "vulnerability",
+      "medium",
+      "cve-2018-19417"
+    ],
+    "relevance_tags": [
+      "protocol",
+      "coap",
+      "vulnerability",
+      "evse"
+    ]
+  }
+]

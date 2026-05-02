@@ -10,7 +10,8 @@ import torch.nn as nn
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import SAC, DQN
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
+from stable_baselines3.common.monitor import Monitor
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
@@ -23,11 +24,18 @@ from dataclasses import dataclass
 from collections import deque
 import threading
 import asyncio
+import sys
+import random
+
+random.seed(42)
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+
+
 
 # Import existing systems
 try:
     from hierarchical_cosimulation import HierarchicalCoSimulation, EnhancedChargingManagementSystem, EVChargingStation
-    from focused_demand_analysis import run_focused_demand_analysis, load_pretrained_models, analyze_focused_results
     HIERARCHICAL_AVAILABLE = True
 except ImportError:
     import traceback
@@ -58,6 +66,25 @@ except ImportError:
 # Import DQN/SAC security evasion components
 from dqn_sac_security_evasion import DQNSACSecurityEvasionTrainer, SecurityEvasionEnvironment, DiscreteSecurityEvasionEnv
 
+# Import attack-specific RL agents (NEW ARCHITECTURE)
+try:
+    from attack_specific_rl_agents import (
+        AttackSpecificCoordinator, 
+        AttackSpecificEnvironment,
+        DiscreteAttackSpecificEnvironment,
+        AttackDeployment,
+        ATTACK_TYPES
+    )
+    from gemini_attack_deployment import (
+        create_gemini_deployment_prompt,
+        create_gemini_adaptation_prompt,
+        parse_gemini_deployment_response
+    )
+    ATTACK_SPECIFIC_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Attack-specific RL agents not available: {e}")
+    ATTACK_SPECIFIC_AVAILABLE = False
+
 # Import enhanced LLM-RL coordinator
 try:
     from enhanced_llm_rl_coordinator import EnhancedLLMRLCoordinator, AttackType, STRIDECategory, MITRECategory
@@ -67,6 +94,238 @@ except ImportError:
     ENHANCED_COORDINATOR_AVAILABLE = False
 
 warnings.filterwarnings('ignore')
+
+
+class PrintLogger:
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.log_file = open(filename, 'w', encoding='utf-8')
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()  # Ensure immediate write to file
+
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+
+# Generate timestamp for unique log filename
+timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+log_filename = f'enhanched_evcs_system_log_{timestamp}.txt'
+
+#Redirect stdout to our custom logger
+sys.stdout = PrintLogger(log_filename)
+
+
+class RealTimeRLAttackController:
+    """
+    Deploys TRAINED RL agents during the final hierarchical co-simulation.
+    
+    Instead of applying static attack multipliers, this controller:
+    1. Takes the deployment plan (attack_type → target_system + time window)
+    2. At each simulation timestep within an attack window, calls the trained
+       SAC agent to generate attack parameters (magnitude, duration, stealth)
+    3. Returns those parameters so the hierarchical simulation can inject them
+       into the target distribution system's CMS/stations
+    
+    This ensures the trained RL agents are actually USED during the final
+    simulation, not just during training.
+    """
+    
+    def __init__(self, attack_coordinator, deployment_plan: Dict, duration_seconds: float):
+        """
+        Args:
+            attack_coordinator: AttackSpecificCoordinator with trained DQN+SAC agents
+            deployment_plan: Dict with 'deployments' list from CentralRLCoordinator
+            duration_seconds: Total simulation duration in seconds
+        """
+        self.attack_coordinator = attack_coordinator
+        self.duration_seconds = duration_seconds
+        self.active_attacks = {}  # {sys_id: attack_info}
+        self.attack_log = []
+        self.decision_counter = 0
+        
+        # Parse deployment plan into time-windowed attack assignments
+        self.attack_schedule = []  # List of {attack_type, target_system, start_time, end_time}
+        
+        deployments = deployment_plan.get('deployments', [])
+        if not deployments:
+            print("  ##?? RealTimeRLAttackController: No deployments in plan")
+            return
+        
+        n_attacks = len(deployments)
+        margin = duration_seconds * 0.10
+        usable_window = duration_seconds - 2 * margin
+        attack_duration = usable_window / (n_attacks + 1)
+        spacing = usable_window / max(n_attacks, 1)
+        
+        for idx, dep in enumerate(deployments):
+            start_time = margin + idx * spacing
+            end_time = start_time + attack_duration
+            entry = {
+                'attack_type': dep.get('attack_type', 'power_disruption'),
+                'target_system': dep.get('target_system', idx + 1),
+                'start_time': start_time,
+                'end_time': end_time,
+                'magnitude': dep.get('magnitude', 0.7),
+                'stealth_level': dep.get('stealth_level', 0.7),
+                'active': False
+            }
+            self.attack_schedule.append(entry)
+            print(f"    ##Scheduled: {entry['attack_type']} → System {entry['target_system']} "
+                  f"[{start_time:.0f}s - {end_time:.0f}s]")
+        
+        print(f"  ## RealTimeRLAttackController: {len(self.attack_schedule)} attacks scheduled")
+    
+    def make_attack_decision(self, system_states: Dict, current_time: float) -> Dict:
+        """
+        Called at each simulation timestep. Checks which attacks should be active
+        and uses trained RL agents to generate attack parameters.
+        
+        Returns:
+            Dict of {target_system_id: attack_params} for newly activated attacks
+        """
+        new_attacks = {}
+        
+        for schedule_entry in self.attack_schedule:
+            target_sys = schedule_entry['target_system']
+            attack_type = schedule_entry['attack_type']
+            
+            # Check if this attack should be active at current time
+            if schedule_entry['start_time'] <= current_time <= schedule_entry['end_time']:
+                if not schedule_entry['active']:
+                    # Newly activated — use trained SAC agent to get attack parameters
+                    schedule_entry['active'] = True
+                    
+                    attack_params = self._get_rl_attack_params(
+                        attack_type, target_sys, system_states, current_time
+                    )
+                    
+                    if attack_params:
+                        new_attacks[target_sys] = attack_params
+                        self.active_attacks[target_sys] = {
+                            'attack_type': attack_type,
+                            'params': attack_params,
+                            'start_time': current_time,
+                            'schedule_entry': schedule_entry
+                        }
+                        
+                        self.attack_log.append({
+                            'time': current_time,
+                            'action': 'activate',
+                            'target_system': target_sys,
+                            'attack_type': attack_type,
+                            'params': attack_params
+                        })
+                
+                elif target_sys in self.active_attacks:
+                    # Already active — periodically update parameters (every 30s)
+                    self.decision_counter += 1
+                    if self.decision_counter % 30 == 0:
+                        updated_params = self._get_rl_attack_params(
+                            attack_type, target_sys, system_states, current_time
+                        )
+                        if updated_params:
+                            self.active_attacks[target_sys]['params'] = updated_params
+                            new_attacks[target_sys] = updated_params
+            
+            elif current_time > schedule_entry['end_time'] and schedule_entry['active']:
+                # Attack window ended
+                schedule_entry['active'] = False
+                if target_sys in self.active_attacks:
+                    del self.active_attacks[target_sys]
+                    self.attack_log.append({
+                        'time': current_time,
+                        'action': 'deactivate',
+                        'target_system': target_sys,
+                        'attack_type': attack_type
+                    })
+        
+        return new_attacks
+    
+    def _get_rl_attack_params(self, attack_type: str, target_system: int,
+                               system_states: Dict, current_time: float) -> Optional[Dict]:
+        """Use trained SAC agent to generate attack parameters for this timestep."""
+        try:
+            sac_env_key = f'sac_{attack_type}'
+            if sac_env_key not in self.attack_coordinator.environments:
+                return self._fallback_attack_params(attack_type, target_system)
+            
+            sac_env = self.attack_coordinator.environments[sac_env_key]
+            
+            # Lock to target system
+            sac_env.forced_target_system = target_system
+            
+            # Get observation from the environment
+            obs = sac_env._get_global_observation()
+            
+            # Use trained SAC agent to predict attack parameters (deterministic for deployment)
+            action, _ = self.attack_coordinator.sac_agents[attack_type].predict(
+                obs, deterministic=True
+            )
+            
+            # Unlock
+            sac_env.forced_target_system = None
+            
+            # Parse SAC action: [magnitude, duration, stealth, target_system_id]
+            magnitude = float(np.clip(action[0], 0.1, 2.0))
+            duration = float(np.clip(action[1], 5.0, 60.0))
+            stealth_level = float(np.clip(action[2], 0.0, 1.0))
+            
+            return {
+                'type': attack_type,
+                'magnitude': magnitude,
+                'duration': duration,
+                'stealth_level': stealth_level,
+                'target_percentage': 100,  # Attack all stations in the system
+                'start_time': current_time,
+                'decision_id': f'rl_{attack_type}_{target_system}_{current_time:.0f}',
+                'rl_generated': True
+            }
+            
+        except Exception as e:
+            if current_time % 60 == 0:  # Log errors every 60s to avoid spam
+                print(f"  ##?? RL agent inference failed for {attack_type}: {e}")
+            return self._fallback_attack_params(attack_type, target_system)
+    
+    def _fallback_attack_params(self, attack_type: str, target_system: int) -> Dict:
+        """Fallback attack parameters when RL agent inference fails."""
+        return {
+            'type': attack_type,
+            'magnitude': 0.7,
+            'duration': 30.0,
+            'stealth_level': 0.5,
+            'target_percentage': 100,
+            'start_time': 0.0,
+            'decision_id': f'fallback_{attack_type}_{target_system}',
+            'rl_generated': False
+        }
+    
+    def update_attack_parameters(self, system_id: int, current_time: float) -> Dict:
+        """Check if an active attack should be stopped or updated."""
+        if system_id not in self.active_attacks:
+            return {'stop_attack': True}
+        
+        attack_info = self.active_attacks[system_id]
+        schedule = attack_info['schedule_entry']
+        
+        # Stop if past end time
+        if current_time > schedule['end_time']:
+            return {'stop_attack': True}
+        
+        # Otherwise return current params (may have been updated by make_attack_decision)
+        return attack_info['params']
+    
+    def get_attack_status(self) -> Dict:
+        """Get current attack status for logging."""
+        return {
+            'active_attacks': len(self.active_attacks),
+            'total_scheduled': len(self.attack_schedule),
+            'total_decisions': self.decision_counter,
+            'active_systems': list(self.active_attacks.keys())
+        }
+
 
 @dataclass
 class EnhancedAttackScenario:
@@ -116,6 +375,17 @@ class MultiAgentRLEnvironment(gym.Env):
             'detection_risk': 0.0
         }
         
+        # Done condition thresholds
+        self.max_steps = 200  # Realistic episode length
+        self.global_detection_threshold = 0.8  # Terminate if global detection risk too high
+        self.mission_success_impact = 3.0  # Cumulative impact across all agents for success
+        self.max_agent_detections = 5  # Per-agent detection limit
+        
+        # Per-agent episode tracking
+        self.agent_cumulative_impact = {f'agent_{i}': 0.0 for i in range(num_systems)}
+        self.agent_detection_count = {f'agent_{i}': 0 for i in range(num_systems)}
+        self.episode_done_reason = "running"
+        
         # Performance tracking
         self.episode_rewards = {f'agent_{i}': [] for i in range(num_systems)}
         self.coordination_metrics = []
@@ -131,6 +401,9 @@ class MultiAgentRLEnvironment(gym.Env):
             'global_impact': 0.0,
             'detection_risk': 0.0
         }
+        self.agent_cumulative_impact = {f'agent_{i}': 0.0 for i in range(self.num_systems)}
+        self.agent_detection_count = {f'agent_{i}': 0 for i in range(self.num_systems)}
+        self.episode_done_reason = "running"
         
         # Get initial observations for all agents
         observations = {}
@@ -176,10 +449,60 @@ class MultiAgentRLEnvironment(gym.Env):
                 'coordination_bonus': agent_result.get('coordination_bonus', 0.0)
             }
         
+        # Update per-agent cumulative metrics
+        for i in range(self.num_systems):
+            agent_key = f'agent_{i}'
+            sys_id = i + 1
+            agent_result = coordinated_results.get(sys_id, {})
+            self.agent_cumulative_impact[agent_key] += agent_result.get('impact', 0.0)
+            if agent_result.get('detection_risk', 0.0) > 0.7:
+                self.agent_detection_count[agent_key] += 1
+        
+        # Update global coordination state
+        total_impact = sum(self.agent_cumulative_impact.values())
+        self.coordination_state['global_impact'] = total_impact
+        avg_detection = np.mean([r.get('detection_risk', 0.0) for r in coordinated_results.values()]) if coordinated_results else 0.0
+        self.coordination_state['detection_risk'] = avg_detection
+        
         # Check termination conditions
-        done = self.current_step >= self.max_steps
-        terminated = {agent_key: done for agent_key in agent_observations.keys()}
-        truncated = {agent_key: False for agent_key in agent_observations.keys()}
+        terminated_flag = False
+        truncated_flag = False
+        
+        # Done condition 1: Global detection risk too high (all agents compromised)
+        if avg_detection >= self.global_detection_threshold:
+            terminated_flag = True
+            self.episode_done_reason = "global_detection"
+            # Penalize all agents
+            for agent_key in agent_rewards:
+                agent_rewards[agent_key] -= 100.0
+        
+        # Done condition 2: Any agent detected too many times
+        elif any(count >= self.max_agent_detections for count in self.agent_detection_count.values()):
+            terminated_flag = True
+            self.episode_done_reason = "agent_blown"
+        
+        # Done condition 3: Mission success - high cumulative impact across all agents
+        elif total_impact >= self.mission_success_impact:
+            terminated_flag = True
+            self.episode_done_reason = "mission_success"
+            # Bonus for all agents
+            for agent_key in agent_rewards:
+                agent_rewards[agent_key] += 200.0
+        
+        # Done condition 4: Max steps reached (truncation)
+        elif self.current_step >= self.max_steps:
+            truncated_flag = True
+            self.episode_done_reason = "max_steps"
+        
+        terminated = {agent_key: terminated_flag for agent_key in agent_observations.keys()}
+        truncated = {agent_key: truncated_flag for agent_key in agent_observations.keys()}
+        
+        # Add episode-level metrics to all agent infos
+        for agent_key in infos:
+            infos[agent_key]['episode_step'] = self.current_step
+            infos[agent_key]['done_reason'] = self.episode_done_reason if (terminated_flag or truncated_flag) else 'running'
+            infos[agent_key]['global_impact'] = total_impact
+            infos[agent_key]['global_detection_risk'] = avg_detection
         
         return agent_observations, agent_rewards, terminated, truncated, infos
     
@@ -440,18 +763,20 @@ class MultiAgentRLEnvironment(gym.Env):
             duration = attack_params.get('duration', 30.0)
             stealth_factor = attack_params.get('stealth_factor', 0.5)
             
-            print(f"      🎯 REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
+            print(f"      #??# REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
             
-            # Create baseline station data for comparison
+            # Create baseline station data matching the CMS input schema used in
+            # hierarchical_cosimulation.py _apply_input_attacks() (Path A).
+            # Keys: soc, grid_voltage (pu), grid_frequency (Hz), demand_factor,
+            #        voltage_priority, urgency_factor, current_time
             baseline_station_data = {
                 'soc': 0.5,
-                'voltage': 400.0,
-                'current': 50.0,
-                'power': 20000.0,
-                'temperature': 25.0,
-                'queue_length': 3,
-                'utilization': 0.6,
-                'timestamp': time.time()
+                'grid_voltage': 1.0,        # per-unit (nominal)
+                'grid_frequency': 60.0,     # Hz (nominal)
+                'demand_factor': 0.5,
+                'voltage_priority': 0.0,
+                'urgency_factor': 1.0,
+                'current_time': 0.0
             }
             
             # Get baseline PINN CMS response
@@ -462,41 +787,74 @@ class MultiAgentRLEnvironment(gym.Env):
                     'current': baseline_current, 
                     'power': baseline_power
                 }
-                print(f"      📊 Baseline CMS: V={baseline_voltage:.1f}V, I={baseline_current:.1f}A, P={baseline_power:.1f}W")
+                print(f"      ## Baseline CMS: V={baseline_voltage:.1f}V, I={baseline_current:.1f}A, P={baseline_power:.1f}W")
             except Exception as e:
-                print(f"      ⚠️ Baseline CMS call failed: {e}")
+                print(f"      ##?? Baseline CMS call failed: {e}")
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Apply attack perturbations to station data
+            # These perturbations MIRROR _apply_input_attacks() in hierarchical_cosimulation.py
+            # so that RL training uses the same variables and directions as the simulation.
             attacked_station_data = baseline_station_data.copy()
             
-            # Apply attack-specific perturbations (increased magnitudes for real PINN sensitivity)
             if attack_type == 'voltage_manipulation':
-                attacked_station_data['voltage'] *= (1.0 + magnitude * 0.5)  # Increased from 0.2 to 0.5
+                # Mirror Path A: grid_voltage drop + voltage_priority + power_multiplier
+                voltage_drop_factor = 1.0 - (magnitude * 0.35)
+                attacked_station_data['grid_voltage'] *= voltage_drop_factor
+                attacked_station_data['voltage_priority'] = max(0, 0.95 - attacked_station_data['grid_voltage'])
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 20.0
             elif attack_type == 'current_injection':
-                attacked_station_data['current'] *= (1.0 + magnitude * 0.8)  # Increased from 0.3 to 0.8
+                # Mirror Path A: demand_factor increase + urgency_factor + power_multiplier
+                cumulative_factor = 1.0 + (magnitude * 45.0)
+                attacked_station_data['demand_factor'] *= cumulative_factor
+                attacked_station_data['urgency_factor'] *= (1.0 + magnitude * 20.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 35.0
             elif attack_type == 'power_disruption':
-                attacked_station_data['power'] *= (1.0 - magnitude * 0.6)   # Increased from 0.4 to 0.6
-            elif attack_type == 'communication_spoofing': # Formerly soc_spoofing
-                attacked_station_data['soc'] = min(1.0, attacked_station_data['soc'] + magnitude * 0.8)  # Increased from 0.5 to 0.8
-            elif attack_type == 'protocol_manipulation': # Formerly thermal_attack
-                attacked_station_data['temperature'] += magnitude * 50.0     # Increased from 20.0 to 50.0
-            elif attack_type == 'data_injection': # Formerly frequency_attack
-                # Add frequency attack perturbation (was missing)
-                attacked_station_data['power'] *= (1.0 + magnitude * 0.3)
-                attacked_station_data['voltage'] *= (1.0 - magnitude * 0.2)
+                # Mirror Path A: demand_factor/urgency_factor reduction + power_multiplier
+                cumulative_factor = max(0.02, 1.0 - (magnitude * 0.90))
+                attacked_station_data['demand_factor'] *= cumulative_factor
+                attacked_station_data['urgency_factor'] *= cumulative_factor
+                attacked_station_data['power_multiplier'] = cumulative_factor
+            elif attack_type == 'communication_spoofing':
+                # Mirror Path A: SoC reduction + urgency_factor increase + power_multiplier
+                soc_reduction = magnitude * 0.7
+                attacked_station_data['soc'] = max(0.01, attacked_station_data['soc'] - soc_reduction)
+                attacked_station_data['urgency_factor'] = 1.0 + (magnitude * 40.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 30.0
+            elif attack_type == 'protocol_manipulation':
+                # Mirror Path A: oscillating demand_factor + grid_voltage drop + power_multiplier
+                import math
+                oscillation = math.sin(duration / 4.0) * 20.0 + 1.0
+                amplitude_growth = 1.0 + (magnitude * 12.0)
+                attacked_station_data['demand_factor'] *= oscillation * amplitude_growth
+                attacked_station_data['grid_voltage'] *= (1.0 - magnitude * 0.2)
+                attacked_station_data['power_multiplier'] = oscillation * amplitude_growth
+            elif attack_type == 'data_injection':
+                # Mirror Path A: grid_frequency deviation + demand_factor increase + power_multiplier
+                frequency_deviation = magnitude * 12.0
+                attacked_station_data['grid_frequency'] += frequency_deviation
+                attacked_station_data['demand_factor'] *= (1.0 + magnitude * 30.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 25.0
             
             # Get attacked PINN CMS response
             try:
                 attacked_voltage, attacked_current, attacked_power = pinn_model.optimize_references(attacked_station_data)
+                
+                # Apply power_multiplier post-PINN (mirrors Path A in hierarchical_cosimulation.py
+                # lines 1245-1250 and 1726-1730 where power_multiplier scales output references)
+                if 'power_multiplier' in attacked_station_data:
+                    power_multiplier = attacked_station_data['power_multiplier']
+                    attacked_power *= power_multiplier
+                    attacked_current *= power_multiplier
+                
                 attacked_response = {
                     'voltage': attacked_voltage,
                     'current': attacked_current,
                     'power': attacked_power
                 }
-                print(f"      🚨 Attacked CMS: V={attacked_voltage:.1f}V, I={attacked_current:.1f}A, P={attacked_power:.1f}W")
+                print(f"      ## Attacked CMS: V={attacked_voltage:.1f}V, I={attacked_current:.1f}A, P={attacked_power:.1f}W")
             except Exception as e:
-                print(f"      ⚠️ Attacked CMS call failed: {e}")
+                print(f"      ##?? Attacked CMS call failed: {e}")
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Calculate real impact based on CMS response differences
@@ -511,7 +869,7 @@ class MultiAgentRLEnvironment(gym.Env):
             success_threshold = 0.01  # 1% change indicates successful attack (lowered from 5%)
             success = real_impact > success_threshold
             
-            print(f"      📈 Real Impact: V={voltage_impact:.3f}, I={current_impact:.3f}, P={power_impact:.3f} → Total={real_impact:.3f}, Success={success}")
+            print(f"      ## Real Impact: V={voltage_impact:.3f}, I={current_impact:.3f}, P={power_impact:.3f} → Total={real_impact:.3f}, Success={success}")
             
             return {
                 'success': success,
@@ -530,7 +888,7 @@ class MultiAgentRLEnvironment(gym.Env):
             }
             
         except Exception as e:
-            print(f"      ❌ Real PINN CMS attack failed: {e}")
+            print(f"      ##XX Real PINN CMS attack failed: {e}")
             return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
     
     def _fallback_pinn_attack_simulation(self, pinn_model, attack_params: Dict) -> Dict:
@@ -540,7 +898,7 @@ class MultiAgentRLEnvironment(gym.Env):
         duration = attack_params.get('duration', 30.0)
         stealth_factor = attack_params.get('stealth_factor', 0.5)
         
-        print(f"      🎲 Fallback simulation for {attack_type}")
+        print(f"      #??# Fallback simulation for {attack_type}")
         
         # Simulate attack impact based on attack parameters
         base_success_prob = 0.8
@@ -597,6 +955,21 @@ class MultiAgentRLEnvironment(gym.Env):
             print(f"Error calculating anomaly score: {e}")
             return 0.5  # Default moderate anomaly score
 
+class _EpisodeRewardCB(BaseCallback):
+    """Lightweight SB3 callback to capture per-episode rewards during .learn() pre-training."""
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+        self.episode_rewards = []
+        self.episode_lengths = []
+
+    def _on_step(self) -> bool:
+        for info in self.locals.get('infos', []):
+            if 'episode' in info:
+                self.episode_rewards.append(float(info['episode']['r']))
+                self.episode_lengths.append(int(info['episode']['l']))
+        return True
+
+
 class EnhancedDQNSACCoordinator:
     """Enhanced coordinator using real DQN and SAC agents with PINN integration"""
     
@@ -610,6 +983,9 @@ class EnhancedDQNSACCoordinator:
         # Initialize DQN and SAC agents for each system
         self.dqn_agents = {}
         self.sac_agents = {}
+        # Store training environments for consistent testing
+        self.dqn_envs = {}
+        self.sac_envs = {}
         
         for i in range(num_systems):
             sys_id = i + 1
@@ -617,9 +993,12 @@ class EnhancedDQNSACCoordinator:
             # Create individual environments for each system
             if sys_id in federated_pinn_manager.local_models:
                 cms_system = federated_pinn_manager.local_models[sys_id]
+                # Get the real 3-layer IDS for this system (same as Phase 3)
+                anomaly_det = federated_pinn_manager.anomaly_detectors.get(sys_id) if hasattr(federated_pinn_manager, 'anomaly_detectors') else None
                 
                 # DQN agent (discrete actions)
-                dqn_env = DiscreteSecurityEvasionEnv(cms_system, num_stations=10)
+                dqn_env = Monitor(DiscreteSecurityEvasionEnv(cms_system, num_stations=10, anomaly_detector=anomaly_det, system_id=sys_id))
+                self.dqn_envs[sys_id] = dqn_env
                 self.dqn_agents[sys_id] = DQN(
                     'MlpPolicy',
                     dqn_env,
@@ -639,18 +1018,19 @@ class EnhancedDQNSACCoordinator:
                 )
                 
                 # SAC agent (continuous actions)
-                sac_env = SecurityEvasionEnvironment(cms_system, num_stations=10)
+                sac_env = Monitor(SecurityEvasionEnvironment(cms_system, num_stations=10, anomaly_detector=anomaly_det, system_id=sys_id))
+                self.sac_envs[sys_id] = sac_env
                 self.sac_agents[sys_id] = SAC(
                     'MlpPolicy',
                     sac_env,
                     learning_rate=3e-4,
-                    buffer_size=100000,
-                    learning_starts=1000,
+                    buffer_size=500000,   # enlarged to match 300k training steps
+                    learning_starts=2000,
                     batch_size=256,
                     tau=0.005,
                     gamma=0.99,
                     train_freq=1,
-                    gradient_steps=1,
+                    gradient_steps=2,     # more gradient steps per env step
                     ent_coef='auto',
                     target_update_interval=1,
                     verbose=0
@@ -663,7 +1043,7 @@ class EnhancedDQNSACCoordinator:
             'coordination_scores': []
         }
         
-        print(f"✅ Enhanced DQN/SAC Coordinator initialized with {len(self.dqn_agents)} DQN and {len(self.sac_agents)} SAC agents")
+        print(f"## Enhanced DQN/SAC Coordinator initialized with {len(self.dqn_agents)} DQN and {len(self.sac_agents)} SAC agents")
     
     def train_coordinated_agents(self, total_timesteps: int = 100000):
         """Train DQN and SAC agents with PINN interaction"""
@@ -674,10 +1054,10 @@ class EnhancedDQNSACCoordinator:
         self._train_individual_agents(total_timesteps // 2)
         
         # Phase 2: Coordinated multi-agent training
-        print("\n🤝 Phase 2: Coordinated Multi-Agent Training")
+        print("\n## Phase 2: Coordinated Multi-Agent Training")
         self._train_coordinated_agents(total_timesteps // 2)
         
-        print("✅ Enhanced DQN/SAC training completed")
+        print("## Enhanced DQN/SAC training completed")
     
     def _train_individual_agents(self, timesteps: int):
         """Train individual agents with PINN interaction"""
@@ -687,24 +1067,32 @@ class EnhancedDQNSACCoordinator:
             # Train DQN agent
             if sys_id in self.dqn_agents:
                 print(f"  Training DQN agent for System {sys_id}...")
+                dqn_cb = _EpisodeRewardCB()
                 self.dqn_agents[sys_id].learn(
                     total_timesteps=timesteps // 2,
                     log_interval=1000,
-                    progress_bar=False
+                    progress_bar=False,
+                    callback=dqn_cb
                 )
+                self.training_history['dqn_rewards'][sys_id] = dqn_cb.episode_rewards
+                print(f"    DQN System {sys_id}: {len(dqn_cb.episode_rewards)} episodes, mean={np.mean(dqn_cb.episode_rewards) if dqn_cb.episode_rewards else 0:.2f}")
             
             # Train SAC agent
             if sys_id in self.sac_agents:
                 print(f"  Training SAC agent for System {sys_id}...")
+                sac_cb = _EpisodeRewardCB()
                 self.sac_agents[sys_id].learn(
                     total_timesteps=timesteps // 2,
                     log_interval=1000,
-                    progress_bar=False
+                    progress_bar=False,
+                    callback=sac_cb
                 )
+                self.training_history['sac_rewards'][sys_id] = sac_cb.episode_rewards
+                print(f"    SAC System {sys_id}: {len(sac_cb.episode_rewards)} episodes, mean={np.mean(sac_cb.episode_rewards) if sac_cb.episode_rewards else 0:.2f}")
     
     def _train_coordinated_agents(self, timesteps: int):
         """Train agents in coordinated multi-agent setting"""
-        print("🤝 Training coordinated multi-agent attacks...")
+        print("## Training coordinated multi-agent attacks...")
         
         # This would involve training in the MARL environment
         # For now, we'll simulate coordinated training
@@ -746,14 +1134,18 @@ class EnhancedDQNSACCoordinator:
                 
                 step += 1
             
-            # Store per-system rewards for plotting
+            # Store per-system rewards for plotting — append raw rewards.
+            # The old scaling (phase1_mean / 50) created a compounding feedback
+            # loop that inflated rewards to 1e7-1e8.  Different phases naturally
+            # have different reward scales; the outer-circle boundary lines on
+            # the plot visually separate them.
             for i in range(self.num_systems):
                 agent_key = f'agent_{i}'
                 sys_id = i + 1
                 if agent_key in episode_rewards and sys_id in self.training_history['dqn_rewards']:
-                    # Store reward for both DQN and SAC (they work together)
-                    self.training_history['dqn_rewards'][sys_id].append(episode_rewards[agent_key])
-                    self.training_history['sac_rewards'][sys_id].append(episode_rewards[agent_key])
+                    raw_reward = episode_rewards[agent_key]
+                    self.training_history['dqn_rewards'][sys_id].append(raw_reward)
+                    self.training_history['sac_rewards'][sys_id].append(raw_reward)
             
             # Store coordination metrics
             avg_reward = np.mean(list(episode_rewards.values()))
@@ -763,31 +1155,74 @@ class EnhancedDQNSACCoordinator:
                 print(f"  Episode {episode}/{episodes}: Avg Reward = {avg_reward:.2f}")
     
     def get_coordinated_attack_actions(self, system_states: Dict[int, Dict]) -> Dict[int, Dict]:
-        """Get coordinated attack actions from all agents"""
+        """Get coordinated attack actions from all agents using their TRAINING environments.
+        
+        Uses the same env.reset() → agent.predict(obs) → env.step(action) pattern
+        as Phase 3's execute_deployment(), ensuring observation/action consistency
+        between training and testing.
+        """
         coordinated_actions = {}
         
         for sys_id in range(1, self.num_systems + 1):
-            if sys_id in system_states:
-                # Get DQN discrete action
-                dqn_action = None
-                if sys_id in self.dqn_agents:
-                    obs = self._convert_state_to_observation(system_states[sys_id])
-                    dqn_action_idx, _ = self.dqn_agents[sys_id].predict(obs, deterministic=True)
-                    dqn_action = self._convert_dqn_action(dqn_action_idx)
-                
-                # Get SAC continuous action
-                sac_action = None
-                if sys_id in self.sac_agents:
-                    obs = self._convert_state_to_observation(system_states[sys_id])
-                    sac_action, _ = self.sac_agents[sys_id].predict(obs, deterministic=True)
-                
-                # Combine DQN and SAC actions
-                coordinated_actions[sys_id] = {
-                    'dqn_action': dqn_action,
-                    'sac_action': sac_action,
-                    'coordination_type': 'simultaneous',
-                    'system_id': sys_id
-                }
+            if sys_id not in system_states:
+                continue
+            
+            result = {
+                'coordination_type': 'simultaneous',
+                'system_id': sys_id,
+                'dqn_result': None,
+                'sac_result': None,
+            }
+            
+            # --- DQN: use the TRAINING environment for obs + execution ---
+            if sys_id in self.dqn_agents and sys_id in self.dqn_envs:
+                try:
+                    dqn_env = self.dqn_envs[sys_id]
+                    obs, _ = dqn_env.reset()
+                    action, _ = self.dqn_agents[sys_id].predict(obs, deterministic=True)
+                    _, reward, _, _, info = dqn_env.step(action)
+                    
+                    result['dqn_action'] = self._convert_dqn_action(action)
+                    result['dqn_result'] = {
+                        'success': not info.get('attack_detected', True),
+                        'impact': info.get('evcs_impact', 0.0),
+                        'reward': float(reward),
+                        'detected': info.get('attack_detected', False),
+                        'attack_type': result['dqn_action'].get('type', 'unknown'),
+                        'env_consistent': True
+                    }
+                except Exception as e:
+                    print(f"      ##?? DQN env execution failed for system {sys_id}: {e}")
+                    result['dqn_action'] = {'type': 'voltage_manipulation', 'discrete': True, 'action_idx': 0}
+                    result['dqn_result'] = {'success': False, 'impact': 0.0, 'detected': True}
+            
+            # --- SAC: use the TRAINING environment for obs + execution ---
+            if sys_id in self.sac_agents and sys_id in self.sac_envs:
+                try:
+                    sac_env = self.sac_envs[sys_id]
+                    obs, _ = sac_env.reset()
+                    action, _ = self.sac_agents[sys_id].predict(obs, deterministic=True)
+                    _, reward, _, _, info = sac_env.step(action)
+                    
+                    result['sac_action'] = action
+                    result['sac_result'] = {
+                        'success': not info.get('attack_detected', True),
+                        'impact': info.get('evcs_impact', 0.0),
+                        'reward': float(reward),
+                        'detected': info.get('attack_detected', False),
+                        'attack_type': info.get('security_result', {}).get('attack_type', 'unknown'),
+                        'env_consistent': True
+                    }
+                    
+                    print(f"      ## Phase 2 SAC (sys {sys_id}): reward={reward:.2f}, "
+                          f"detected={info.get('attack_detected', False)}, "
+                          f"impact={info.get('evcs_impact', 0.0):.3f}")
+                except Exception as e:
+                    print(f"      ##?? SAC env execution failed for system {sys_id}: {e}")
+                    result['sac_action'] = np.zeros(6, dtype=np.float32)
+                    result['sac_result'] = {'success': False, 'impact': 0.0, 'detected': True}
+            
+            coordinated_actions[sys_id] = result
         
         return coordinated_actions
     
@@ -818,9 +1253,9 @@ class EnhancedDQNSACCoordinator:
             'voltage_manipulation',
             'current_injection',
             'power_disruption', 
-            'frequency_attack',
-            'soc_spoofing',
-            'no_attack'
+            'data_injection',
+            'communication_spoofing',
+            'protocol_manipulation'
         ]
         
         return {
@@ -834,19 +1269,24 @@ class EnhancedDQNSACCoordinator:
         
         Creates 6 subplots (3x2 grid) showing training rewards for each distribution system.
         Each subplot shows both DQN and SAC rewards with moving averages.
+        When two-level training data is available, outer circle boundaries are shown
+        as vertical dashed lines so the user can see each training phase.
         
         Args:
             save_path: Path to save the plot
         """
         import matplotlib.pyplot as plt
         
-        print(f"\n📊 Plotting training rewards for {self.num_systems} systems...")
+        print(f"\n## Plotting training rewards for {self.num_systems} systems...")
         
-        fig, axes = plt.subplots(3, 2, figsize=(18, 14))
+        fig, axes = plt.subplots(3, 2, figsize=(20, 16))
         axes = axes.flatten()
         
         colors_dqn = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
         colors_sac = ['#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#aec7e8', '#ffbb78']
+        
+        # Check if two-level boundaries are available
+        has_boundaries = hasattr(self, '_two_level_boundaries') and self._two_level_boundaries
         
         for idx, sys_id in enumerate(sorted(self.training_history['dqn_rewards'].keys())):
             ax = axes[idx]
@@ -861,12 +1301,12 @@ class EnhancedDQNSACCoordinator:
             # Plot DQN rewards
             if dqn_rewards:
                 ax.plot(episodes_dqn, dqn_rewards, 
-                       color=colors_dqn[idx], alpha=0.4, linewidth=1.0, 
+                       color=colors_dqn[idx], alpha=0.35, linewidth=0.8, 
                        label=f'DQN System {sys_id}')
                 
-                # Add moving average for DQN
+                # Add moving average for DQN (scale window with total episodes)
                 if len(dqn_rewards) > 10:
-                    window = min(10, len(dqn_rewards) // 2)
+                    window = max(5, min(20, len(dqn_rewards) // 10))
                     dqn_ma = np.convolve(dqn_rewards, np.ones(window)/window, mode='valid')
                     ax.plot(range(window-1, len(dqn_rewards)), dqn_ma, 
                            color=colors_dqn[idx], linewidth=2.5, 
@@ -875,49 +1315,65 @@ class EnhancedDQNSACCoordinator:
             # Plot SAC rewards
             if sac_rewards:
                 ax.plot(episodes_sac, sac_rewards, 
-                       color=colors_sac[idx], alpha=0.4, linewidth=1.0, 
+                       color=colors_sac[idx], alpha=0.35, linewidth=0.8, 
                        label=f'SAC System {sys_id}')
                 
                 # Add moving average for SAC
                 if len(sac_rewards) > 10:
-                    window = min(10, len(sac_rewards) // 2)
+                    window = max(5, min(20, len(sac_rewards) // 10))
                     sac_ma = np.convolve(sac_rewards, np.ones(window)/window, mode='valid')
                     ax.plot(range(window-1, len(sac_rewards)), sac_ma, 
                            color=colors_sac[idx], linewidth=2.5, 
                            label=f'SAC MA({window})', alpha=0.9)
             
+            # Draw outer circle boundaries as vertical dashed lines
+            if has_boundaries and sys_id in self._two_level_boundaries:
+                bd = self._two_level_boundaries[sys_id]
+                # Use DQN boundaries (they align with SAC)
+                for i, bnd in enumerate(bd.get('outer_circle_boundaries_dqn', [])):
+                    ax.axvline(x=bnd, color='gray', linestyle='--', linewidth=0.7, alpha=0.5)
+                    if i == 0:
+                        ax.axvline(x=bnd, color='gray', linestyle='--', linewidth=0.7, 
+                                  alpha=0.5, label='Outer Circle')
+            
             # Formatting
-            ax.set_xlabel('Episode', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Cumulative Reward', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Episode (cumulative across outer circles)', fontsize=11, fontweight='bold')
+            ax.set_ylabel('Episode Reward', fontsize=11, fontweight='bold')
             ax.set_title(f'Distribution System {sys_id} - RL Agent Rewards', 
                         fontsize=13, fontweight='bold', pad=10)
-            ax.legend(loc='best', fontsize=10, framealpha=0.9)
+            ax.legend(loc='best', fontsize=9, framealpha=0.9, ncol=2)
             ax.grid(True, alpha=0.3, linestyle='--')
             ax.axhline(y=0, color='k', linestyle='-', linewidth=0.5, alpha=0.3)
             
             # Add statistics text box
             if dqn_rewards or sac_rewards:
+                stats_text = f'DQN: {len(dqn_rewards)} ep'
+                if dqn_rewards:
+                    stats_text += f', avg={np.mean(dqn_rewards):.0f}'
+                stats_text += f'\nSAC: {len(sac_rewards)} ep'
+                if sac_rewards:
+                    stats_text += f', avg={np.mean(sac_rewards):.0f}'
                 all_rewards = dqn_rewards + sac_rewards
                 if all_rewards:
-                    stats_text = f'Episodes: {len(all_rewards)}\n'
-                    stats_text += f'Avg: {np.mean(all_rewards):.1f}\n'
-                    stats_text += f'Max: {np.max(all_rewards):.1f}\n'
-                    stats_text += f'Min: {np.min(all_rewards):.1f}'
-                    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-                           fontsize=9, verticalalignment='top',
-                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                    stats_text += f'\nTotal: {len(all_rewards)} ep'
+                    stats_text += f'\nMax: {np.max(all_rewards):.0f}'
+                ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                       fontsize=8, verticalalignment='top', fontfamily='monospace',
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         
         # Overall title
-        fig.suptitle('RL Training Rewards - 6 Distribution Systems (DQN + SAC Pairs)', 
-                    fontsize=16, fontweight='bold', y=0.995)
+        title = 'RL Training Rewards - 6 Distribution Systems (DQN + SAC Pairs)'
+        if has_boundaries:
+            title += '\n(Dashed lines = outer circle boundaries)'
+        fig.suptitle(title, fontsize=15, fontweight='bold', y=0.998)
         
-        plt.tight_layout(rect=[0, 0.03, 1, 0.99])
+        plt.tight_layout(rect=[0, 0.02, 1, 0.97])
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Training rewards plot saved to {save_path}")
+        print(f"## Training rewards plot saved to {save_path}")
         plt.close()
         
         # Print summary statistics
-        print("\n📈 Training Rewards Summary:")
+        print("\n## Training Rewards Summary:")
         print("=" * 70)
         for sys_id in sorted(self.training_history['dqn_rewards'].keys()):
             dqn_rewards = self.training_history['dqn_rewards'][sys_id]
@@ -945,6 +1401,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         self.hierarchical_sim = None
         self.federated_manager = None
         self.pinn_optimizer = None
+        self.acn_fleet = None          # ACN-Sim fleet (6 zones × 10 EVSEs)
         
         # Enhanced LLM-RL components
         self.llm_analyzer = None
@@ -978,7 +1435,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             'hierarchical': {
                 'use_enhanced_pinn': True,
                 'use_dqn_sac_security': True,
-                'total_duration': 3600.0,  # 1 hour simulation
+                'total_duration': 7200.0,  # 2 hour simulation for diagnostic
                 'num_distribution_systems': 6
             },
             'federated_pinn': {
@@ -1010,39 +1467,274 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         print("  🏗️ Initializing hierarchical co-simulation...")
         self._initialize_hierarchical_simulation()
         
-        print("  🧠 Initializing LLM threat analyzer...")
+        print("  ## Initializing LLM threat analyzer...")
         self._initialize_llm_components()
         
-        print("  🤖 Initializing enhanced DQN/SAC agents...")
+        print("  ## Initializing enhanced DQN/SAC agents...")
         self._initialize_enhanced_rl_components()
         
         print("  🔗 Initializing LangGraph coordination...")
         self._initialize_langgraph_coordinator()
         
-        print("  ⚔️ Initializing attack scenarios...")
+        print("  ## Initializing attack scenarios...")
         self._initialize_attack_scenarios()
         
-        print("✅ Enhanced integrated system initialization complete!")
+        print("## Enhanced integrated system initialization complete!")
+    
+    def _load_pretrained_models(self):
+        """Load pre-trained PINN optimizer and RL agents (inlined from focused_demand_analysis)"""
+        print("\n## Loading Pre-trained Models...")
+        print("-" * 50)
+        
+        # Try to load federated models first
+        federated_manager = None
+        try:
+            federated_config = FederatedPINNConfig(
+                num_distribution_systems=6,
+                local_epochs=200,
+                global_rounds=10,
+                aggregation_method='fedavg'
+            )
+            federated_manager = FederatedPINNManager(federated_config)
+            
+            success = federated_manager.load_federated_models('federated_models')
+            if success:
+                print("## Federated PINN models loaded successfully")
+            else:
+                federated_manager = None
+                print("##?? Federated models not found, trying legacy models...")
+        except Exception as e:
+            print(f"##?? Failed to load federated models: {e}")
+            federated_manager = None
+        
+        # Load coordinated DQN/SAC security evasion trainer
+        dqn_sac_trainer = None
+        try:
+            dqn_sac_trainer = DQNSACSecurityEvasionTrainer(
+                cms_system=None,  # Will be set during co-simulation
+                num_stations=6,
+                use_both=True
+            )
+            print("## Coordinated DQN/SAC Security Evasion Trainer initialized successfully")
+        except Exception as e:
+            print(f"##?? Failed to initialize DQN/SAC trainer: {e}")
+            dqn_sac_trainer = None
+        
+        # Load individual PINN optimizers for each distribution system (6 systems)
+        individual_optimizers = {}
+        for system_id in range(1, 7):  # Systems 1-6
+            try:
+                optimizer_file = f'federated_pinn_system_{system_id}.pth'
+                
+                if not os.path.exists(optimizer_file):
+                    print(f"##?? PINN model file not found: {optimizer_file}")
+                    continue
+                    
+                from pinn_optimizer import LSTMPINNChargingOptimizer, PINNConfig
+                
+                pinn_config = PINNConfig(
+                    input_size=4,
+                    hidden_size=64,
+                    num_layers=3,
+                    output_size=3,
+                    physics_weight=0.3,
+                    max_voltage=240.0,
+                    max_current=32.0,
+                    max_power=7.68,
+                    min_voltage=208.0,
+                    min_current=6.0,
+                    min_power=1.44
+                )
+                
+                individual_optimizer = LSTMPINNChargingOptimizer(pinn_config, always_train=False)
+                
+                try:
+                    individual_optimizer.load_model(optimizer_file)
+                    individual_optimizers[system_id] = individual_optimizer
+                    print(f"## Individual PINN Optimizer {system_id} loaded successfully")
+                except Exception as load_error:
+                    print(f"##?? Failed to load PINN model {optimizer_file}: {load_error}")
+                    individual_optimizers[system_id] = individual_optimizer
+                    print(f"   Using fresh PINN optimizer for system {system_id}")
+                    
+            except Exception as e:
+                print(f"##?? Failed to initialize PINN optimizer {system_id}: {e}")
+        
+        if federated_manager and dqn_sac_trainer:
+            print("## All models loaded successfully (Federated + DQN/SAC Trainer + Individual PINNs)!")
+        elif federated_manager:
+            print("## Federated and individual PINN models loaded successfully!")
+        elif dqn_sac_trainer:
+            print("## DQN/SAC Trainer and individual PINN models loaded successfully!")
+        else:
+            print("##?? Limited models loaded - some systems may use fallback methods")
+        
+        return federated_manager, individual_optimizers, dqn_sac_trainer
+    
+    def _run_training_phase(self):
+        """Pre-train PINN optimizer and RL agents (inlined from focused_demand_analysis)"""
+        print("=" * 80)
+        print(" FEDERATED TRAINING PHASE: Training Distributed PINN Models")
+        print("=" * 80)
+        
+        # Step 1: Initialize Federated PINN Manager
+        print("\n Phase 1: Initializing Federated PINN System...")
+        print("-" * 50)
+        
+        federated_config = FederatedPINNConfig(
+            num_distribution_systems=6,
+            local_epochs=200,
+            global_rounds=10,
+            aggregation_method='fedavg'
+        )
+        
+        federated_manager = FederatedPINNManager(federated_config)
+        print(" ## Federated PINN Manager initialized with 6 distribution systems")
+        
+        # Load best IDS model into each AnomalyDetector (Layer 3).
+        # Priority order: sklearn RF (.pkl, AUC≈0.90) > robust DNN (.pth) > original LSTM > balanced LSTM
+        import os as _os
+        _ids_paths = [
+            'models/best_ids_model.pkl',               # best sklearn RF from compare_ids_models.py
+            'models/robust_ids/best_ids_model.pth',    # best PyTorch DNN from robust_ids_evaluation.py
+            'models/lstm_ids_pretrained.pth',          # original LSTM
+            'lstm_ids_best_balanced.pth',              # fallback
+        ]
+        _lstm_loaded = False
+        for _lp in _ids_paths:
+            if _os.path.exists(_lp):
+                for _sid, _det in federated_manager.anomaly_detectors.items():
+                    _det.load_lstm_model(_lp)
+                if _lp.endswith('.pkl'):
+                    _model_label = "sklearn RF IDS (best_ids_model.pkl)"
+                elif "robust_ids" in _lp:
+                    _model_label = "DNN-Classifier IDS"
+                else:
+                    _model_label = "LSTM IDS"
+                print(f" ## {_model_label} loaded from {_lp} into all {len(federated_manager.anomaly_detectors)} anomaly detectors")
+                _lstm_loaded = True
+                break
+        if not _lstm_loaded:
+            print(" ##??  No pre-trained IDS model found — Layer 3 detection disabled")
+            print("    Run: python robust_ids_evaluation.py --retrain")
+        
+        # Step 2: Train Federated PINN Models
+        print("\n Phase 2: Training Federated PINN Models...")
+        print("-" * 50)
+        
+        for sys_id in range(1, 7):
+            print(f"\n 🔬 Training System {sys_id} PINN with REAL EVCS Dynamics...")
+            
+            pinn_config = LSTMPINNConfig()
+            pinn_config.num_evcs_stations = 2
+            pinn_config.sequence_length = 6
+            
+            data_generator = PhysicsDataGenerator(pinn_config)
+            
+            print(f"  Generating physics-accurate training data for System {sys_id}...")
+            n_samples = 1000
+            sequences, targets = data_generator.generate_realistic_evcs_scenarios(n_samples)
+            
+            print(f"  ## Generated {len(sequences)} sequences with {sequences.shape[-1]} features")
+            print(f"  ## Target ranges: V={targets[:, 0].min():.1f}-{targets[:, 0].max():.1f}, "
+                  f"I={targets[:, 1].min():.1f}-{targets[:, 1].max():.1f}, "
+                  f"P={targets[:, 2].min():.2f}-{targets[:, 2].max():.2f}")
+            
+            local_model = federated_manager.local_models[sys_id]
+            
+            if hasattr(local_model, 'data_generator'):
+                local_model._enhanced_training_data = (sequences, targets)
+                print(f"  🔧 Enhanced data stored in local model for System {sys_id}")
+            
+            training_result = federated_manager.train_local_model(sys_id, (sequences, targets), n_samples)
+            print(f" ## System {sys_id} training completed with REAL EVCS dynamics")
+        
+        # Perform federated averaging
+        print("\n ## Performing federated averaging...")
+        for round_num in range(federated_config.global_rounds):
+            print(f" Round {round_num + 1}/{federated_config.global_rounds}")
+        
+        # Step 3: Train DQN/SAC Security Evasion Agents
+        print("\n Phase 3: Training DQN/SAC Security Evasion Agents...")
+        print("-" * 50)
+        
+        dqn_sac_trainer = None
+        try:
+            cms = EnhancedChargingManagementSystem(stations=[], use_pinn=True)
+            cms.federated_manager = federated_manager
+            
+            from dqn_sac_security_evasion import create_dqn_sac_evasion_system
+            dqn_sac_trainer = create_dqn_sac_evasion_system(cms)
+            print(" 🚀 Training DQN/SAC agents (this may take a few minutes)...")
+            dqn_sac_trainer.train_agents(sac_timesteps=100000, dqn_timesteps=100000)
+            
+            dqn_sac_trainer.save_agents()
+            print(" ## DQN/SAC Security Evasion Agents trained and saved")
+            
+        except Exception as e:
+            print(f" ##?? DQN/SAC training failed: {e}")
+        
+        print("\n" + "=" * 80)
+        print(" FEDERATED TRAINING PHASE COMPLETED")
+        print("=" * 80)
+        print(" ## Federated PINN Models: 6 distribution systems trained")
+        print("=" * 80)
+        
+        return federated_manager, None, dqn_sac_trainer, False
     
     def _initialize_hierarchical_simulation(self):
         """Initialize hierarchical co-simulation with real power system"""
         if not HIERARCHICAL_AVAILABLE:
-            print("   ⚠️ Hierarchical co-simulation not available")
+            print("   ##?? Hierarchical co-simulation not available")
             return
         
         try:
-            # Load pre-trained models from focused_demand_analysis
+            # Load pre-trained models
             print("    📚 Loading pre-trained models...")
-            self.federated_manager, self.pinn_optimizer, _ = load_pretrained_models()
+            self.federated_manager, self.pinn_optimizer, _ = self._load_pretrained_models()
             
             # If no models exist, train them
             if not self.federated_manager:
                 print("    🚀 No pre-trained models found, training new models...")
-                from focused_demand_analysis import run_training_phase
-                self.federated_manager, self.pinn_optimizer, _, _ = run_training_phase()
+                self.federated_manager, self.pinn_optimizer, _, _ = self._run_training_phase()
                 if not self.federated_manager:
-                    print("    ⚠️ Training failed, continuing without federated models")
+                    print("    ##?? Training failed, continuing without federated models")
                     return
+            
+            # Multi-Layer ADM Integration — load best available IDS model
+            # Priority: sklearn RF (.pkl) > robust DNN (.pth) > original LSTM > balanced LSTM
+            _ids_candidate_paths = [
+                ("models/best_ids_model.pkl",             "sklearn RF (best_ids_model.pkl, AUC≈0.90)"),
+                ("models/robust_ids/best_ids_model.pth",  "DNN-Classifier (robust)"),
+                ("models/lstm_ids_pretrained.pth",        "LSTM Classifier"),
+                ("lstm_ids_best_balanced.pth",            "LSTM Balanced"),
+            ]
+            ids_model_path, ids_model_label = None, None
+            for _cp, _cl in _ids_candidate_paths:
+                if os.path.exists(_cp):
+                    ids_model_path, ids_model_label = _cp, _cl
+                    break
+
+            if ids_model_path and self.federated_manager:
+                print(f"    ## Loading {ids_model_label} multi-layer ADM...")
+                ids_success_count = 0
+                for sys_id, detector in self.federated_manager.anomaly_detectors.items():
+                    try:
+                        detector.load_lstm_model(ids_model_path)
+                        ids_success_count += 1
+                        print(f"      ## System {sys_id}: {ids_model_label} ADM enabled (3-layer detection)")
+                    except Exception as e:
+                        print(f"      ##??  System {sys_id}: IDS load failed - {e}")
+
+                if ids_success_count > 0:
+                    print(f"    ## Multi-layer ADM integration complete ({ids_success_count}/{len(self.federated_manager.anomaly_detectors)} systems)")
+                    print(f"       Detection layers: Physical → Pattern → {ids_model_label}")
+                else:
+                    print("    ##??  IDS integration failed, using 2-layer detection only")
+            else:
+                print("    ℹ️  No IDS model found — using 2-layer detection (Physical + Pattern)")
+                print("       To enable ML layer: run 'python robust_ids_evaluation.py --retrain'")
+
             
             # Initialize hierarchical co-simulation
             self.hierarchical_sim = HierarchicalCoSimulation(
@@ -1058,10 +1750,10 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                         if not hasattr(self.hierarchical_sim, 'enhanced_pinn_models'):
                             self.hierarchical_sim.enhanced_pinn_models = {}
                         self.hierarchical_sim.enhanced_pinn_models[sys_id] = optimizer
-                        print(f"      ✅ System {sys_id}: Pre-trained PINN model injected")
+                        print(f"      ## System {sys_id}: Pre-trained PINN model injected")
                 
                 if hasattr(self.hierarchical_sim, 'enhanced_pinn_models') and self.hierarchical_sim.enhanced_pinn_models:
-                    print(f"    🎯 Injected {len(self.hierarchical_sim.enhanced_pinn_models)} pre-trained PINN models")
+                    print(f"    #??# Injected {len(self.hierarchical_sim.enhanced_pinn_models)} pre-trained PINN models")
                     self.hierarchical_sim.enhanced_pinn_available = True
             
             # CRITICAL: Share federated manager with OpenDSSInterface for CMS creation
@@ -1086,7 +1778,10 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             print("    🔌 Setting up EV charging stations...")
             try:
                 self.hierarchical_sim.setup_ev_charging_stations()
-                print("   ✅ Hierarchical co-simulation initialized")
+                print("   ## Hierarchical co-simulation initialized")
+
+                # ── ACN-Sim Fleet initialization ──────────────────────────────
+                self._initialize_acn_sim_fleet()
                 
                 # Debug: Check if EVCS stations were created
                 total_evcs = 0
@@ -1094,24 +1789,109 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     dist_sys = dist_info['system']  # FIXED: Access actual system object
                     if hasattr(dist_sys, 'ev_stations'):
                         total_evcs += len(dist_sys.ev_stations)
-                        print(f"    🔍 DEBUG: System {sys_id} has {len(dist_sys.ev_stations)} EVCS stations")
+                        print(f"    ### DEBUG: System {sys_id} has {len(dist_sys.ev_stations)} EVCS stations")
                     else:
-                        print(f"    🔍 DEBUG: System {sys_id} has no ev_stations attribute")
+                        print(f"    ### DEBUG: System {sys_id} has no ev_stations attribute")
                 
-                print(f"    🔍 DEBUG: Total EVCS stations created: {total_evcs}")
+                print(f"    ### DEBUG: Total EVCS stations created: {total_evcs}")
                 
             except Exception as evcs_error:
-                print(f"  ⚠️ EVCS setup failed: {evcs_error}")
+                print(f"  ##?? EVCS setup failed: {evcs_error}")
                 print("    Continuing with basic hierarchical simulation...")
                 
         except Exception as e:
             import traceback
-            print(f"   ❌ Failed to initialize hierarchical simulation: {e}")
+            print(f"   ##XX Failed to initialize hierarchical simulation: {e}")
             print("   Full traceback:")
             traceback.print_exc()
             print("  Continuing with fallback mode...")
             self.hierarchical_sim = None
     
+    def _initialize_acn_sim_fleet(self):
+        """
+        Initialize the ACN-Sim fleet (6 zones × 10 EVSEs) and wire each zone
+        to its corresponding OpenDSSInterface distribution system.
+
+        Wiring: dist_sys._acn_zone = fleet.get_zone(ds_id)
+        Guard: only wire when zone.simulator is not None (acnportal installed).
+        """
+        # Prefer the already-cached module (loaded by hierarchical_cosimulation.py at import time)
+        # to avoid re-triggering acnportal import in a different warning-filter context.
+        import sys as _sys
+        _acn_mod = _sys.modules.get('acn_sim_interface')
+        if _acn_mod is not None:
+            ACN_SIM_AVAILABLE = getattr(_acn_mod, 'ACN_SIM_AVAILABLE', False)
+            ACNSimFleet = getattr(_acn_mod, 'ACNSimFleet', None)
+        else:
+            try:
+                from acn_sim_interface import ACNSimFleet, ACN_SIM_AVAILABLE
+            except Exception as _e:
+                print(f"    ##??  [ACN-Sim] import failed ({type(_e).__name__}: {_e})")
+                ACN_SIM_AVAILABLE = False
+                ACNSimFleet = None
+
+        if not ACN_SIM_AVAILABLE:
+            print("    ℹ️  [ACN-Sim] acnportal not installed — "
+                  "ACN-Sim DISABLED. Install with: pip install acnportal")
+            print("    ℹ️  [ACN-Sim] Using legacy EVCSController dynamics path.")
+            self.acn_fleet = None
+            return
+
+        if not self.hierarchical_sim:
+            self.acn_fleet = None
+            return
+
+        try:
+            acn_data_dir = os.path.join(
+                "evcs_data", "ACN-Data-Static-main", "time series data"
+            )
+            n_ds    = self.config['hierarchical']['num_distribution_systems']
+            sim_dur = float(self.config['hierarchical']['total_duration'])
+
+            self.acn_fleet = ACNSimFleet(
+                n_zones=n_ds,
+                n_evses_per_zone=10,
+                acn_data_dir=acn_data_dir if os.path.isdir(acn_data_dir) else None,
+                period_min=5.0,
+                evse_voltage=240.0,
+                sim_duration_s=sim_dur,
+            )
+
+            cms_list = []
+            for ds_id in range(1, n_ds + 1):
+                dist_info = self.hierarchical_sim.distribution_systems.get(ds_id, {})
+                dist_sys  = dist_info.get('system', None)
+                cms = getattr(dist_sys, 'cms', None) if dist_sys else None
+                cms_list.append(cms)
+
+            self.acn_fleet.initialize_zones(cms_list)
+
+            # Wire only zones where simulator is live (acnportal installed)
+            wired = 0
+            for ds_id in range(1, n_ds + 1):
+                zone = self.acn_fleet.get_zone(ds_id)
+                if zone.simulator is not None:
+                    dist_info = self.hierarchical_sim.distribution_systems.get(ds_id, {})
+                    dist_sys  = dist_info.get('system', None)
+                    if dist_sys is not None:
+                        dist_sys._acn_zone = zone
+                        wired += 1
+
+            if wired > 0:
+                print(f"    ## [ACN-Sim] ACTIVE — {wired}/{n_ds} zones wired "
+                      f"(period=5 min, V=240 V, "
+                      f"ACN-Data={'available' if os.path.isdir(acn_data_dir) else 'unavailable'})")
+            else:
+                print("    ##??  [ACN-Sim] Fleet created but no simulators live — "
+                      "legacy EVCS dynamics path will be used.")
+
+        except Exception as exc:
+            import traceback
+            print(f"    ##??  ACN-Sim fleet init failed: {exc} — "
+                  "falling back to legacy EVCS dynamics")
+            traceback.print_exc()
+            self.acn_fleet = None
+
     def _initialize_llm_components(self):
         """Initialize LLM threat analysis components"""
         try:
@@ -1125,9 +1905,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                         api_key = f.read().strip()
                     print(f"   🔑 Loaded API key from {llm_config['api_key_file']}")
                 except FileNotFoundError:
-                    print(f"   ⚠️ API key file {llm_config['api_key_file']} not found")
+                    print(f"   ##?? API key file {llm_config['api_key_file']} not found")
                 except Exception as e:
-                    print(f"   ⚠️ Failed to load API key: {e}")
+                    print(f"   ##?? Failed to load API key: {e}")
             
             # Initialize Gemini LLM analyzer
             self.llm_analyzer = GeminiLLMThreatAnalyzer(
@@ -1136,33 +1916,47 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             )
             
             if self.llm_analyzer.is_available:
-                print("   ✅ LLM components initialized with Gemini Pro")
+                print("   ## LLM components initialized with Gemini Pro")
             else:
-                print("   ⚠️ Gemini Pro not available, will use fallback analysis")
+                print("   ##?? Gemini Pro not available, will use fallback analysis")
                 
         except Exception as e:
-            print(f"   ⚠️ LLM initialization failed: {e}")
+            print(f"   ##?? LLM initialization failed: {e}")
             self.llm_analyzer = None
     
     def _initialize_enhanced_rl_components(self):
         """Initialize enhanced DQN/SAC agents with PINN integration"""
         try:
             if not self.federated_manager:
-                print("   ⚠️ No federated PINN manager available for RL training")
+                print("   ##?? No federated PINN manager available for RL training")
                 return
             
-            # Initialize enhanced DQN/SAC coordinator
+            # Initialize OLD system-specific coordinator (for comparison)
             self.dqn_sac_coordinator = EnhancedDQNSACCoordinator(
                 self.federated_manager,
                 self.config['hierarchical']['num_distribution_systems']
             )
             
-            print("   ✅ Enhanced DQN/SAC components initialized with PINN integration")
+            print("   ## Enhanced DQN/SAC components initialized with PINN integration (OLD ARCHITECTURE)")
+            
+            # Initialize NEW attack-specific coordinator
+            if ATTACK_SPECIFIC_AVAILABLE:
+                self.attack_specific_coordinator = AttackSpecificCoordinator(
+                    self.federated_manager,
+                    self.config['hierarchical']['num_distribution_systems'],
+                    attack_types=ATTACK_TYPES
+                )
+                print("   ## Attack-Specific RL Coordinator initialized (NEW ARCHITECTURE)")
+                print("   📝 This is the RECOMMENDED architecture for better specialization")
+            else:
+                self.attack_specific_coordinator = None
+                print("   ##?? Attack-specific coordinator not available")
             
         except Exception as e:
-            print(f"   ❌ Failed to initialize enhanced RL components: {e}")
+            print(f"   ##XX Failed to initialize enhanced RL components: {e}")
             print("  Continuing with fallback mode...")
             self.dqn_sac_coordinator = None
+            self.attack_specific_coordinator = None
     
     def _initialize_langgraph_coordinator(self):
         """Initialize Enhanced LLM-RL coordinator (the only proper Gemini-RL coordination)"""
@@ -1176,21 +1970,21 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     federated_manager=self.federated_manager,
                     enhanced_system=self  # Pass reference to enhanced system
                 )
-                print("   ✅ Enhanced LLM-RL coordinator initialized (includes LangGraph + STRIDE/MITRE)")
+                print("   ## Enhanced LLM-RL coordinator initialized (includes LangGraph + STRIDE/MITRE)")
                 print("   📝 This is the ONLY coordinator with proper Gemini-RL communication")
                 
                 # No need for separate LangGraph coordinator - Enhanced includes it
                 self.langgraph_coordinator = None
                 
             else:
-                print("   ⚠️ Enhanced LLM-RL coordinator not available")
+                print("   ##?? Enhanced LLM-RL coordinator not available")
                 print("   📝 Note: This means NO proper Gemini-RL coordination (LangGraph is integrated in Enhanced)")
-                print("   🤖 System will use direct RL coordination without LLM guidance")
+                print("   ## System will use direct RL coordination without LLM guidance")
                 self.enhanced_coordinator = None
                 self.langgraph_coordinator = None
                     
         except Exception as e:
-            print(f"   ❌ Failed to initialize Enhanced coordinator: {e}")
+            print(f"   ##XX Failed to initialize Enhanced coordinator: {e}")
             print("   📝 No Gemini-RL coordination available - continuing with direct RL only")
             self.langgraph_coordinator = None
             self.enhanced_coordinator = None
@@ -1275,7 +2069,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 coordination_type="simultaneous"
             )
         ]
-        print(f"   ✅ Initialized {len(self.attack_scenarios)} enhanced attack scenarios with STRIDE/MITRE integration")
+        print(f"   ## Initialized {len(self.attack_scenarios)} enhanced attack scenarios with STRIDE/MITRE integration")
     
     def train_enhanced_system(self, total_timesteps: int = 100000):
         """Train the enhanced system with real PINN integration"""
@@ -1296,34 +2090,33 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             pinn_results = self._train_federated_pinn_models()
             training_results['pinn_training'] = pinn_results
         else:
-            print("⚠️ No federated PINN manager available")
+            print("##?? No federated PINN manager available")
         
         # Phase 2: Train DQN/SAC agents with PINN interaction
-        print("\n🤖 Phase 2: Enhanced DQN/SAC Training with PINN Integration")
+        print("\n## Phase 2: Enhanced DQN/SAC Training with PINN Integration")
         print("-" * 50)
         if self.dqn_sac_coordinator:
             self.dqn_sac_coordinator.train_coordinated_agents(total_timesteps)
             training_results['rl_training'] = {'status': 'completed', 'timesteps': total_timesteps}
             
-            # Plot training rewards for all 6 systems
-            try:
-                self.dqn_sac_coordinator.plot_training_rewards()
-            except Exception as e:
-                print(f"⚠️ Failed to plot training rewards: {e}")
+            # Note: Training rewards plot will be generated after Phase 3 completes
+            print("## Phase 2 training complete. Plot will be generated after Phase 3.")
         else:
-            print("⚠️ No DQN/SAC coordinator available")
+            print("##?? No DQN/SAC coordinator available")
         
         # Phase 3: LLM-RL Integration Training
-        print("\n🧠 Phase 3: LLM-RL Integration Training")
+        print("\n## Phase 3: LLM-RL Integration Training")
         print("-" * 50)
         if self.enhanced_coordinator:
             llm_rl_results = self._train_llm_rl_integration()
             training_results['llm_rl_integration'] = llm_rl_results
         else:
-            print("⚠️ No Enhanced LLM-RL coordinator available")
+            print("##?? No Enhanced LLM-RL coordinator available")
         
-        print("\n✅ Enhanced system training completed!")
-        print("\n##010 Training results:", training_results)
+        # Store training results (especially final_deployment_plan) for hierarchical co-sim
+        self.simulation_results['llm_rl_integration'] = training_results.get('llm_rl_integration', {})
+        
+        print("\n## Enhanced system training completed!")
         return training_results
     
     def _train_federated_pinn_models(self) -> Dict:
@@ -1346,10 +2139,10 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 )
                 
                 training_results[f'system_{sys_id}'] = local_result
-                print(f"  ✅ System {sys_id} PINN training completed")
+                print(f"  ## System {sys_id} PINN training completed")
             
             # Perform federated averaging
-            print("🔄 Performing federated averaging...")
+            print("## Performing federated averaging...")
             for round_num in range(self.config['federated_pinn']['global_rounds']):
                 self.federated_manager.federated_averaging()
                 print(f"  Round {round_num + 1}/{self.config['federated_pinn']['global_rounds']} completed")
@@ -1358,7 +2151,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             training_results['status'] = 'completed'
             
         except Exception as e:
-            print(f"❌ PINN training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            print(f"##XX PINN training failed: {e}")
             training_results['status'] = 'failed'
             training_results['error'] = str(e)
         
@@ -1396,159 +2191,447 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             return sequences, targets
     
     def _train_llm_rl_integration(self) -> Dict:
-        """Train LLM-RL integration using actual Enhanced LangGraph Coordinator"""
-        print("🔗 Training LLM-RL integration with real Enhanced Coordinator...")
+        """
+        Train LLM-RL integration using the TWO-LEVEL architecture:
+        
+        OUTER LOOP (15 Gemini guidance episodes):
+          - Gemini assigns attack_type → system mappings
+          - Evaluates results and reassigns as needed
+          
+        INNER LOOP (50 RL episodes per agent pair):
+          - Each DQN+SAC pair trains against assigned system
+          - Per-agent convergence tracked
+        
+        When Gemini is not available, falls back to autonomous mode.
+        """
+        print("🔗 Training LLM-RL integration with Two-Level Architecture...")
         
         integration_results = {
-            'episodes': 20,  # Reduced for real training
+            'episodes': 0,
             'success_rate': 0.0,
             'coordination_efficiency': 0.0,
             'status': 'completed'
         }
         
         try:
-            # Use Enhanced Coordinator (which includes LangGraph) or fallback to direct RL
-            coordinator = None
-            coordinator_type = 'none'
+            from central_rl_coordinator import CentralRLCoordinator
             
-            if hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator:
-                coordinator = self.enhanced_coordinator
-                coordinator_type = 'enhanced_llm_rl'
-                print("  🧠 Using Enhanced LLM-RL Coordinator (includes LangGraph + STRIDE/MITRE)")
-            else:
-                print("⚠️ Enhanced LLM-RL Coordinator not available")
-                print("  📝 Note: Enhanced Coordinator is the only one with proper Gemini-RL coordination")
-                print("  🤖 Falling back to direct RL training (no LLM coordination)")
+            # Determine if we have the attack-specific coordinator
+            attack_coord = None
+            if hasattr(self, 'attack_specific_coordinator') and self.attack_specific_coordinator:
+                attack_coord = self.attack_specific_coordinator
+            elif (hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator and
+                  hasattr(self.enhanced_coordinator, 'attack_specific_coordinator') and
+                  self.enhanced_coordinator.attack_specific_coordinator):
+                attack_coord = self.enhanced_coordinator.attack_specific_coordinator
+            
+            if not attack_coord:
+                print("##?? No attack-specific coordinator available")
+                print("  ## Falling back to direct RL training (autonomous mode)")
                 return self._train_direct_rl_integration()
             
-            # Run real integration training episodes
-            episodes = 20  # Realistic number for actual training
-            success_count = 0
-            coordination_scores = []
-            total_rewards = []
+            # Determine Gemini availability
+            llm_analyzer = None
+            if (hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator and
+                hasattr(self.enhanced_coordinator, 'llm_analyzer') and
+                self.enhanced_coordinator.llm_analyzer):
+                llm_analyzer = self.enhanced_coordinator.llm_analyzer
+                print("  ## Gemini LLM analyzer available → GEMINI-GUIDED mode")
+            else:
+                print("  ## No Gemini LLM analyzer → AUTONOMOUS mode")
             
-            for episode in range(episodes):
-                # Use real attack scenarios
-                scenario = self.attack_scenarios[episode % len(self.attack_scenarios)] if self.attack_scenarios else None
-                
-                if scenario:
-                    try:
-                        # Run REAL coordinator episode (not mock)
-                        if coordinator_type == 'enhanced_llm_rl':
-                            episode_result = coordinator.run_enhanced_attack_episode(scenario, episode)
-                        else:
-                            episode_result = coordinator.run_attack_episode(scenario, episode)
-                        
-                        # Extract REAL metrics from actual execution
-                        success_rate = episode_result.get('success_metrics', {}).get('success_rate', 0.0)
-                        if success_rate > 0.5:
-                            success_count += 1
-                        
-                        # Get coordination effectiveness from real execution
-                        coordination_score = episode_result.get('rl_results', {}).get('coordination_metrics', {}).get('effectiveness', 0.0)
-                        if coordination_score == 0.0:  # Fallback to other metrics
-                            coordination_score = episode_result.get('stealth_metrics', {}).get('coordination_score', 0.0)
-                        
-                        coordination_scores.append(coordination_score)
-                        
-                        # Track total rewards from real attacks
-                        total_reward = episode_result.get('success_metrics', {}).get('total_impact', 0.0)
-                        total_rewards.append(total_reward)
-                        
-                    except Exception as episode_error:
-                        print(f"    ⚠️ Episode {episode} failed: {episode_error}")
-                        coordination_scores.append(0.0)
-                        total_rewards.append(0.0)
-                
-                if episode % 5 == 0:
-                    print(f"  Real integration training episode {episode}/{episodes} - Coordinator: {coordinator_type}")
+            # STRIDE/MITRE mappings are pre-established via agentic RAG
+            # (see knowledgebase_mapping.md). No need to recompute during training.
+            # Gemini's role during training: evaluate RL feedback → reassign attack→system.
             
-            # Calculate final metrics from REAL results
-            integration_results['success_rate'] = success_count / episodes if episodes > 0 else 0.0
-            integration_results['coordination_efficiency'] = np.mean(coordination_scores) if coordination_scores else 0.0
-            integration_results['average_reward'] = np.mean(total_rewards) if total_rewards else 0.0
-            integration_results['coordinator_type'] = coordinator_type
-            integration_results['total_episodes'] = episodes
-            integration_results['successful_episodes'] = success_count
+            # Create Central RL Coordinator
+            central_coord = CentralRLCoordinator(
+                attack_coordinator=attack_coord,
+                llm_analyzer=llm_analyzer,
+                num_systems=6,
+                outer_episodes=6,
+                inner_episodes=100
+            )
             
-            print(f"✅ REAL LLM-RL integration training completed:")
-            print(f"   Coordinator: {coordinator_type}")
-            print(f"   Success Rate: {integration_results['success_rate']:.2%}")
-            print(f"   Coordination Efficiency: {integration_results['coordination_efficiency']:.3f}")
-            print(f"   Average Reward: {integration_results['average_reward']:.2f}")
+            # Run the two-level training (Gemini assigns based on RL feedback, not STRIDE/MITRE)
+            two_level_results = central_coord.run_two_level_training()
             
+            # Extract results for backward compatibility
+            outer_rewards = two_level_results.get('outer_episode_rewards', [])
+            summary = two_level_results.get('summary', {})
+            
+            integration_results['status'] = 'completed'
+            integration_results['coordinator_type'] = f'central_rl_{central_coord.mode}'
+            integration_results['total_episodes'] = len(outer_rewards)
+            integration_results['episode_rewards'] = outer_rewards
+            integration_results['average_reward'] = summary.get('mean_outer_reward', 0.0)
+            integration_results['success_rate'] = summary.get('mean_outer_reward', 0.0) / 1000.0  # Normalize
+            integration_results['two_level_results'] = two_level_results
+            integration_results['final_deployment_plan'] = two_level_results.get('final_deployment_plan', {})
+            
+            # Store central coordinator for later use (e.g., deployment phase)
+            self.central_rl_coordinator = central_coord
+            
+            # ── Feed two-level rewards into DQN/SAC coordinator for unified plot ──
+            # Append Phase 3 rewards as-is (no scaling).  The old scaling logic
+            # computed phase2_mean / phase3_mean which created a compounding
+            # positive feedback loop — each re-plot inflated rewards further,
+            # causing the 1e7-1e8 divergence visible in the training plot.
+            if self.dqn_sac_coordinator is not None:
+                try:
+                    per_sys = central_coord.get_per_system_episode_rewards()
+                    for sys_id, rdata in per_sys.items():
+                        p3_dqn = rdata.get('dqn_rewards', [])
+                        p3_sac = rdata.get('sac_rewards', [])
+
+                        if sys_id in self.dqn_sac_coordinator.training_history['dqn_rewards']:
+                            self.dqn_sac_coordinator.training_history['dqn_rewards'][sys_id].extend(p3_dqn)
+                        if sys_id in self.dqn_sac_coordinator.training_history['sac_rewards']:
+                            self.dqn_sac_coordinator.training_history['sac_rewards'][sys_id].extend(p3_sac)
+
+                    # Store boundaries for outer-circle vertical lines on the plot
+                    self.dqn_sac_coordinator._two_level_boundaries = per_sys
+                    
+                    # Generate final training rewards plot (only once after all training completes)
+                    print("\n## Generating final training rewards plot with complete data...")
+                    self.dqn_sac_coordinator.plot_training_rewards()
+                except Exception as e:
+                    print(f"##?? Failed to merge two-level rewards into plot: {e}")
+            
+            # ── Save trained agents to disk ──
+            if attack_coord is not None:
+                try:
+                    save_dir = attack_coord.save_agents("trained_rl_agents")
+                    integration_results['agents_save_dir'] = save_dir
+                except Exception as e:
+                    print(f"##?? Failed to save trained agents: {e}")
+            
+            print(f"\n## Two-Level LLM-RL integration training completed:")
+            print(f"   Mode: {central_coord.mode.upper()}")
+            print(f"   Outer Episodes: {len(outer_rewards)}")
+            print(f"   Inner Episodes/Agent: {central_coord.inner_episodes}")
+            print(f"   Mean Outer Reward: {summary.get('mean_outer_reward', 0):.2f}")
+            print(f"   Best Outer Reward: {summary.get('best_outer_reward', 0):.2f}")
+            print(f"   Reward Trend: {summary.get('reward_trend', 'unknown')}")
+            print(f"   Total Inner Episodes: {summary.get('total_inner_episodes', 0)}")
+
+            self._save_reward_history(
+                episode_rewards=outer_rewards,
+                mode='gemini_assisted',
+                coordinator_type=integration_results.get('coordinator_type', 'central_rl_gemini'),
+                gemini_usage_rate=float(summary.get('gemini_usage_rate', 1.0)),
+                metadata=summary
+            )
+
         except Exception as e:
-            print(f"❌ Real LLM-RL integration training failed: {e}")
+            print(f"##XX Two-Level LLM-RL integration training failed: {e}")
+            import traceback
+            traceback.print_exc()
             integration_results['status'] = 'failed'
             integration_results['error'] = str(e)
             # Fallback to direct RL training
             return self._train_direct_rl_integration()
-        
+
         return integration_results
     
     def _train_direct_rl_integration(self) -> Dict:
-        """Fallback: Train direct RL integration without LangGraph"""
-        print("🤖 Training direct RL integration (fallback)...")
+        """
+        Fallback: Train direct RL integration using Two-Level Architecture in AUTONOMOUS mode.
+        No Gemini — the central coordinator assigns attacks using heuristics.
+        """
+        print("## Training direct RL integration (autonomous two-level mode)...")
         
         integration_results = {
-            'episodes': 10,
+            'episodes': 0,
             'success_rate': 0.0,
             'coordination_efficiency': 0.0,
             'status': 'completed',
-            'coordinator_type': 'direct_rl'
+            'coordinator_type': 'autonomous'
         }
         
         try:
-            if not self.dqn_sac_coordinator:
-                print("⚠️ No RL coordinator available")
+            from central_rl_coordinator import CentralRLCoordinator
+            
+            # Find attack-specific coordinator
+            attack_coord = None
+            if hasattr(self, 'attack_specific_coordinator') and self.attack_specific_coordinator:
+                attack_coord = self.attack_specific_coordinator
+            elif (hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator and
+                  hasattr(self.enhanced_coordinator, 'attack_specific_coordinator') and
+                  self.enhanced_coordinator.attack_specific_coordinator):
+                attack_coord = self.enhanced_coordinator.attack_specific_coordinator
+            
+            if not attack_coord:
+                print("##?? No attack-specific coordinator available for autonomous mode")
                 integration_results['status'] = 'skipped'
                 return integration_results
             
-            # Run direct RL coordination episodes
-            episodes = 20
-            success_count = 0
-            coordination_scores = []
+            # Create Central RL Coordinator in AUTONOMOUS mode (no Gemini)
+            central_coord = CentralRLCoordinator(
+                attack_coordinator=attack_coord,
+                llm_analyzer=None,  # No Gemini → autonomous
+                num_systems=6,
+                outer_episodes=6,
+                inner_episodes=100
+            )
             
-            for episode in range(episodes):
-                scenario = self.attack_scenarios[episode % len(self.attack_scenarios)] if self.attack_scenarios else None
-                
-                if scenario:
-                    try:
-                        # Run direct coordinated episode using DQN/SAC
-                        episode_result = self._run_direct_coordinated_episode(scenario, episode)
-                        
-                        # Extract metrics
-                        if episode_result.get('total_reward', 0) > 100:  # Threshold for success
-                            success_count += 1
-                        
-                        coordination_score = episode_result.get('coordination_effectiveness', 0.0)
-                        coordination_scores.append(coordination_score)
-                        
-                    except Exception as episode_error:
-                        print(f"    ⚠️ Direct episode {episode} failed: {episode_error}")
-                        coordination_scores.append(0.0)
-                
-                if episode % 3 == 0:
-                    print(f"  Direct RL training episode {episode}/{episodes}")
+            # Get system analysis if available
+            system_analysis_data = None
+            if hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator:
+                try:
+                    system_analysis_data = self.enhanced_coordinator._perform_comprehensive_system_analysis()
+                except Exception:
+                    pass
             
-            # Calculate metrics
-            integration_results['success_rate'] = success_count / episodes if episodes > 0 else 0.0
-            integration_results['coordination_efficiency'] = np.mean(coordination_scores) if coordination_scores else 0.0
-            integration_results['total_episodes'] = episodes
-            integration_results['successful_episodes'] = success_count
+            # Run the two-level training in autonomous mode
+            two_level_results = central_coord.run_two_level_training(
+                system_analysis_data=system_analysis_data
+            )
             
-            print(f"✅ Direct RL integration training completed:")
-            print(f"   Success Rate: {integration_results['success_rate']:.2%}")
-            print(f"   Coordination Efficiency: {integration_results['coordination_efficiency']:.3f}")
+            # Extract results
+            outer_rewards = two_level_results.get('outer_episode_rewards', [])
+            summary = two_level_results.get('summary', {})
             
+            integration_results['status'] = 'completed'
+            integration_results['total_episodes'] = len(outer_rewards)
+            integration_results['episode_rewards'] = outer_rewards
+            integration_results['average_reward'] = summary.get('mean_outer_reward', 0.0)
+            integration_results['success_rate'] = summary.get('mean_outer_reward', 0.0) / 1000.0
+            integration_results['two_level_results'] = two_level_results
+            integration_results['final_deployment_plan'] = two_level_results.get('final_deployment_plan', {})
+            
+            self.central_rl_coordinator = central_coord
+            
+            # ── Feed two-level rewards into DQN/SAC coordinator for unified plot ──
+            # Append Phase 3 rewards as-is (no scaling) — same as Gemini path.
+            if self.dqn_sac_coordinator is not None:
+                try:
+                    per_sys = central_coord.get_per_system_episode_rewards()
+                    for sys_id, rdata in per_sys.items():
+                        p3_dqn = rdata.get('dqn_rewards', [])
+                        p3_sac = rdata.get('sac_rewards', [])
+
+                        if sys_id in self.dqn_sac_coordinator.training_history['dqn_rewards']:
+                            self.dqn_sac_coordinator.training_history['dqn_rewards'][sys_id].extend(p3_dqn)
+                        if sys_id in self.dqn_sac_coordinator.training_history['sac_rewards']:
+                            self.dqn_sac_coordinator.training_history['sac_rewards'][sys_id].extend(p3_sac)
+
+                    self.dqn_sac_coordinator._two_level_boundaries = per_sys
+                    
+                    # Generate final training rewards plot (only once after all training completes)
+                    print("\n## Generating final training rewards plot with complete data...")
+                    self.dqn_sac_coordinator.plot_training_rewards()
+                except Exception as e:
+                    print(f"##?? Failed to merge two-level rewards into plot: {e}")
+            
+            # ── Save trained agents to disk ──
+            if attack_coord is not None:
+                try:
+                    save_dir = attack_coord.save_agents("trained_rl_agents")
+                    integration_results['agents_save_dir'] = save_dir
+                except Exception as e:
+                    print(f"##?? Failed to save trained agents: {e}")
+            
+            print(f"\n## Autonomous Two-Level RL training completed:")
+            print(f"   Outer Episodes: {len(outer_rewards)}")
+            print(f"   Mean Outer Reward: {summary.get('mean_outer_reward', 0):.2f}")
+            print(f"   Best Outer Reward: {summary.get('best_outer_reward', 0):.2f}")
+            print(f"   Reward Trend: {summary.get('reward_trend', 'unknown')}")
+
+            self._save_reward_history(
+                episode_rewards=outer_rewards,
+                mode='standalone',
+                coordinator_type='autonomous',
+                gemini_usage_rate=0.0,
+                metadata=summary
+            )
+
         except Exception as e:
-            print(f"❌ Direct RL integration training failed: {e}")
+            print(f"##XX Autonomous RL integration training failed: {e}")
+            import traceback
+            traceback.print_exc()
             integration_results['status'] = 'failed'
             integration_results['error'] = str(e)
-        
+
         return integration_results
+
+    def _save_reward_history(self, episode_rewards: List[float], mode: str, 
+                            coordinator_type: str, gemini_usage_rate: float, metadata: Dict):
+        """Save reward history to JSON file for comparison"""
+        import json
+        from datetime import datetime
+        
+        try:
+            # Collect pre-training episode rewards from attack-specific coordinator
+            pretraining_rewards = {}
+            if hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator:
+                coord = self.enhanced_coordinator
+                if hasattr(coord, 'attack_specific_coordinator') and coord.attack_specific_coordinator:
+                    asc = coord.attack_specific_coordinator
+                    if hasattr(asc, 'training_history') and asc.training_history:
+                        for attack_type, data in asc.training_history.items():
+                            pretraining_rewards[attack_type] = {
+                                'dqn_episode_rewards': data.get('dqn', {}).get('episode_rewards', []),
+                                'sac_episode_rewards': data.get('sac', {}).get('episode_rewards', []),
+                                'dqn_num_episodes': data.get('dqn', {}).get('num_episodes', 0),
+                                'sac_num_episodes': data.get('sac', {}).get('num_episodes', 0),
+                                'dqn_mean_reward': data.get('dqn', {}).get('mean_reward', 0.0),
+                                'sac_mean_reward': data.get('sac', {}).get('mean_reward', 0.0),
+                            }
+            
+            # Also collect old coordinator pre-training rewards
+            if hasattr(self, 'dqn_sac_coordinator') and self.dqn_sac_coordinator:
+                old_coord = self.dqn_sac_coordinator
+                if hasattr(old_coord, 'training_history'):
+                    th = old_coord.training_history
+                    for sys_id in th.get('dqn_rewards', {}):
+                        key = f"system_{sys_id}"
+                        if key not in pretraining_rewards:
+                            pretraining_rewards[key] = {}
+                        pretraining_rewards[key]['dqn_episode_rewards'] = th['dqn_rewards'].get(sys_id, [])
+                        pretraining_rewards[key]['sac_episode_rewards'] = th['sac_rewards'].get(sys_id, [])
+            
+            # Create reward history data
+            reward_history = {
+                'mode': mode,  # 'gemini_assisted' or 'standalone'
+                'coordinator_type': coordinator_type,
+                'gemini_usage_rate': gemini_usage_rate,
+                'timestamp': datetime.now().isoformat(),
+                'episode_rewards': episode_rewards,
+                'pretraining_rewards': pretraining_rewards,
+                'metadata': metadata
+            }
+            
+            # Save to file
+            filename = f"reward_history_{mode}.json"
+            with open(filename, 'w') as f:
+                json.dump(reward_history, f, indent=2)
+            
+            print(f"  💾 Saved reward history to {filename}")
+            
+            # Try to create comparison plot if both files exist
+            self._plot_reward_convergence_comparison()
+            
+        except Exception as e:
+            print(f"  ##?? Failed to save reward history: {e}")
     
-    def run_enhanced_simulation(self, scenario_id: str, episodes: int = 20) -> Dict:
+    def _plot_reward_convergence_comparison(self):
+        """Create comparison plot of reward convergence for Gemini-assisted vs standalone RL"""
+        import json
+        import matplotlib.pyplot as plt
+        import os
+        
+        try:
+            # Check if both reward history files exist
+            gemini_file = "reward_history_gemini_assisted.json"
+            standalone_file = "reward_history_standalone.json"
+            
+            gemini_exists = os.path.exists(gemini_file)
+            standalone_exists = os.path.exists(standalone_file)
+            
+            if not gemini_exists and not standalone_exists:
+                print("  ## No reward history files found yet for comparison")
+                return
+            
+            # Load available data
+            gemini_data = None
+            standalone_data = None
+            
+            if gemini_exists:
+                with open(gemini_file, 'r') as f:
+                    gemini_data = json.load(f)
+                print(f"  ## Loaded Gemini-assisted reward history")
+            
+            if standalone_exists:
+                with open(standalone_file, 'r') as f:
+                    standalone_data = json.load(f)
+                print(f"  ## Loaded standalone RL reward history")
+            
+            # Create comparison plot
+            plt.figure(figsize=(12, 7))
+            
+            # Plot Gemini-assisted rewards
+            if gemini_data:
+                episodes_gemini = list(range(1, len(gemini_data['episode_rewards']) + 1))
+                rewards_gemini = gemini_data['episode_rewards']
+                
+                plt.plot(episodes_gemini, rewards_gemini, 
+                        marker='o', linewidth=2, markersize=6,
+                        label=f"Gemini-Assisted RL (Usage: {gemini_data['gemini_usage_rate']:.1%})",
+                        color='#2E86AB', alpha=0.8)
+                
+                # Add moving average
+                if len(rewards_gemini) >= 3:
+                    window = min(5, len(rewards_gemini))
+                    moving_avg = np.convolve(rewards_gemini, np.ones(window)/window, mode='valid')
+                    plt.plot(range(window, len(rewards_gemini) + 1), moving_avg,
+                            linestyle='--', linewidth=2, color='#2E86AB',
+                            label=f"Gemini MA({window})", alpha=0.6)
+            
+            # Plot standalone RL rewards
+            if standalone_data:
+                episodes_standalone = list(range(1, len(standalone_data['episode_rewards']) + 1))
+                rewards_standalone = standalone_data['episode_rewards']
+                
+                plt.plot(episodes_standalone, rewards_standalone,
+                        marker='s', linewidth=2, markersize=6,
+                        label=f"Standalone RL (No Gemini)",
+                        color='#A23B72', alpha=0.8)
+                
+                # Add moving average
+                if len(rewards_standalone) >= 3:
+                    window = min(5, len(rewards_standalone))
+                    moving_avg = np.convolve(rewards_standalone, np.ones(window)/window, mode='valid')
+                    plt.plot(range(window, len(rewards_standalone) + 1), moving_avg,
+                            linestyle='--', linewidth=2, color='#A23B72',
+                            label=f"Standalone MA({window})", alpha=0.6)
+            
+            # Formatting
+            plt.xlabel('Episode', fontsize=12, fontweight='bold')
+            plt.ylabel('Total Reward (Impact)', fontsize=12, fontweight='bold')
+            plt.title('Reward Convergence: Gemini-Assisted RL vs Standalone RL', 
+                     fontsize=14, fontweight='bold', pad=20)
+            plt.legend(loc='best', fontsize=10, framealpha=0.9)
+            plt.grid(True, alpha=0.3, linestyle='--')
+            
+            # Add performance comparison text
+            if gemini_data and standalone_data:
+                avg_gemini = np.mean(gemini_data['episode_rewards'])
+                avg_standalone = np.mean(standalone_data['episode_rewards'])
+                improvement = ((avg_gemini - avg_standalone) / max(avg_standalone, 0.001)) * 100
+                
+                textstr = f'Average Reward:\n'
+                textstr += f'Gemini: {avg_gemini:.2f}\n'
+                textstr += f'Standalone: {avg_standalone:.2f}\n'
+                textstr += f'Improvement: {improvement:+.1f}%'
+                
+                props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+                plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes,
+                        fontsize=10, verticalalignment='top', bbox=props)
+            
+            plt.tight_layout()
+            
+            # Save plot
+            plot_filename = 'reward_convergence_comparison.png'
+            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"  ## Saved reward convergence comparison plot to {plot_filename}")
+            
+            # Print summary
+            if gemini_data and standalone_data:
+                print(f"\n  ## Reward Convergence Comparison Summary:")
+                print(f"     Gemini-Assisted Avg: {avg_gemini:.2f}")
+                print(f"     Standalone RL Avg: {avg_standalone:.2f}")
+                print(f"     Performance Improvement: {improvement:+.1f}%")
+            
+        except Exception as e:
+            print(f"  ##?? Failed to create comparison plot: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def run_enhanced_simulation(self, scenario_id: str, episodes: int = 100) -> Dict:
+
         """Run enhanced simulation with coordinated attacks"""
         scenario = self._get_scenario_by_id(scenario_id)
         if not scenario:
@@ -1574,7 +2657,13 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         # Run episodes with enhanced coordination
         for episode in range(episodes):
             print(f"\n--- Enhanced Episode {episode + 1}/{episodes} ---")
-            
+
+            # Reset per-episode LLM call-id accumulator so update_rl_impact()
+            # only back-fills calls that belong to THIS episode.
+            _llm = getattr(self, 'llm_analyzer', None)
+            if _llm is not None:
+                _llm._episode_call_ids = []
+
             episode_result = self._run_enhanced_episode(scenario, episode)
             self.simulation_results['episode_results'].append(episode_result)
             
@@ -1591,8 +2680,8 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         final_results['hierarchical_simulation'] = hierarchical_results
         
         # Create enhanced visualizations
-        print("\n📊 Creating enhanced visualizations...")
-        self._create_enhanced_visualizations()
+        print("\n## Creating enhanced visualizations...")
+        # self._create_enhanced_visualizations()
         self._create_hierarchical_plots()
         
         return final_results
@@ -1600,41 +2689,41 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     def _create_hierarchical_plots(self):
         """Create hierarchical simulation plots using the hierarchical cosimulation plotting methods"""
         try:
-            print("📊 Creating hierarchical simulation plots...")
+            print("## Creating hierarchical simulation plots...")
             
             # Check if hierarchical simulation has results to plot
             if not hasattr(self, 'hierarchical_sim') or not self.hierarchical_sim:
-                print("⚠️ No hierarchical simulation available for plotting")
+                print("##?? No hierarchical simulation available for plotting")
                 return
             
             # Check if the hierarchical simulation has results
             if not hasattr(self.hierarchical_sim, 'results') or not self.hierarchical_sim.results:
-                print("⚠️ No hierarchical simulation results available for plotting")
+                print("##?? No hierarchical simulation results available for plotting")
                 return
             
             # Check if we have time data
             if not self.hierarchical_sim.results.get('time') or len(self.hierarchical_sim.results['time']) == 0:
-                print("⚠️ No time series data available in hierarchical results")
+                print("##?? No time series data available in hierarchical results")
                 return
             
-            print(f"   📈 Plotting {len(self.hierarchical_sim.results['time'])} time points...")
+            print(f"   ## Plotting {len(self.hierarchical_sim.results['time'])} time points...")
             
             # Call the hierarchical simulation's plotting methods
             self.hierarchical_sim.plot_hierarchical_results()
             
-            print("✅ Hierarchical simulation plots created successfully!")
-            print("   📊 Generated plots include:")
-            print("      🔸 Transmission system frequency response")
-            print("      🔸 Distribution system voltage profiles")
-            print("      🔸 Power flow analysis across all systems")
-            print("      🔸 EVCS charging dynamics and utilization")
-            print("      🔸 Queue management and customer flow")
-            print("      🔸 Attack impact visualization")
-            print("      🔸 AGC and load balancing performance")
-            print("      🔸 Energy delivery and efficiency metrics")
+            print("## Hierarchical simulation plots created successfully!")
+            print("   ## Generated plots include:")
+            print("      ##Transmission system frequency response")
+            print("      ##Distribution system voltage profiles")
+            print("      ##Power flow analysis across all systems")
+            print("      ##EVCS charging dynamics and utilization")
+            print("      ##Queue management and customer flow")
+            print("      ##Attack impact visualization")
+            print("      ##AGC and load balancing performance")
+            print("      ##Energy delivery and efficiency metrics")
             
         except Exception as e:
-            print(f"❌ Failed to create hierarchical plots: {e}")
+            print(f"##XX Failed to create hierarchical plots: {e}")
             import traceback
             traceback.print_exc()
     
@@ -1642,10 +2731,10 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         """Run hierarchical co-simulation with LLM-RL coordinated attack impacts"""
         try:
             if not hasattr(self, 'hierarchical_sim') or not self.hierarchical_sim:
-                print("  ⚠️ Hierarchical simulation not initialized, skipping...")
+                print("  ##?? Hierarchical simulation not initialized, skipping...")
                 return {'status': 'skipped', 'reason': 'not_initialized'}
 
-            print("  🔄 Extracting LLM-RL coordinated attacks for hierarchical simulation...")
+            print("  ## Extracting LLM-RL coordinated attacks for hierarchical simulation...")
 
             # Extract attack impacts from results
             total_impact = attack_results.get('performance_metrics', {}).get('average_impact', 0.0)
@@ -1664,70 +2753,179 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             # Explicitly set total duration for the hierarchical simulation
             self.hierarchical_sim.total_duration = duration_seconds
 
-            print(f"    📊 Attack Impact Factor: {total_impact:.3f}")
-            print(f"    ✅ Attack Success Rate: {success_rate:.1%}")
+            print(f"    ## Attack Impact Factor: {total_impact:.3f}")
+            print(f"    ## Attack Success Rate: {success_rate:.1%}")
             print(f"    ⏱️ Simulation Duration: {sim_config['duration_hours']} hours ({duration_seconds} seconds)")
 
-            # Extract LLM-RL coordinated attack actions from episode results
+            # Extract LLM-RL coordinated attack actions for hierarchical simulation
             num_systems = self.config.get('hierarchical', {}).get('num_distribution_systems', 6)
             attack_scenarios = []
-
-            # Try to extract executed RL actions from the attack results
             agent_attacks_extracted = False
-            if 'episode_results' in self.simulation_results:
-                print("  🤖 Extracting attack scenarios from LLM-RL coordinated episodes...")
 
-                for episode_idx, episode_result in enumerate(self.simulation_results['episode_results']):
-                    print(f"  🔍 DEBUG: Episode {episode_idx} keys: {list(episode_result.keys())}")
+            # ── STRATEGY 1: Use the final deployment plan from CentralRLCoordinator ──
+            # This gives exactly 6 attacks (one per type) on the best system for each,
+            # spread evenly across the simulation timeline.
+            deployment_plan = None
+            if 'llm_rl_integration' in self.simulation_results:
+                deployment_plan = self.simulation_results['llm_rl_integration'].get('final_deployment_plan', {})
+            if not deployment_plan and hasattr(self, 'central_rl_coordinator') and self.central_rl_coordinator:
+                # CentralRLCoordinator stores it as self.final_deployment_plan
+                plan_data = getattr(self.central_rl_coordinator, 'final_deployment_plan', None)
+                if plan_data:
+                    deployment_plan = plan_data
+
+            if deployment_plan and deployment_plan.get('deployments'):
+                deployments = deployment_plan['deployments']
+                n_attacks = len(deployments)
+                # Use agent-suggested durations from trained SAC agents
+                # Leave 10% margin at start and end for baseline measurement
+                margin = duration_seconds * 0.10
+                usable_window = duration_seconds - 2 * margin
+                
+                # Collect agent-suggested durations and scale to simulation timescale.
+                # The SAC action space has duration in [5, 60] seconds (training env),
+                # but the hierarchical co-sim runs for thousands of seconds.
+                # Scale proportionally: agent durations represent RELATIVE preference,
+                # mapped to fill the usable simulation window.
+                raw_agent_durations = [dep.get('duration', 30.0) for dep in deployments]
+                total_raw = sum(raw_agent_durations)
+                
+                # Reserve 5% gaps between attacks
+                gap = usable_window * 0.05 / max(n_attacks - 1, 1) if n_attacks > 1 else 0
+                total_gap = gap * max(n_attacks - 1, 0)
+                available_for_attacks = usable_window - total_gap
+                
+                # Scale each agent duration proportionally to fill the available window
+                if total_raw > 0:
+                    agent_durations = [(d / total_raw) * available_for_attacks for d in raw_agent_durations]
+                else:
+                    agent_durations = [available_for_attacks / n_attacks] * n_attacks
+                
+                print(f" ## Agent durations scaled: raw [{', '.join(f'{d:.0f}s' for d in raw_agent_durations)}] "
+                      f"→ sim [{', '.join(f'{d:.0f}s' for d in agent_durations)}]")
+                
+                params_source = deployments[0].get('params_source', 'fallback') if deployments else 'fallback'
+                print(f"  ##Using final deployment plan: {n_attacks} attacks, "
+                      f"agent-suggested timing [{params_source}]")
+                print(f"     Timeline: {margin:.0f}s → {duration_seconds - margin:.0f}s")
+
+                # Compute non-overlapping start times using agent durations
+                current_start = margin
+                for idx, dep in enumerate(deployments):
+                    start_time = current_start
+                    at = dep.get('attack_type', 'power_manipulation')
+                    target_sys = dep.get('target_system', idx + 1)
+                    magnitude = dep.get('magnitude', 0.7)
+                    stealth = dep.get('stealth_level', 0.7)
+                    expected_reward = dep.get('expected_reward', 0.0)
+                    attack_dur = agent_durations[idx]
                     
-                    # Check if this episode has RL execution results
-                    if 'rl_results' in episode_result and 'actions' in episode_result['rl_results']:
-                        executed_actions = episode_result['rl_results']['actions']
-                        execution_results = episode_result['rl_results'].get('results', episode_result['rl_results'].get('execution_results', []))
+                    # Advance start for next attack (current duration + gap)
+                    current_start = start_time + attack_dur + gap
 
-                        print(f"    Found {len(executed_actions)} agent-coordinated attacks from episode {episode_idx}")
-                        print(f"  🔍 DEBUG: Executed actions: {[{k: v for k, v in action.items() if k in ['attack_type', 'target_system', 'magnitude', 'duration']} for action in executed_actions]}")
-                        print(f"  🔍 DEBUG: Execution results: {[{k: v for k, v in result.items() if k in ['success', 'impact']} for result in execution_results]}")
+                    action_dict = {
+                        'attack_type': at,
+                        'target_system': target_sys,
+                        'magnitude': magnitude,
+                        'duration': attack_dur,
+                        'stealth_level': stealth
+                    }
+                    result_dict = {
+                        'success': expected_reward > 0,
+                        'impact': min(magnitude, 1.0)
+                    }
 
-                        # Convert each agent action to hierarchical simulation format
-                        for idx, (action, result) in enumerate(zip(executed_actions, execution_results)):
-                            print(f"  🔍 DEBUG: Processing action {idx}: success={result.get('success', False)}, impact={result.get('impact', 0.0)}")
-                            if result.get('success', False):  # Only include successful attacks
-                                # Calculate start time - stagger attacks across simulation
-                                start_time = 400.0 + (idx * 150.0)  # Start at 400s, stagger by 150s
+                    scenario = self._convert_agent_action_to_hierarchical(
+                        action_dict, result_dict, start_time, duration_seconds
+                    )
+                    attack_scenarios.append(scenario)
+                    agent_attacks_extracted = True
 
-                                attack_scenario = self._convert_agent_action_to_hierarchical(
-                                    action, result, start_time, duration_seconds
-                                )
-                                attack_scenarios.append(attack_scenario)
-                                agent_attacks_extracted = True
+                    src = dep.get('params_source', 'fallback')
+                    print(f"      ## Attack {idx+1}: {at} on System {target_sys} "
+                          f"at {start_time:.0f}s for {attack_dur:.1f}s "
+                          f"(mag={magnitude:.2f}, stealth={stealth:.2f}) [{src}]")
 
-                                print(f"      ✅ Attack {idx+1}: {action['attack_type']} on system {action['target_system']} "
-                                      f"at {start_time}s for {attack_scenario['duration']}s (mag={action.get('magnitude', 0.5)}, stealth={action.get('stealth_level', 0.5)})")
-                    else:
-                        print(f"  🔍 DEBUG: Episode {episode_idx} missing rl_results or actions")
-                        if 'rl_results' in episode_result:
-                            print(f"  🔍 DEBUG: rl_results keys: {list(episode_result['rl_results'].keys())}")
+            # ── STRATEGY 2: Fallback — extract from episode results (last episode only) ──
+            elif 'episode_results' in self.simulation_results:
+                print("  ## Extracting attack scenarios from last RL episode...")
+                episode_results = self.simulation_results['episode_results']
+                # Use only the LAST episode (best trained) to avoid duplicates
+                last_ep = episode_results[-1] if episode_results else {}
+
+                rl_res = last_ep.get('rl_results', {})
+                # Check for both key names: 'actions' (workflow_completion_node) and 'executed_actions' (_extract_workflow_results)
+                has_actions = 'actions' in rl_res or 'executed_actions' in rl_res
+                if 'rl_results' in last_ep and has_actions:
+                    executed_actions = rl_res.get('actions', rl_res.get('executed_actions', []))
+                    execution_results = rl_res.get('results', rl_res.get('execution_results', []))
+
+                    from dataclasses import is_dataclass, asdict
+                    converted_actions = []
+                    for action in executed_actions:
+                        if is_dataclass(action):
+                            converted_actions.append(asdict(action))
+                        elif isinstance(action, dict):
+                            converted_actions.append(action)
+                        else:
+                            converted_actions.append(vars(action) if hasattr(action, '__dict__') else action)
+                    executed_actions = converted_actions
+
+                    n_attacks = len(executed_actions)
+                    margin = duration_seconds * 0.10
+                    usable_window = duration_seconds - 2 * margin
+                    attack_duration = usable_window / (n_attacks + 1)
+                    spacing = usable_window / max(n_attacks, 1)
+
+                    print(f"    Found {n_attacks} attacks, spreading across timeline")
+
+                    for idx, (action, result) in enumerate(zip(executed_actions, execution_results)):
+                        inner_result = result.get('result', result) if isinstance(result, dict) else result
+                        is_success = inner_result.get('success', False)
+                        impact_val = inner_result.get('impact', 0.0)
+
+                        if is_success or impact_val > 0.01:
+                            start_time = margin + idx * spacing
+
+                            norm_action = dict(action)
+                            if 'target_systems' in norm_action and 'target_system' not in norm_action:
+                                norm_action['target_system'] = norm_action['target_systems'][0] if norm_action['target_systems'] else 1
+                            if 'target_system' not in norm_action:
+                                norm_action['target_system'] = result.get('system_id', 1)
+                            # Override duration to spread across timeline
+                            norm_action['duration'] = attack_duration
+
+                            scenario = self._convert_agent_action_to_hierarchical(
+                                norm_action, inner_result, start_time, duration_seconds
+                            )
+                            attack_scenarios.append(scenario)
+                            agent_attacks_extracted = True
+
+                            target_sys = norm_action.get('target_system', '?')
+                            print(f"      ## Attack {idx+1}: {norm_action.get('attack_type', '?')} on System {target_sys} "
+                                  f"at {start_time:.0f}s for {attack_duration:.0f}s")
+                else:
+                    print("  ##?? Last episode missing rl_results or actions")
 
             # Fallback: If no agent attacks extracted, use default scenarios
             if not agent_attacks_extracted:
-                print("  ⚠️ No LLM-RL coordinated attacks found in results, using fallback scenarios...")
+                print("  ##?? No LLM-RL coordinated attacks found in results, using fallback scenarios...")
                 attack_scenarios = self._create_fallback_attack_scenarios(num_systems, duration_seconds)
 
-            # ENHANCED: Use Gemini LLM to strategically combine and optimize RL agent attacks
+            # ENHANCED: Use Agent LLM to strategically combine and optimize RL agent attacks
             if agent_attacks_extracted and hasattr(self, 'llm_analyzer') and self.llm_analyzer:
-                print("\n  🧠 Invoking Gemini LLM for strategic attack combination and optimization...")
+                print("\n  ## Invoking Agent LLM for strategic attack combination and optimization...")
                 try:
                     optimized_scenarios = self._gemini_strategic_attack_combination(
                         attack_scenarios, duration_seconds, num_systems
                     )
                     if optimized_scenarios:
-                        print(f"  ✅ Gemini optimized {len(attack_scenarios)} agent attacks into {len(optimized_scenarios)} strategic scenarios")
+                        print(f"  ## Agent optimized {len(attack_scenarios)} agent attacks into {len(optimized_scenarios)} strategic scenarios")
                         attack_scenarios = optimized_scenarios
                     else:
-                        print("  ⚠️ Gemini optimization failed, using original agent attacks")
+                        print("  ##?? Agent optimization failed, using original agent attacks")
                 except Exception as e:
-                    print(f"  ⚠️ Gemini strategic combination failed: {str(e)}, using original agent attacks")
+                    print(f"  ##?? Agent strategic combination failed: {str(e)}, using original agent attacks")
 
             # Set simulation duration before running (ensure it's in seconds)
             duration_seconds = self.config.get('hierarchical', {}).get('total_duration', 3600.0)
@@ -1739,20 +2937,73 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             print(f"  🕐 Hierarchical simulation configured for {duration_seconds} seconds")
             
-            # Apply attacks to hierarchical simulation before running (like old system)
-            if attack_scenarios:
+            # ── DEPLOY TRAINED RL AGENTS for real-time attack injection ──
+            # If we have trained attack-specific agents AND a deployment plan,
+            # create a RealTimeRLAttackController that calls the trained SAC agents
+            # at each timestep to generate attack parameters dynamically.
+            # This replaces the old static attack_scenarios approach.
+            rl_controller_deployed = False
+            attack_coord_to_use = None
+            
+            # Priority 1: Use in-memory trained agents
+            if hasattr(self, 'attack_specific_coordinator') and self.attack_specific_coordinator:
+                attack_coord_to_use = self.attack_specific_coordinator
+            
+            # Priority 2: Try loading from disk if not in memory
+            if attack_coord_to_use is None and ATTACK_SPECIFIC_AVAILABLE:
+                import os
+                if os.path.isdir("trained_rl_agents"):
+                    print("  📂 No in-memory agents, attempting to load from trained_rl_agents/...")
+                    try:
+                        disk_coord = AttackSpecificCoordinator(
+                            self.federated_manager,
+                            num_systems,
+                            attack_types=ATTACK_TYPES
+                        )
+                        if disk_coord.load_agents("trained_rl_agents"):
+                            attack_coord_to_use = disk_coord
+                            self.attack_specific_coordinator = disk_coord
+                            print("  ## Loaded trained agents from disk")
+                    except Exception as e:
+                        print(f"  ##?? Failed to load agents from disk: {e}")
+            
+            if deployment_plan and attack_coord_to_use:
+                try:
+                    print("  ## Deploying trained RL agents for real-time attack injection...")
+                    rt_controller = RealTimeRLAttackController(
+                        attack_coordinator=attack_coord_to_use,
+                        deployment_plan=deployment_plan,
+                        duration_seconds=duration_seconds
+                    )
+                    self.hierarchical_sim.realtime_rl_controller = rt_controller
+                    rl_controller_deployed = True
+                    print("  ## Trained RL agents will inject attacks in real-time during simulation")
+                except Exception as e:
+                    print(f"  ##?? Failed to deploy RL agents: {e}, falling back to static scenarios")
+                    self.hierarchical_sim.realtime_rl_controller = None
+            
+            # Fallback: use static attack scenarios if RL controller not deployed
+            if not rl_controller_deployed and attack_scenarios:
+                print(f"  ##Using {len(attack_scenarios)} static attack scenarios (no trained RL agents)")
                 self._apply_attacks_to_hierarchical_sim(attack_scenarios)
             
             hierarchical_results = self.hierarchical_sim.run_hierarchical_simulation(
-                attack_scenarios=attack_scenarios,
-                max_wall_time_sec=duration_seconds  # Use consistent duration in seconds
+                attack_scenarios=attack_scenarios if not rl_controller_deployed else []
+                # max_wall_time_sec is intentionally omitted: the sim duration is
+                # already controlled by self.hierarchical_sim.total_duration (seconds).
+                # Passing duration_seconds as a wall-clock limit caused the attack
+                # simulation to stop at ~2400 sim-seconds whenever the run took
+                # longer than 3600 real seconds, truncating the red line on plots.
             )
             
-            print("  ✅ Hierarchical co-simulation completed!")
+            # Clean up: remove controller reference after simulation
+            self.hierarchical_sim.realtime_rl_controller = None
+            
+            print("  ## Hierarchical co-simulation completed!")
             return hierarchical_results
             
         except Exception as e:
-            print(f"  ❌ Hierarchical simulation failed: {e}")
+            print(f"  ##XX Hierarchical simulation failed: {e}")
             return {'status': 'failed', 'error': str(e)}
     
     def _apply_attacks_to_hierarchical_sim(self, attack_scenarios: List[Dict]):
@@ -1765,7 +3016,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         if not hasattr(self, 'hierarchical_sim') or not self.hierarchical_sim:
             return
         
-        print(f"  📋 Validating {len(attack_scenarios)} attack scenarios for hierarchical simulation...")
+        print(f"  ##Validating {len(attack_scenarios)} attack scenarios for hierarchical simulation...")
         
         # Validate attack scenarios have required fields
         for idx, attack in enumerate(attack_scenarios):
@@ -1778,9 +3029,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             missing_fields = [f for f in required_fields if f not in attack]
             
             if missing_fields:
-                print(f"    ⚠️ Attack {idx} missing fields: {missing_fields}")
+                print(f"    ##?? Attack {idx} missing fields: {missing_fields}")
             else:
-                print(f"    ✅ Attack {idx}: {attack['type']} on system {attack['target_system']} "
+                print(f"    ## Attack {idx}: {attack['type']} on system {attack['target_system']} "
                       f"at t={attack['start_time']}s for {attack['duration']}s (mag={attack['magnitude']:.2f})")
         
         print(f"  ℹ️ Attacks will be activated during simulation runtime (not pre-applied)")
@@ -1789,22 +3040,22 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         """Run enhanced episode with proper LLM-RL coordination"""
         episode_start_time = time.time()
         
-        # Enhanced Coordinator is the ONLY one with proper Gemini-RL coordination
+        # Enhanced Coordinator is the ONLY one with proper Agent-RL coordination
         if hasattr(self, 'enhanced_coordinator') and self.enhanced_coordinator:
-            print(f"  🧠 Running with Enhanced LLM-RL Coordinator (includes LangGraph + STRIDE/MITRE)...")
+            print(f"  ## Running with Enhanced LLM-RL Coordinator (includes LangGraph + STRIDE/MITRE)...")
             try:
                 episode_result = self.enhanced_coordinator.run_enhanced_attack_episode(scenario, episode)
                 enhanced_result = self._process_enhanced_coordinator_result(episode_result, scenario, episode)
             except Exception as e:
                 print(f"Enhanced coordinator failed: {e}")
-                print(f"  📝 No other LLM coordination available - Enhanced is the only one with Gemini-RL")
-                print(f"  🤖 Falling back to direct DQN/SAC coordination (no LLM guidance)...")
+                print(f"  📝 No other LLM coordination available - Enhanced is the only one with Agent-RL")
+                print(f"  ## Falling back to direct DQN/SAC coordination (no LLM guidance)...")
                 enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
         else:
-            # No LLM coordination available - Enhanced is the only one with proper Gemini-RL
-            print(f"  📝 No Enhanced coordinator available (this is the only one with Gemini-RL coordination)")
-            print(f"  🤖 Running with direct DQN/SAC coordination (no LLM guidance)...")
+            # No LLM coordination available - Enhanced is the only one with proper Agent-RL
+            print(f"  📝 No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
+            print(f"  ## Running with direct DQN/SAC coordination (no LLM guidance)...")
             enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
         episode_duration = time.time() - episode_start_time
@@ -1860,12 +3111,79 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 enhanced_result['coordination_score'] * 200
             )
             enhanced_result['total_reward'] = total_reward
+
+            # ── RL-impact retroactive update for LLM metrics ──────────────
+            # Every LLM call during this episode left a call_id on the
+            # analyzer.  Now that the episode reward is known we back-fill
+            # rl_reward_before / rl_reward_after / rl_reward_delta so the
+            # CSV has meaningful RL columns for research analysis.
+            try:
+                from llm_metrics_logger import LLMMetricsLogger
+                _logger = LLMMetricsLogger.instance()
+                _prev_reward = getattr(self, '_prev_episode_reward', 0.0)
+
+                # The analyzer accumulates call_ids in _episode_call_ids
+                # (initialised in run_enhanced_simulation at episode start).
+                _llm = getattr(self, 'llm_analyzer', None)
+                _call_ids = getattr(_llm, '_episode_call_ids', [])
+
+                # Also include the most recent _last_call_id as a fallback
+                if _llm and getattr(_llm, '_last_call_id', None):
+                    if _llm._last_call_id not in _call_ids:
+                        _call_ids = _call_ids + [_llm._last_call_id]
+
+                _llm_accepted = len(_call_ids) > 0  # did the episode use LLM
+                for _cid in _call_ids:
+                    _logger.update_rl_impact(
+                        call_id          = _cid,
+                        reward_before    = _prev_reward,
+                        reward_after     = total_reward,
+                        task_success     = enhanced_result['success_rate'] > 0.5,
+                        rl_plan_accepted = _llm_accepted,
+                    )
+                if _call_ids:
+                    print(f"    ## RL-impact logged for {len(_call_ids)} LLM call(s): "
+                          f"Δreward={total_reward - _prev_reward:+.2f}")
+
+                # Store reward for next episode delta
+                self._prev_episode_reward = total_reward
+                # Reset per-episode call-id list
+                if _llm is not None:
+                    _llm._episode_call_ids = []
+            except Exception as _rim_err:
+                print(f"    ##??  RL-impact update failed (non-fatal): {_rim_err}")
+            # ─────────────────────────────────────────────────────────────
+
+            # Add step count from execution results
+            exec_results = enhanced_result.get('attack_results', [])
+            if isinstance(exec_results, list):
+                enhanced_result['steps'] = len(exec_results)
+            else:
+                enhanced_result['steps'] = coordinator_result.get('total_iterations', 0)
             
-            print(f"    ✅ Enhanced coordinator result processed: {enhanced_result['success_rate']:.1%} success, {enhanced_result['stride_threats_identified']} STRIDE threats")
+            # Determine done reason
+            if enhanced_result['success_rate'] > 0.8:
+                enhanced_result['done_reason'] = "high_success"
+            elif enhanced_result['detection_rate'] > 0.8:
+                enhanced_result['done_reason'] = "high_detection"
+            elif enhanced_result['steps'] > 0:
+                enhanced_result['done_reason'] = "attacks_completed"
+            else:
+                enhanced_result['done_reason'] = "episode_end"
+            
+            # Add success_metrics with composite_reward for reward extraction
+            enhanced_result['success_metrics'] = {
+                'success_rate': enhanced_result['success_rate'],
+                'total_impact': enhanced_result['total_impact'],
+                'detection_rate': enhanced_result['detection_rate'],
+                'composite_reward': total_reward
+            }
+            
+            print(f"    ## Enhanced coordinator result processed: {enhanced_result['success_rate']:.1%} success, {enhanced_result['stride_threats_identified']} STRIDE threats")
             return enhanced_result
             
         except Exception as e:
-            print(f"    ❌ Failed to process enhanced coordinator result: {e}")
+            print(f"    ##XX Failed to process enhanced coordinator result: {e}")
             # Return fallback resultcd ..
             #
             return self._run_direct_coordinated_episode(scenario, episode)
@@ -1874,7 +3192,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         """Calculate success rate from actual execution results"""
         try:
             # DEBUG: Print the coordinator result structure
-            print(f"🔍 DEBUG: Coordinator result keys: {list(coordinator_result.keys())}")
+            print(f"### DEBUG: Coordinator result keys: {list(coordinator_result.keys())}")
             
             # Try multiple paths to find execution results
             execution_results = []
@@ -1882,43 +3200,53 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             # Path 1: rl_results.results (FIXED: correct key name)
             if 'rl_results' in coordinator_result and 'results' in coordinator_result['rl_results']:
                 execution_results = coordinator_result['rl_results']['results']
-                print(f"🔍 DEBUG: Found {len(execution_results)} execution results in rl_results.results")
+                print(f"### DEBUG: Found {len(execution_results)} execution results in rl_results.results")
             
             # Path 2: rl_results.execution_results (legacy path)
             elif 'rl_results' in coordinator_result and 'execution_results' in coordinator_result['rl_results']:
                 execution_results = coordinator_result['rl_results']['execution_results']
-                print(f"🔍 DEBUG: Found {len(execution_results)} execution results in rl_results.execution_results")
+                print(f"### DEBUG: Found {len(execution_results)} execution results in rl_results.execution_results")
             
             # Path 3: Direct execution_results
             elif 'execution_results' in coordinator_result:
                 execution_results = coordinator_result['execution_results']
-                print(f"🔍 DEBUG: Found {len(execution_results)} execution results directly")
+                print(f"### DEBUG: Found {len(execution_results)} execution results directly")
             
             # Path 4: Check if rl_results has success_rate already calculated
             elif 'rl_results' in coordinator_result and 'success_rate' in coordinator_result['rl_results']:
                 success_rate = float(coordinator_result['rl_results']['success_rate'])
-                print(f"🔍 DEBUG: Using pre-calculated success rate: {success_rate}")
+                print(f"### DEBUG: Using pre-calculated success rate: {success_rate}")
                 return success_rate
             
             if not execution_results:
-                print(f"🔍 DEBUG: No execution results found, returning 0.0")
+                print(f"### DEBUG: No execution results found, returning 0.0")
                 if 'rl_results' in coordinator_result:
-                    print(f"🔍 DEBUG: rl_results keys: {list(coordinator_result['rl_results'].keys())}")
+                    print(f"### DEBUG: rl_results keys: {list(coordinator_result['rl_results'].keys())}")
                 return 0.0
             
             # Calculate success rate from actual results
-            successful_attacks = sum(1 for result in execution_results if result.get('success', False))
+            # Handle nested result structure from execute_deployment:
+            # {'attack_type': ..., 'result': {'success': ..., 'impact': ...}}
+            successful_attacks = 0
+            for result in execution_results:
+                inner = result.get('result', result) if isinstance(result, dict) else result
+                if isinstance(inner, dict) and inner.get('success', False):
+                    successful_attacks += 1
             success_rate = float(successful_attacks) / len(execution_results)
-            print(f"🔍 DEBUG: Calculated success rate: {successful_attacks}/{len(execution_results)} = {success_rate:.1%}")
+            print(f"### DEBUG: Calculated success rate: {successful_attacks}/{len(execution_results)} = {success_rate:.1%}")
             
             # DEBUG: Print individual results
             for i, result in enumerate(execution_results):
-                print(f"🔍 DEBUG: Result {i}: success={result.get('success', False)}, impact={result.get('impact', 0.0)}")
+                inner = result.get('result', result) if isinstance(result, dict) else result
+                if isinstance(inner, dict):
+                    print(f"### DEBUG: Result {i}: success={inner.get('success', False)}, impact={inner.get('impact', 0.0)}")
+                else:
+                    print(f"### DEBUG: Result {i}: {result}")
             
             return success_rate
             
         except Exception as e:
-            print(f"⚠️ Failed to calculate success rate: {e}")
+            print(f"##?? Failed to calculate success rate: {e}")
             import traceback
             traceback.print_exc()
             return 0.0
@@ -1949,11 +3277,17 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return 0.0
             
             # Calculate total impact from actual results
-            total_impact = sum(result.get('impact', 0.0) for result in execution_results)
+            # Handle nested result structure from execute_deployment:
+            # {'attack_type': ..., 'result': {'success': ..., 'impact': ...}}
+            total_impact = 0.0
+            for result in execution_results:
+                inner = result.get('result', result) if isinstance(result, dict) else result
+                if isinstance(inner, dict):
+                    total_impact += inner.get('impact', 0.0)
             return float(total_impact)
             
         except Exception as e:
-            print(f"⚠️ Failed to calculate total impact: {e}")
+            print(f"##?? Failed to calculate total impact: {e}")
             return 0.0
     
     def _calculate_detection_rate_from_results(self, coordinator_result: Dict) -> float:
@@ -1984,17 +3318,23 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return 0.0
             
             # Calculate detection rate from actual results
-            detected_attacks = sum(1 for result in execution_results if result.get('detected', False))
+            # Handle nested result structure from execute_deployment:
+            # {'attack_type': ..., 'result': {'success': ..., 'detection_risk': ...}}
+            detected_attacks = 0
+            for result in execution_results:
+                inner = result.get('result', result) if isinstance(result, dict) else result
+                if isinstance(inner, dict) and (inner.get('detected', False) or inner.get('ids_detected', False)):
+                    detected_attacks += 1
             return float(detected_attacks) / len(execution_results)
             
         except Exception as e:
-            print(f"⚠️ Failed to calculate detection rate: {e}")
+            print(f"##?? Failed to calculate detection rate: {e}")
             return 0.0
     
     def _run_langgraph_fallback(self, scenario: EnhancedAttackScenario, episode: int) -> Dict:
         """Run fallback coordination when enhanced coordinator fails"""
         # Since enhanced coordinator includes LangGraph, fallback to direct coordination
-        print("    ⚠️ Enhanced coordinator failed, using direct coordination fallback")
+        print("    ##?? Enhanced coordinator failed, using direct coordination fallback")
         return self._run_direct_coordinated_episode(scenario, episode)
     
     def _enhance_episode_result(self, langgraph_result: Dict, scenario: EnhancedAttackScenario, episode: int) -> Dict:
@@ -2020,7 +3360,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     def _run_langgraph_with_fallback(self, scenario: EnhancedAttackScenario, episode: int) -> Dict:
         """Run LangGraph with fallback handling for recursion limits"""
         # Temporarily bypass LangGraph due to infinite loop issues
-        print(f"  🔄 Using direct DQN/SAC coordination (LangGraph bypassed)...")
+        print(f"  ## Using direct DQN/SAC coordination (LangGraph bypassed)...")
         return self._run_direct_coordinated_episode(scenario, episode)
     
     def _create_fallback_episode_result(self, scenario: EnhancedAttackScenario, episode: int) -> Dict:
@@ -2038,50 +3378,100 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         }
     
     def _run_direct_coordinated_episode(self, scenario: EnhancedAttackScenario, episode: int) -> Dict:
-        """Run episode with direct DQN/SAC coordination"""
+        """Run episode with direct DQN/SAC coordination.
+        
+        Uses the TRAINING environments for observation and execution,
+        ensuring consistency between Phase 2 training and testing.
+        get_coordinated_attack_actions() now returns env-based results
+        (dqn_result / sac_result) computed through the same envs used
+        during training.
+        """
         # Get system states
         system_states = self._get_all_system_states()
         
-        # Get coordinated actions from DQN/SAC coordinator
+        # Get coordinated actions + env-based results from DQN/SAC coordinator
         coordinated_actions = {}
         if self.dqn_sac_coordinator:
             coordinated_actions = self.dqn_sac_coordinator.get_coordinated_attack_actions(system_states)
         
-        # If no coordinated actions, generate some basic ones for testing
-        if not coordinated_actions and system_states:
-            for sys_id in system_states.keys():
-                coordinated_actions[sys_id] = {
-                    'dqn_action': {'type': 'voltage_manipulation', 'target': 'evcs_cms_link'},
-                    'sac_action': np.array([1.0, 0.8, 30.0, 0.7, 0.5]),  # [type, mag, dur, stealth, target]
+        # Extract attack results directly from env-based execution
+        # (no separate _execute_coordinated_attacks needed — already executed in training envs)
+        attack_results = []
+        for sys_id, actions in coordinated_actions.items():
+            # Prefer SAC result (continuous, richer); fall back to DQN
+            sac_res = actions.get('sac_result')
+            dqn_res = actions.get('dqn_result')
+            
+            if sac_res or dqn_res:
+                # Merge best result from both agents
+                best = sac_res if sac_res else dqn_res
+                attack_result = {
+                    'system_id': sys_id,
+                    'timestamp': time.time(),
+                    'success': best.get('success', False),
+                    'impact': best.get('impact', 0.0),
+                    'detected': best.get('detected', False),
+                    'attack_type': best.get('attack_type', 'unknown'),
+                    'reward': best.get('reward', 0.0),
+                    'env_consistent': best.get('env_consistent', True),
                     'coordination_type': 'simultaneous',
-                    'system_id': sys_id
                 }
-        
-        # Execute coordinated attacks
-        attack_results = self._execute_coordinated_attacks(coordinated_actions, scenario)
+                # If both agents ran, combine: success if either succeeded,
+                # impact = max, detected = either detected
+                if sac_res and dqn_res:
+                    attack_result['success'] = sac_res.get('success', False) or dqn_res.get('success', False)
+                    attack_result['impact'] = max(sac_res.get('impact', 0.0), dqn_res.get('impact', 0.0))
+                    attack_result['detected'] = sac_res.get('detected', False) or dqn_res.get('detected', False)
+                    attack_result['reward'] = sac_res.get('reward', 0.0) + dqn_res.get('reward', 0.0)
+                
+                attack_result['dqn_result'] = dqn_res
+                attack_result['sac_result'] = sac_res
+                attack_results.append(attack_result)
         
         # Debug output
-        print(f"    🎯 Executed {len(attack_results)} attacks")
+        print(f"    #??# Executed {len(attack_results)} attacks (via training envs)")
         successful_attacks = [r for r in attack_results if r.get('success', False)]
-        print(f"    ✅ Successful attacks: {len(successful_attacks)}/{len(attack_results)}")
+        print(f"    ## Successful attacks: {len(successful_attacks)}/{len(attack_results)}")
         
-        # Calculate rewards and metrics
-        rewards = self._calculate_enhanced_rewards(attack_results, scenario)
+        # Calculate rewards from env-based results
+        rewards = [r.get('reward', 0.0) for r in attack_results]
         coordination_score = self._calculate_coordination_score(attack_results, scenario)
         
         print(f"    💰 Total reward: {sum(rewards):.2f}")
-        print(f"    🤝 Coordination score: {coordination_score:.3f}")
+        print(f"    ## Coordination score: {coordination_score:.3f}")
+        
+        # Determine done reason based on results
+        success_rate = len([r for r in attack_results if r.get('success', False)]) / max(len(attack_results), 1)
+        detection_rate = len([r for r in attack_results if r.get('detected', False)]) / max(len(attack_results), 1)
+        
+        if success_rate > 0.8:
+            done_reason = "high_success"
+        elif detection_rate > 0.8:
+            done_reason = "high_detection"
+        elif len(attack_results) > 0:
+            done_reason = "attacks_completed"
+        else:
+            done_reason = "no_attacks"
         
         return {
             'system_states': system_states,
             'coordinated_actions': coordinated_actions,
             'attack_results': attack_results,
+            'execution_results': attack_results,
             'rewards': rewards,
             'total_reward': sum(rewards),
             'coordination_score': coordination_score,
-            'success_rate': len([r for r in attack_results if r.get('success', False)]) / max(len(attack_results), 1),
-            'detection_rate': len([r for r in attack_results if r.get('detected', False)]) / max(len(attack_results), 1),
-            'coordination_type': scenario.coordination_type
+            'success_rate': success_rate,
+            'detection_rate': detection_rate,
+            'coordination_type': scenario.coordination_type,
+            'steps': len(attack_results),
+            'done_reason': done_reason,
+            'success_metrics': {
+                'success_rate': success_rate,
+                'total_impact': sum(r.get('impact', 0.0) for r in attack_results),
+                'detection_rate': detection_rate,
+                'composite_reward': sum(rewards)
+            }
         }
     
     def _get_all_system_states(self) -> Dict[int, Dict]:
@@ -2133,7 +3523,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         
         # Execute attacks sequentially for debugging
         for sys_id, actions in coordinated_actions.items():
-            print(f"      🎯 Executing attack on system {sys_id}")
+            print(f"      #??# Executing attack on system {sys_id}")
             result = self._execute_single_system_attack(sys_id, actions, scenario)
             attack_results.append(result)
         
@@ -2168,29 +3558,29 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         }
         
         try:
-            print(f"        🔍 System {sys_id}: federated_manager exists: {self.federated_manager is not None}")
+            print(f"        ### System {sys_id}: federated_manager exists: {self.federated_manager is not None}")
             if self.federated_manager:
-                print(f"        🔍 System {sys_id}: local_models keys: {list(self.federated_manager.local_models.keys())}")
+                print(f"        ### System {sys_id}: local_models keys: {list(self.federated_manager.local_models.keys())}")
                 
             if self.federated_manager and sys_id in self.federated_manager.local_models:
                 local_model = self.federated_manager.local_models[sys_id]
-                print(f"        🔍 System {sys_id}: Found local model, actions: {list(actions.keys())}")
+                print(f"        ### System {sys_id}: Found local model, actions: {list(actions.keys())}")
                 
                 # Execute DQN action
                 if 'dqn_action' in actions:
-                    print(f"        🎯 System {sys_id}: Executing DQN action: {actions['dqn_action']}")
+                    print(f"        #??# System {sys_id}: Executing DQN action: {actions['dqn_action']}")
                     dqn_result = self._execute_dqn_action(local_model, actions['dqn_action'])
                     attack_result['dqn_result'] = dqn_result
-                    print(f"        ✅ System {sys_id}: DQN result: {dqn_result}")
+                    print(f"        ## System {sys_id}: DQN result: {dqn_result}")
                 
                 # Execute SAC action
                 if 'sac_action' in actions:
-                    print(f"        🎯 System {sys_id}: Executing SAC action")
+                    print(f"        #??# System {sys_id}: Executing SAC action")
                     sac_result = self._execute_sac_action(local_model, actions['sac_action'])
                     attack_result['sac_result'] = sac_result
-                    print(f"        ✅ System {sys_id}: SAC result: {sac_result}")
+                    print(f"        ## System {sys_id}: SAC result: {sac_result}")
             else:
-                print(f"        ❌ System {sys_id}: No local model found")
+                print(f"        ##XX System {sys_id}: No local model found")
             
             # Combine results (moved outside the if/else block)
             attack_result['success'] = any([
@@ -2203,13 +3593,99 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 attack_result.get('sac_result', {}).get('impact', 0.0)
             )
             
-            # Check detection using anomaly detector
+            # Propagate attack_type from inner DQN/SAC result to outer result
+            attack_result['attack_type'] = (
+                attack_result.get('sac_result', {}).get('attack_type') or
+                attack_result.get('dqn_result', {}).get('attack_type') or
+                'unknown'
+            )
+            
+            # Check detection using REAL multi-layer IDS (physical + pattern + LSTM)
             if self.federated_manager and sys_id in self.federated_manager.anomaly_detectors:
                 anomaly_detector = self.federated_manager.anomaly_detectors[sys_id]
-                # Use our own anomaly calculation since the detector doesn't have the method
-                anomaly_score = self._calculate_anomaly_score(attack_result)
-                attack_result['detected'] = anomaly_score > 0.7
-                attack_result['anomaly_score'] = anomaly_score
+                
+                # Build EVCS feature dict from the PINN attack response — this is
+                # the REAL traffic the IDS would observe on the attacked system.
+                # ALL 14 features are derived from actual attack/system state so
+                # the LSTM sees the same data structure it was trained on.
+                attacked_resp = attack_result.get('sac_result', attack_result.get('dqn_result', {}))
+                attacked_pinn = attacked_resp.get('attacked_response', attacked_resp) if isinstance(attacked_resp, dict) else {}
+                
+                # Extract attack metadata for deriving correlated features
+                _magnitude = float(attacked_resp.get('magnitude', 0.5)) if isinstance(attacked_resp, dict) else 0.5
+                _v_impact = float(attacked_resp.get('voltage_impact', 0.0)) if isinstance(attacked_resp, dict) else 0.0
+                _p_impact = float(attacked_resp.get('power_impact', 0.0)) if isinstance(attacked_resp, dict) else 0.0
+                _pinn_v = float(attacked_pinn.get('voltage', 240.0))   # ACN L2 nominal
+                _pinn_i = float(attacked_pinn.get('current', 16.0))    # ACN half max pilot
+                _pinn_p = float(attacked_pinn.get('power',   3.84))    # ACN half max kW
+                
+                # Derive correlated features from PINN response and attack state
+                _soc = float(attacked_resp.get('soc', 0.5)) if isinstance(attacked_resp, dict) else 0.5
+                _temperature = 25.0 + max(0, _pinn_p - 3.0) * 0.5  # Higher L2 power → slightly higher temp
+                _load_factor = np.clip(_pinn_p / 7.68, 0.2, 1.3)  # Power-based load factor (L2 max: 7.68 kW)
+                _grid_voltage = np.clip(1.0 - _v_impact, 0.85, 1.15)
+                _grid_frequency = 60.0 + float(attacked_resp.get('frequency_deviation', 0.0)) if isinstance(attacked_resp, dict) else 60.0
+                _queue_length = int(np.clip(3 + _magnitude * 3, 0, 10))
+                _utilization = np.clip(_pinn_p / 7.68, 0.1, 1.0)  # Power / L2 max power (7.68 kW)
+                _urgency = 1.0 + max(0, 1.0 - _soc) * 0.5  # Higher urgency at low SOC
+                _time_of_day = (time.time() / 3600.0) % 24.0  # Real clock
+                
+                ids_input = {
+                    'soc': float(np.clip(_soc, 0.0, 1.0)),
+                    'voltage': _pinn_v,
+                    'current': _pinn_i,
+                    'power': _pinn_p,
+                    'temperature': float(np.clip(_temperature, 20.0, 45.0)),
+                    'demand_factor': float(np.clip(_magnitude, 0.1, 1.5)),
+                    'load_factor': float(_load_factor),
+                    'grid_voltage': float(_grid_voltage),
+                    'grid_frequency': float(np.clip(_grid_frequency, 59.0, 61.0)),
+                    'queue_length': _queue_length,
+                    'utilization': float(_utilization),
+                    'urgency_factor': float(np.clip(_urgency, 0.5, 2.0)),
+                    'time_of_day': float(_time_of_day),
+                    'system_id': sys_id
+                }
+                
+                # Warm up LSTM sequence buffer with benign baseline samples
+                # so the LSTM can produce meaningful scores on the first call.
+                # Without this, the LSTM returns score=0.0 ("Insufficient
+                # sequence data") because it needs sequence_length samples.
+                anomaly_detector.reset_state()
+                seq_len = getattr(anomaly_detector, 'sequence_length', 10)
+                for _w in range(seq_len):
+                    _b_soc = np.random.uniform(0.3, 0.7)
+                    _b_p_w = np.random.uniform(1.0, 7.68)  # L2: 1.44–7.68 kW range
+                    warmup_input = {
+                        'soc': float(_b_soc + np.random.uniform(-0.03, 0.03)),
+                        'voltage': float(np.random.uniform(220, 260)),  # L2: 240V ±10%
+                        'current': float(np.random.uniform(6, 32)),     # L2: 6–32A (SAE J1772)
+                        'power': float(_b_p_w + np.random.uniform(-0.5, 0.5)),
+                        'temperature': float(np.clip(25.0 + max(0, _b_p_w - 3.0) * 0.5 + np.random.uniform(-1, 1), 20, 45)),
+                        'demand_factor': float(np.clip(0.65 + np.random.uniform(-0.05, 0.05), 0.3, 1.2)),
+                        'load_factor': float(np.clip(_b_p_w / 7.68 + np.random.uniform(-0.05, 0.05), 0.2, 1.3)),
+                        'grid_voltage': float(1.0 + np.random.uniform(-0.01, 0.01)),
+                        'grid_frequency': float(60.0 + np.random.uniform(-0.02, 0.02)),
+                        'queue_length': int(np.clip(3 + np.random.randint(-1, 2), 0, 10)),
+                        'utilization': float(np.clip(_b_p_w / 7.68 + np.random.uniform(-0.05, 0.05), 0.1, 1.0)),
+                        'urgency_factor': float(np.clip(1.0 + np.random.uniform(-0.1, 0.1), 0.5, 2.0)),
+                        'time_of_day': float(_time_of_day + np.random.uniform(-0.5, 0.5)),
+                        'system_id': sys_id
+                    }
+                    anomaly_detector.multi_layer_detection(warmup_input, sys_id)
+                
+                # Now run the ACTUAL attacked traffic through the warmed-up IDS
+                is_detected, detection_results = anomaly_detector.multi_layer_detection(ids_input, sys_id)
+                lstm_score = detection_results.get('layer3_lstm', {}).get('score', 0.0)
+                
+                attack_result['detected'] = is_detected
+                attack_result['anomaly_score'] = float(lstm_score)
+                attack_result['detection_layer'] = detection_results.get('detection_layer', None)
+                attack_result['detection_details'] = {
+                    'layer1_physical': detection_results.get('layer1_physical', {}),
+                    'layer2_pattern': detection_results.get('layer2_pattern', {}),
+                    'layer3_lstm': detection_results.get('layer3_lstm', {})
+                }
         
         except Exception as e:
             attack_result['error'] = str(e)
@@ -2233,9 +3709,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 'voltage_manipulation',
                 'current_injection',
                 'power_disruption',
-                'frequency_attack',
-                'soc_spoofing',
-                'thermal_attack'
+                'data_injection',
+                'communication_spoofing',
+                'protocol_manipulation'
             ]
 
             if not action_type:
@@ -2298,9 +3774,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 'voltage_manipulation',
                 'current_injection',
                 'power_disruption',
-                'frequency_attack',
-                'soc_spoofing',
-                'thermal_attack'
+                'data_injection',
+                'communication_spoofing',
+                'protocol_manipulation'
             ]
             attack_type = attack_types[attack_type_idx % len(attack_types)]
 
@@ -2349,115 +3825,6 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         except Exception as e:
             return 0.5  # Default moderate anomaly score
     
-    # def _simulate_pinn_attack(self, pinn_model, attack_params: Dict) -> Dict:
-    #     """Simulate attack on PINN model (since LSTMPINNChargingOptimizer doesn't have this method)"""
-    #     try:
-    #         attack_type = attack_params.get('type', 'voltage_manipulation')
-    #         magnitude = attack_params.get('magnitude', 0.5)
-    #         duration = attack_params.get('duration', 30.0)
-    #         stealth_factor = attack_params.get('stealth_factor', 0.5)
-            
-    #         # Simulate attack impact based on attack parameters
-    #         base_success_prob = 0.8  # Increased success probability
-            
-    #         # Adjust success based on stealth (higher stealth = higher success)
-    #         stealth_bonus = stealth_factor * 0.2
-            
-    #         # Adjust success based on magnitude (higher magnitude = higher impact but lower stealth)
-    #         magnitude_factor = min(magnitude, 1.0)
-            
-    #         # Calculate success probability
-    #         success_prob = base_success_prob + stealth_bonus - (magnitude_factor * 0.1)
-    #         random_val = np.random.random()
-    #         success = random_val < success_prob
-            
-    #         # Debug output for attack success
-    #         print(f"      🎲 Attack: {attack_type}, prob={success_prob:.3f}, roll={random_val:.3f}, success={success}")
-            
-    #         # Calculate impact based on attack type and magnitude
-    #         impact_multipliers = {
-    #             'voltage_manipulation': 0.8,
-    #             'current_injection': 0.7,
-    #             'power_disruption': 0.9,
-    #             'frequency_attack': 0.6,
-    #             'soc_spoofing': 0.5,
-    #             'thermal_attack': 0.4
-    #         }
-            
-    #         base_impact = impact_multipliers.get(attack_type, 0.5)
-    #         impact = base_impact * magnitude_factor if success else 0.0
-            
-    #         # Simulate PINN model response
-    #         return {
-    #             'success': success,
-    #             'impact': impact,
-    #             'attack_type': attack_type,
-    #             'magnitude': magnitude,
-    #             'duration': duration,
-    #             'stealth_factor': stealth_factor,
-    #             'model_adaptation': np.random.uniform(0.1, 0.3),
-    #             'physics_violation': magnitude_factor * 0.5,
-    #             'convergence_impact': impact * 0.3,
-    #             'learning_disruption': impact * 0.2,
-    #             'timestamp': time.time()
-    #         }
-            
-    #     except Exception as e:
-    #         return {'success': False, 'impact': 0.0, 'error': str(e)}
-    
-    # def _execute_dqn_action(self, pinn_model, dqn_action: Dict) -> Dict:
-    #     """Execute DQN action on PINN model"""
-    #     try:
-    #         # Simulate DQN action execution
-    #         action_type = dqn_action.get('type', 'no_attack')
-            
-    #         if action_type == 'no_attack':
-    #             return {'success': False, 'impact': 0.0}
-            
-    #         # Execute attack on PINN model
-    #         attack_params = {
-    #             'type': action_type,
-    #             'magnitude': 0.5,  # DQN uses discrete actions
-    #             'duration': 30.0,
-    #             'stealth_factor': 0.6
-    #         }
-            
-    #         result = self._simulate_pinn_attack(pinn_model, attack_params)
-    #         return result
-            
-    #     except Exception as e:
-    #         return {'success': False, 'impact': 0.0, 'error': str(e)}
-    
-    # def _execute_sac_action(self, pinn_model, sac_action: np.ndarray) -> Dict:
-    #     """Execute SAC action on PINN model"""
-    #     try:
-    #         # Parse SAC continuous action
-    #         attack_type_idx = int(abs(sac_action[0]) * 5) % 6
-    #         magnitude = abs(sac_action[1])
-    #         duration = abs(sac_action[2]) * 30 + 10
-    #         stealth_factor = abs(sac_action[3])
-            
-    #         attack_types = [
-    #             'voltage_manipulation',
-    #             'current_injection',
-    #             'power_disruption',
-    #             'frequency_attack',
-    #             'soc_spoofing',
-    #             'thermal_attack'
-    #         ]
-            
-    #         attack_params = {
-    #             'type': attack_types[attack_type_idx],
-    #             'magnitude': magnitude,
-    #             'duration': duration,
-    #             'stealth_factor': stealth_factor
-    #         }
-            
-    #         result = self._simulate_pinn_attack(pinn_model, attack_params)
-    #         return result
-            
-    #     except Exception as e:
-    #         return {'success': False, 'impact': 0.0, 'error': str(e)}
     
     def _calculate_simultaneity_bonus(self, attack_results: List[Dict]) -> float:
         """Calculate bonus for simultaneous attacks"""
@@ -2499,18 +3866,20 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             duration = attack_params.get('duration', 30.0)
             stealth_factor = attack_params.get('stealth_factor', 0.5)
             
-            print(f"      🎯 REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
+            print(f"      #??# REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
             
-            # Create baseline station data for comparison
+            # Create baseline station data matching the CMS input schema used in
+            # hierarchical_cosimulation.py _apply_input_attacks() (Path A).
+            # Keys: soc, grid_voltage (pu), grid_frequency (Hz), demand_factor,
+            #        voltage_priority, urgency_factor, current_time
             baseline_station_data = {
                 'soc': 0.5,
-                'voltage': 400.0,
-                'current': 100.0,
-                'power': 20000.0,
-                'temperature': 25.0,
-                'queue_length': 3,
-                'utilization': 0.6,
-                'timestamp': time.time()
+                'grid_voltage': 1.0,        # per-unit (nominal)
+                'grid_frequency': 60.0,     # Hz (nominal)
+                'demand_factor': 0.5,
+                'voltage_priority': 0.0,
+                'urgency_factor': 1.0,
+                'current_time': 0.0
             }
             
             # Get baseline PINN CMS response
@@ -2521,41 +3890,74 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     'current': baseline_current, 
                     'power': baseline_power
                 }
-                print(f"      📊 Baseline CMS: V={baseline_voltage:.1f}V, I={baseline_current:.1f}A, P={baseline_power:.1f}W")
+                print(f"      ## Baseline CMS: V={baseline_voltage:.1f}V, I={baseline_current:.1f}A, P={baseline_power:.1f}W")
             except Exception as e:
-                print(f"      ⚠️ Baseline CMS call failed: {e}")
+                print(f"      ##?? Baseline CMS call failed: {e}")
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Apply attack perturbations to station data
+            # These perturbations MIRROR _apply_input_attacks() in hierarchical_cosimulation.py
+            # so that RL training uses the same variables and directions as the simulation.
             attacked_station_data = baseline_station_data.copy()
             
-            # Apply attack-specific perturbations (increased magnitudes for real PINN sensitivity)
             if attack_type == 'voltage_manipulation':
-                attacked_station_data['voltage'] *= (1.0 + magnitude * 0.5)  # Increased from 0.2 to 0.5
+                # Mirror Path A: grid_voltage drop + voltage_priority + power_multiplier
+                voltage_drop_factor = 1.0 - (magnitude * 0.35)
+                attacked_station_data['grid_voltage'] *= voltage_drop_factor
+                attacked_station_data['voltage_priority'] = max(0, 0.95 - attacked_station_data['grid_voltage'])
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 20.0
             elif attack_type == 'current_injection':
-                attacked_station_data['current'] *= (1.0 + magnitude * 0.8)  # Increased from 0.3 to 0.8
+                # Mirror Path A: demand_factor increase + urgency_factor + power_multiplier
+                cumulative_factor = 1.0 + (magnitude * 45.0)
+                attacked_station_data['demand_factor'] *= cumulative_factor
+                attacked_station_data['urgency_factor'] *= (1.0 + magnitude * 20.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 35.0
             elif attack_type == 'power_disruption':
-                attacked_station_data['power'] *= (1.0 - magnitude * 0.6)   # Increased from 0.4 to 0.6
-            elif attack_type == 'soc_spoofing':
-                attacked_station_data['soc'] = min(1.0, attacked_station_data['soc'] + magnitude * 0.8)  # Increased from 0.5 to 0.8
-            elif attack_type == 'thermal_attack':
-                attacked_station_data['temperature'] += magnitude * 50.0     # Increased from 20.0 to 50.0
-            elif attack_type == 'frequency_attack':
-                # Add frequency attack perturbation (was missing)
-                attacked_station_data['power'] *= (1.0 + magnitude * 0.3)
-                attacked_station_data['voltage'] *= (1.0 - magnitude * 0.2)
+                # Mirror Path A: demand_factor/urgency_factor reduction + power_multiplier
+                cumulative_factor = max(0.02, 1.0 - (magnitude * 0.90))
+                attacked_station_data['demand_factor'] *= cumulative_factor
+                attacked_station_data['urgency_factor'] *= cumulative_factor
+                attacked_station_data['power_multiplier'] = cumulative_factor
+            elif attack_type == 'communication_spoofing':
+                # Mirror Path A: SoC reduction + urgency_factor increase + power_multiplier
+                soc_reduction = magnitude * 0.7
+                attacked_station_data['soc'] = max(0.01, attacked_station_data['soc'] - soc_reduction)
+                attacked_station_data['urgency_factor'] = 1.0 + (magnitude * 40.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 30.0
+            elif attack_type == 'protocol_manipulation':
+                # Mirror Path A: oscillating demand_factor + grid_voltage drop + power_multiplier
+                import math
+                oscillation = math.sin(duration / 4.0) * 20.0 + 1.0
+                amplitude_growth = 1.0 + (magnitude * 12.0)
+                attacked_station_data['demand_factor'] *= oscillation * amplitude_growth
+                attacked_station_data['grid_voltage'] *= (1.0 - magnitude * 0.2)
+                attacked_station_data['power_multiplier'] = oscillation * amplitude_growth
+            elif attack_type == 'data_injection':
+                # Mirror Path A: grid_frequency deviation + demand_factor increase + power_multiplier
+                frequency_deviation = magnitude * 12.0
+                attacked_station_data['grid_frequency'] += frequency_deviation
+                attacked_station_data['demand_factor'] *= (1.0 + magnitude * 30.0)
+                attacked_station_data['power_multiplier'] = 1.0 + magnitude * 25.0
             
             # Get attacked PINN CMS response
             try:
                 attacked_voltage, attacked_current, attacked_power = pinn_model.optimize_references(attacked_station_data)
+                
+                # Apply power_multiplier post-PINN (mirrors Path A in hierarchical_cosimulation.py
+                # lines 1245-1250 and 1726-1730 where power_multiplier scales output references)
+                if 'power_multiplier' in attacked_station_data:
+                    power_multiplier = attacked_station_data['power_multiplier']
+                    attacked_power *= power_multiplier
+                    attacked_current *= power_multiplier
+                
                 attacked_response = {
                     'voltage': attacked_voltage,
                     'current': attacked_current,
                     'power': attacked_power
                 }
-                print(f"      🚨 Attacked CMS: V={attacked_voltage:.1f}V, I={attacked_current:.1f}A, P={attacked_power:.1f}W")
+                print(f"      ## Attacked CMS: V={attacked_voltage:.1f}V, I={attacked_current:.1f}A, P={attacked_power:.1f}W")
             except Exception as e:
-                print(f"      ⚠️ Attacked CMS call failed: {e}")
+                print(f"      ##?? Attacked CMS call failed: {e}")
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Calculate real impact based on CMS response differences
@@ -2570,7 +3972,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             success_threshold = 0.01  # 1% change indicates successful attack (lowered from 5%)
             success = real_impact > success_threshold
             
-            print(f"      📈 Real Impact: V={voltage_impact:.3f}, I={current_impact:.3f}, P={power_impact:.3f} → Total={real_impact:.3f}, Success={success}")
+            print(f"      ## Real Impact: V={voltage_impact:.3f}, I={current_impact:.3f}, P={power_impact:.3f} → Total={real_impact:.3f}, Success={success}")
             
             return {
                 'success': success,
@@ -2589,7 +3991,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             }
             
         except Exception as e:
-            print(f"      ❌ Real PINN CMS attack failed: {e}")
+            print(f"      ##XX Real PINN CMS attack failed: {e}")
             return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
     
     def _fallback_pinn_attack_simulation(self, pinn_model, attack_params: Dict) -> Dict:
@@ -2599,7 +4001,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         duration = attack_params.get('duration', 30.0)
         stealth_factor = attack_params.get('stealth_factor', 0.5)
         
-        print(f"      🎲 Fallback simulation for {attack_type}")
+        print(f"      #??# Fallback simulation for {attack_type}")
         
         # Simulate attack impact based on attack parameters
         base_success_prob = 0.8
@@ -2613,9 +4015,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             'voltage_manipulation': 0.8,
             'current_injection': 0.7,
             'power_disruption': 0.9,
-            'frequency_attack': 0.6,
-            'soc_spoofing': 0.5,
-            'thermal_attack': 0.4
+            'data_injection': 0.6,
+            'communication_spoofing': 0.5,
+            'protocol_manipulation': 0.4
         }
         
         base_impact = impact_multipliers.get(attack_type, 0.5)
@@ -2777,11 +4179,11 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             avg_success = np.mean([r.get('success_rate', 0) for r in recent_results])
             avg_detection = np.mean([r.get('detection_rate', 0) for r in recent_results])
             
-            print(f"  📊 Progress: {current_episode}/{total_episodes} episodes")
-            print(f"  🎯 Recent Avg Reward: {avg_reward:.2f}")
-            print(f"  🤝 Recent Coordination Score: {avg_coordination:.3f}")
-            print(f"  ✅ Recent Success Rate: {avg_success:.1%}")
-            print(f"  🚨 Recent Detection Rate: {avg_detection:.1%}")
+            print(f"  ## Progress: {current_episode}/{total_episodes} episodes")
+            print(f"  #??# Recent Avg Reward: {avg_reward:.2f}")
+            print(f"  ## Recent Coordination Score: {avg_coordination:.3f}")
+            print(f"  ## Recent Success Rate: {avg_success:.1%}")
+            print(f"  ## Recent Detection Rate: {avg_detection:.1%}")
     
     def _analyze_enhanced_results(self) -> Dict:
         """Analyze enhanced simulation results"""
@@ -2843,300 +4245,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         recommendations.append("Implement real-time coordination adjustment based on detection feedback")
         
         return recommendations
-    
-    def _create_enhanced_visualizations(self):
-        """Create enhanced visualizations for the simulation results"""
-        try:
-            episode_results = self.simulation_results['episode_results']
-            if not episode_results:
-                print("⚠️ No episode results available for visualization")
-                return
-            
-            # Check if we have valid data to plot
-            rewards = [r.get('total_reward', 0) for r in episode_results]
-            
-            # Clean and validate all data
-            rewards = [0 if (r is None or np.isnan(r) or np.isinf(r)) else float(r) for r in rewards]
-            
-            if all(r == 0 for r in rewards) or len(rewards) == 0:
-                print("⚠️ No meaningful data to visualize (all rewards are zero or no data)")
-                return
-            
-            # Additional validation - check if we have at least some non-zero data
-            non_zero_count = sum(1 for r in rewards if r != 0)
-            if non_zero_count < 2:
-                print("⚠️ Insufficient non-zero data points for meaningful visualization")
-                return
-            
-            # Create comprehensive visualization with error handling
-            try:
-                fig = plt.figure(figsize=(20, 16))
-                gs = fig.add_gridspec(4, 3, hspace=0.3, wspace=0.3)
-            except Exception as e:
-                print(f"⚠️ Failed to create figure: {e}")
-                return
-            
-            # Row 1: Basic Performance Metrics
-            try:
-                self._plot_enhanced_performance_metrics(fig, gs, episode_results)
-            except Exception as e:
-                print(f"⚠️ Performance metrics plot failed: {e}")
-            
-            # Row 2: Coordination Analysis
-            try:
-                self._plot_coordination_analysis(fig, gs, episode_results)
-            except Exception as e:
-                print(f"⚠️ Coordination analysis plot failed: {e}")
-            
-            # Row 3: PINN Interaction Analysis
-            try:
-                self._plot_pinn_interaction_analysis(fig, gs, episode_results)
-            except Exception as e:
-                print(f"⚠️ PINN interaction plot failed: {e}")
-            
-            # Row 4: Advanced Analytics
-            try:
-                self._plot_advanced_analytics(fig, gs, episode_results)
-            except Exception as e:
-                print(f"⚠️ Advanced analytics plot failed: {e}")
-            
-            # Save enhanced visualization
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"enhanced_integrated_simulation_{timestamp}.png"
-            plt.savefig(filename, dpi=300, bbox_inches='tight')
-            print(f"📊 Enhanced visualization saved: {filename}")
-            
-            plt.close()
-            
-        except Exception as e:
-            print(f"❌ Enhanced visualization creation failed: {e}")
-    
-    def _plot_enhanced_performance_metrics(self, fig, gs, episode_results):
-        """Plot enhanced performance metrics"""
-        episodes = [r.get('episode', i) for i, r in enumerate(episode_results)]
-        rewards = [r.get('total_reward', 0) for r in episode_results]
-        success_rates = [r.get('success_rate', 0) for r in episode_results]
-        detection_rates = [r.get('detection_rate', 0) for r in episode_results]
-        
-        # Replace NaN values with 0 and ensure all values are finite
-        rewards = [0 if (r is None or np.isnan(r) or np.isinf(r)) else float(r) for r in rewards]
-        success_rates = [0 if (r is None or np.isnan(r) or np.isinf(r)) else float(r) for r in success_rates]
-        detection_rates = [0 if (r is None or np.isnan(r) or np.isinf(r)) else float(r) for r in detection_rates]
-        
-        # Ensure we have valid ranges for plotting
-        if len(set(rewards)) <= 1:  # All same value
-            rewards = [r + i*0.1 for i, r in enumerate(rewards)]  # Add small variation
-        if len(set(success_rates)) <= 1:
-            success_rates = [r + i*0.01 for i, r in enumerate(success_rates)]
-        if len(set(detection_rates)) <= 1:
-            detection_rates = [r + i*0.01 for i, r in enumerate(detection_rates)]
-        
-        # Total Reward Progression
-        ax1 = fig.add_subplot(gs[0, 0])
-        ax1.plot(episodes, rewards, 'b-', alpha=0.7, linewidth=2, marker='o', markersize=4)
-        ax1.set_title('Enhanced Reward Progression', fontsize=12, fontweight='bold')
-        ax1.set_xlabel('Episode')
-        ax1.set_ylabel('Total Reward')
-        ax1.grid(True, alpha=0.3)
-        
-        # Success Rate
-        ax2 = fig.add_subplot(gs[0, 1])
-        ax2.plot(episodes, success_rates, 'g-', alpha=0.7, linewidth=2, marker='s', markersize=4)
-        ax2.set_title('Attack Success Rate', fontsize=12, fontweight='bold')
-        ax2.set_xlabel('Episode')
-        ax2.set_ylabel('Success Rate')
-        ax2.set_ylim(0, 1.1)
-        ax2.grid(True, alpha=0.3)
-        
-        # Detection Rate
-        ax3 = fig.add_subplot(gs[0, 2])
-        ax3.plot(episodes, detection_rates, 'r-', alpha=0.7, linewidth=2, marker='^', markersize=4)
-        ax3.set_title('Attack Detection Rate', fontsize=12, fontweight='bold')
-        ax3.set_xlabel('Episode')
-        ax3.set_ylabel('Detection Rate')
-        ax3.set_ylim(0, 1.1)
-        ax3.grid(True, alpha=0.3)
-    
-    def _plot_coordination_analysis(self, fig, gs, episode_results):
-        """Plot coordination analysis"""
-        coordination_scores = [r.get('coordination_score', 0) for r in episode_results]
-        episodes = [r.get('episode', i) for i, r in enumerate(episode_results)]
-        
-        # Replace NaN values with 0 and ensure finite values
-        coordination_scores = [0 if (r is None or np.isnan(r) or np.isinf(r)) else float(r) for r in coordination_scores]
-        
-        # Ensure we have valid ranges for plotting
-        if len(set(coordination_scores)) <= 1:  # All same value
-            coordination_scores = [r + i*0.01 for i, r in enumerate(coordination_scores)]
-        
-        # Coordination Score Over Time
-        ax4 = fig.add_subplot(gs[1, 0])
-        ax4.plot(episodes, coordination_scores, 'purple', alpha=0.7, linewidth=2, marker='D', markersize=4)
-        ax4.set_title('Coordination Effectiveness', fontsize=12, fontweight='bold')
-        ax4.set_xlabel('Episode')
-        ax4.set_ylabel('Coordination Score')
-        ax4.set_ylim(0, 1.1)
-        ax4.grid(True, alpha=0.3)
-        
-        # Coordination Type Distribution
-        ax5 = fig.add_subplot(gs[1, 1])
-        coordination_types = [r.get('coordination_type', 'unknown') for r in episode_results]
-        type_counts = {}
-        for coord_type in coordination_types:
-            type_counts[coord_type] = type_counts.get(coord_type, 0) + 1
-        
-        if type_counts:
-            ax5.pie(type_counts.values(), labels=type_counts.keys(), autopct='%1.1f%%', startangle=90)
-            ax5.set_title('Coordination Type Distribution', fontsize=12, fontweight='bold')
-        
-        # Simultaneity Bonus Analysis
-        ax6 = fig.add_subplot(gs[1, 2])
-        simultaneity_bonuses = []
-        for result in episode_results:
-            attack_results = result.get('attack_results', [])
-            total_bonus = sum([r.get('coordination_bonus', 0) for r in attack_results])
-            simultaneity_bonuses.append(total_bonus)
-        
-        ax6.plot(episodes, simultaneity_bonuses, 'orange', alpha=0.7, linewidth=2, marker='*', markersize=6)
-        ax6.set_title('Simultaneity Bonus Over Time', fontsize=12, fontweight='bold')
-        ax6.set_xlabel('Episode')
-        ax6.set_ylabel('Total Coordination Bonus')
-        ax6.grid(True, alpha=0.3)
-    
-    def _plot_pinn_interaction_analysis(self, fig, gs, episode_results):
-        """Plot PINN interaction analysis"""
-        # PINN Models Engaged
-        ax7 = fig.add_subplot(gs[2, 0])
-        pinn_engaged = []
-        for r in episode_results:
-            pinn_metrics = r.get('pinn_interaction_metrics', {})
-            engaged = pinn_metrics.get('pinn_models_engaged', 0)
-            # Handle both list and integer cases
-            if isinstance(engaged, list):
-                pinn_engaged.append(len(engaged))
-            else:
-                pinn_engaged.append(engaged if isinstance(engaged, (int, float)) else 0)
-        episodes = [r.get('episode', i) for i, r in enumerate(episode_results)]
-        
-        ax7.bar(episodes, pinn_engaged, alpha=0.7, color='cyan')
-        ax7.set_title('PINN Models Engaged per Episode', fontsize=12, fontweight='bold')
-        ax7.set_xlabel('Episode')
-        ax7.set_ylabel('Number of PINN Models')
-        ax7.grid(True, alpha=0.3)
-        
-        # PINN Attack Success Rate
-        ax8 = fig.add_subplot(gs[2, 1])
-        pinn_success_rates = []
-        for result in episode_results:
-            pinn_metrics = result.get('pinn_interaction_metrics', {})
-            engaged = pinn_metrics.get('pinn_models_engaged', 0)
-            successful = pinn_metrics.get('successful_pinn_attacks', 0)
-            
-            # Handle both list and integer cases for engaged
-            if isinstance(engaged, list):
-                engaged_count = len(engaged)
-            else:
-                engaged_count = engaged if isinstance(engaged, (int, float)) else 0
-            
-            # Calculate success rate with proper handling of zero division
-            if engaged_count > 0:
-                success_rate = successful / engaged_count
-            else:
-                success_rate = 0.0
-            
-            # Ensure success rate is finite and within bounds
-            success_rate = max(0.0, min(1.0, success_rate))
-            if not np.isfinite(success_rate):
-                success_rate = 0.0
-                
-            pinn_success_rates.append(success_rate)
-        
-        # Ensure we have valid data for plotting
-        if all(r == 0 for r in pinn_success_rates):
-            pinn_success_rates = [i * 0.01 for i in range(len(pinn_success_rates))]  # Add small variation
-        
-        ax8.plot(episodes, pinn_success_rates, 'brown', alpha=0.7, linewidth=2, marker='h', markersize=4)
-        ax8.set_title('PINN Attack Success Rate', fontsize=12, fontweight='bold')
-        ax8.set_xlabel('Episode')
-        ax8.set_ylabel('PINN Success Rate')
-        ax8.set_ylim(0, 1.1)
-        ax8.grid(True, alpha=0.3)
-        
-        # PINN Impact Distribution
-        ax9 = fig.add_subplot(gs[2, 2])
-        pinn_impacts = []
-        for result in episode_results:
-            pinn_metrics = result.get('pinn_interaction_metrics', {})
-            impact = pinn_metrics.get('average_pinn_impact', 0)
-            pinn_impacts.append(impact)
-        
-        ax9.hist(pinn_impacts, bins=15, alpha=0.7, color='green', edgecolor='black')
-        ax9.set_title('PINN Impact Distribution', fontsize=12, fontweight='bold')
-        ax9.set_xlabel('Average PINN Impact')
-        ax9.set_ylabel('Frequency')
-        ax9.grid(True, alpha=0.3)
-    
-    def _plot_advanced_analytics(self, fig, gs, episode_results):
-        """Plot advanced analytics"""
-        # DQN vs SAC Performance Comparison
-        ax10 = fig.add_subplot(gs[3, 0])
-        dqn_successes = []
-        sac_successes = []
-        
-        for result in episode_results:
-            attack_results = result.get('attack_results', [])
-            dqn_success = len([r for r in attack_results if r.get('dqn_result', {}).get('success', False)])
-            sac_success = len([r for r in attack_results if r.get('sac_result', {}).get('success', False)])
-            dqn_successes.append(dqn_success)
-            sac_successes.append(sac_success)
-        
-        episodes = [r.get('episode', i) for i, r in enumerate(episode_results)]
-        ax10.plot(episodes, dqn_successes, 'blue', alpha=0.7, linewidth=2, label='DQN', marker='o')
-        ax10.plot(episodes, sac_successes, 'red', alpha=0.7, linewidth=2, label='SAC', marker='s')
-        ax10.set_title('DQN vs SAC Performance', fontsize=12, fontweight='bold')
-        ax10.set_xlabel('Episode')
-        ax10.set_ylabel('Successful Attacks')
-        ax10.legend()
-        ax10.grid(True, alpha=0.3)
-        
-        # System-wise Attack Distribution
-        ax11 = fig.add_subplot(gs[3, 1])
-        system_attacks = {}
-        for result in episode_results:
-            attack_results = result.get('attack_results', [])
-            for attack in attack_results:
-                sys_id = attack.get('system_id', 'unknown')
-                if attack.get('success', False):
-                    system_attacks[sys_id] = system_attacks.get(sys_id, 0) + 1
-        
-        if system_attacks:
-            systems = list(system_attacks.keys())
-            counts = list(system_attacks.values())
-            ax11.bar(systems, counts, alpha=0.7, color='lightblue')
-            ax11.set_title('Successful Attacks by System', fontsize=12, fontweight='bold')
-            ax11.set_xlabel('System ID')
-            ax11.set_ylabel('Successful Attacks')
-            ax11.grid(True, alpha=0.3)
-        
-        # Learning Curve Analysis
-        ax12 = fig.add_subplot(gs[3, 2])
-        # Calculate moving average of rewards
-        window_size = 5
-        if len(episode_results) >= window_size:
-            rewards = [r.get('total_reward', 0) for r in episode_results]
-            moving_avg = []
-            for i in range(len(rewards) - window_size + 1):
-                avg = np.mean(rewards[i:i + window_size])
-                moving_avg.append(avg)
-            
-            moving_episodes = episodes[window_size - 1:]
-            ax12.plot(moving_episodes, moving_avg, 'darkgreen', alpha=0.8, linewidth=3, label=f'{window_size}-Episode Moving Average')
-            ax12.plot(episodes, rewards, 'lightgreen', alpha=0.5, linewidth=1, label='Episode Rewards')
-            ax12.set_title('Learning Curve Analysis', fontsize=12, fontweight='bold')
-            ax12.set_xlabel('Episode')
-            ax12.set_ylabel('Reward')
-            ax12.legend()
-            ax12.grid(True, alpha=0.3)
+
     
     def _get_scenario_by_id(self, scenario_id: str) -> Optional[EnhancedAttackScenario]:
         """Get scenario by ID"""
@@ -3148,16 +4257,16 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     def _gemini_strategic_attack_combination(self, agent_attacks: List[Dict],
                                               simulation_duration: float,
                                               num_systems: int) -> List[Dict]:
-        """Use Gemini LLM to strategically combine and optimize RL agent attacks"""
+        """Use Agent LLM to strategically combine and optimize RL agent attacks"""
         try:
-            # Save RL feedback data to file BEFORE sending to Gemini
+            # Save RL feedback data to file BEFORE sending to Agent
             episode_results = self.simulation_results.get('episode_results', []) if hasattr(self, 'simulation_results') else []
             self._save_rl_feedback_to_file(agent_attacks, simulation_duration, num_systems, episode_results)
             
-            # Prepare agent attack summary for Gemini
+            # Prepare agent attack summary for Agent
             attack_summary = self._prepare_agent_attacks_for_gemini(agent_attacks, simulation_duration, num_systems)
 
-            # Create prompt for Gemini strategic analysis
+            # Create prompt for Agent strategic analysis
             strategic_prompt = """This is a simulation where you are supposed to help the RL agents to guide to find out vulnarablities of EVCS network. You are an expert cyber-physical attack strategist analyzing attacks on an Electric Vehicle Charging Station (EVCS) network.
 
 AGENT-GENERATED ATTACKS:
@@ -3235,25 +4344,25 @@ Example format:
 
 Return ONLY the JSON array, no other text."""
 
-            # Query Gemini
-            print("    📡 Sending " + str(len(agent_attacks)) + " agent attacks to Gemini for strategic analysis...")
+            # Query Agent
+            print("    ### Sending " + str(len(agent_attacks)) + " agent attacks to Agent for strategic analysis...")
             
-            # Debug: Check if Gemini is available
+            # Debug: Check if Agent is available
             if not hasattr(self.llm_analyzer, 'is_available') or not self.llm_analyzer.is_available:
-                print("    ⚠️ Warning: Gemini LLM is not available!")
+                print("    ##?? Warning: Agent LLM is not available!")
                 return None
             
-            # Debug: Test Gemini with a simple query first
+            # Debug: Test Agent with a simple query first
             try:
-                print("    📤 SENDING TO GEMINI: Test: Return the word 'SUCCESS'")
+                print("    ###SENDING TO Agent: Test: Return the word 'SUCCESS'")
                 test_response = self.llm_analyzer.model.generate_content("Test: Return the word 'SUCCESS'")
-                print("    📥 RECEIVED FROM GEMINI: " + repr(test_response.text))
-                print("    🔍 Debug: Gemini test response: " + repr(test_response.text[:100]))
+                print("    ### RECEIVED FROM Agent: " + repr(test_response.text))
+                print("    ### Debug: Agent test response: " + repr(test_response.text[:100]))
             except Exception as e:
-                print("    ❌ Debug: Gemini test failed: " + str(e))
+                print("    ##XX Debug: Agent test failed: " + str(e))
                 return None
                 
-            print("    📤 SENDING TO GEMINI STRATEGIC ANALYSIS:")
+            print("    ###SENDING TO Agent STRATEGIC ANALYSIS:")
             print("    " + "="*80)
             print("    PROMPT: " + strategic_prompt[:500] + ("..." if len(strategic_prompt) > 500 else ""))
             print("    " + "="*80)
@@ -3264,13 +4373,13 @@ Return ONLY the JSON array, no other text."""
                 'agent_attacks': attack_summary
             })
             
-            print("    📥 RECEIVED FROM GEMINI STRATEGIC ANALYSIS:")
+            print("    ### RECEIVED FROM Agent STRATEGIC ANALYSIS:")
             print("    " + "="*80)
             print("    RESPONSE: " + str(gemini_response)[:1000] + ("..." if len(str(gemini_response)) > 1000 else ""))
             print("    " + "="*80)
             
             # Debug: Print the full response structure
-            print("    🔍 Debug: Full Gemini response structure:")
+            print("    ### Debug: Full Agent response structure:")
             print("    " + str(type(gemini_response)))
             if isinstance(gemini_response, dict):
                 print("    Keys: " + str(list(gemini_response.keys())))
@@ -3280,12 +4389,12 @@ Return ONLY the JSON array, no other text."""
                     else:
                         print("    " + key + ": " + str(type(value)))
 
-            # Parse Gemini response
+            # Parse Agent response
             optimized_scenarios = self._parse_gemini_strategic_response(
                 gemini_response, agent_attacks, simulation_duration, num_systems
             )
 
-            # Save Gemini-generated attack scenarios to file
+            # Save Agent-generated attack scenarios to file
             if optimized_scenarios:
                 self._save_attack_scenarios_to_file(
                     optimized_scenarios, 
@@ -3296,7 +4405,7 @@ Return ONLY the JSON array, no other text."""
             return optimized_scenarios
 
         except Exception as e:
-            print(f"    ❌ Gemini strategic combination failed: {str(e)}")
+            print(f"    ##XX Agent strategic combination failed: {str(e)}")
             import traceback
             traceback.print_exc()
             return None
@@ -3304,7 +4413,7 @@ Return ONLY the JSON array, no other text."""
     def _prepare_agent_attacks_for_gemini(self, agent_attacks: List[Dict],
                                           simulation_duration: float,
                                           num_systems: int) -> str:
-        """Prepare agent attack data in readable format for Gemini"""
+        """Prepare agent attack data in readable format for Agent"""
         summary_lines = []
         summary_lines.append("Total Agent Attacks: " + str(len(agent_attacks)))
         summary_lines.append("Simulation Window: 0-" + str(simulation_duration) + "s\n")
@@ -3328,19 +4437,19 @@ Return ONLY the JSON array, no other text."""
         return "\n".join(summary_lines)
 
     def _get_current_threats(self) -> Dict:
-        """Get current threat landscape using actual Gemini threat analysis"""
+        """Get current threat landscape using actual Agent threat analysis"""
         try:
-            # Gather current system state for Gemini analysis
+            # Gather current system state for Agent analysis
             current_system_data = self._gather_current_system_data()
             
-            # Use Gemini LLM analyzer if available
+            # Use Agent LLM analyzer if available
             if hasattr(self, 'llm_analyzer') and self.llm_analyzer and self.llm_analyzer.is_available:
-                print("Querying Gemini for current threat analysis...")
+                print("Querying Agent for current threat analysis...")
                 
-                # Analyze current threats using Gemini
+                # Analyze current threats using Agent
                 gemini_threat_analysis = self.llm_analyzer.analyze_threats(current_system_data)
                 
-                # Convert Gemini analysis to standardized threat format
+                # Convert Agent analysis to standardized threat format
                 current_threats = self._convert_gemini_threats_to_standard_format(gemini_threat_analysis)
                 
                 # Check if there are any active attacks from RL agents
@@ -3349,19 +4458,19 @@ Return ONLY the JSON array, no other text."""
                         active_attacks = self.rl_coordinator.get_active_attacks()
                         current_threats['active_attacks'] = active_attacks
                 
-                print(f"    ✅ Gemini identified {len(current_threats.get('potential_vulnerabilities', []))} vulnerabilities")
+                print(f"    ## Agent identified {len(current_threats.get('potential_vulnerabilities', []))} vulnerabilities")
                 return current_threats
                 
             else:
-                print("    ⚠️ Gemini not available, using fallback threat analysis")
+                print("    ##?? Agent not available, using fallback threat analysis")
                 return self._fallback_current_threats()
                 
         except Exception as e:
-            print(f"    ❌ Failed to get current threats from Gemini: {e}")
+            print(f"    ##XX Failed to get current threats from Agent: {e}")
             return self._fallback_current_threats()
 
     def _gather_current_system_data(self) -> Dict:
-        """Gather current system data for Gemini threat analysis"""
+        """Gather current system data for Agent threat analysis"""
         try:
             system_data = {
                 'timestamp': time.time(),
@@ -3384,7 +4493,7 @@ Return ONLY the JSON array, no other text."""
                         'load_demand': getattr(self.hierarchical_sim, 'current_load_demand', 0.0)
                     }
                 except Exception as e:
-                    print(f"      ⚠️ Could not gather hierarchical sim data: {e}")
+                    print(f"      ##?? Could not gather hierarchical sim data: {e}")
             
             # Add PINN model data if available
             if hasattr(self, 'federated_pinn_manager') and self.federated_pinn_manager:
@@ -3395,7 +4504,7 @@ Return ONLY the JSON array, no other text."""
                         'training_status': getattr(self.federated_pinn_manager, 'training_status', 'unknown')
                     }
                 except Exception as e:
-                    print(f"      ⚠️ Could not gather PINN data: {e}")
+                    print(f"      ##?? Could not gather PINN data: {e}")
             
             # Add recent RL training results if available
             if hasattr(self, 'simulation_results') and self.simulation_results:
@@ -3411,12 +4520,12 @@ Return ONLY the JSON array, no other text."""
                         for ep in recent_episodes
                     ]
                 except Exception as e:
-                    print(f"      ⚠️ Could not gather recent activities: {e}")
+                    print(f"      ##?? Could not gather recent activities: {e}")
             
             return system_data
             
         except Exception as e:
-            print(f"    ❌ Failed to gather current system data: {e}")
+            print(f"    ##XX Failed to gather current system data: {e}")
             return {
                 'timestamp': time.time(),
                 'system_type': 'evcs_network',
@@ -3424,12 +4533,12 @@ Return ONLY the JSON array, no other text."""
             }
 
     def _convert_gemini_threats_to_standard_format(self, gemini_analysis: Dict) -> Dict:
-        """Convert Gemini threat analysis to standardized threat format"""
+        """Convert Agent threat analysis to standardized threat format"""
         try:
-            # Extract vulnerabilities from Gemini analysis
+            # Extract vulnerabilities from Agent analysis
             vulnerabilities = []
             
-            # Parse Gemini response for vulnerabilities
+            # Parse Agent response for vulnerabilities
             raw_analysis = gemini_analysis.get('raw_analysis', '')
             threat_assessment = gemini_analysis.get('threat_assessment', {})
             
@@ -3467,11 +4576,11 @@ Return ONLY the JSON array, no other text."""
             }
             
         except Exception as e:
-            print(f"    ❌ Failed to convert Gemini threats: {e}")
+            print(f"    ##XX Failed to convert Agent threats: {e}")
             return self._fallback_current_threats()
 
     def _fallback_current_threats(self) -> Dict:
-        """Fallback threat analysis when Gemini is not available"""
+        """Fallback threat analysis when Agent is not available"""
         return {
             'active_attacks': [],
             'potential_vulnerabilities': [
@@ -3485,21 +4594,21 @@ Return ONLY the JSON array, no other text."""
         }
 
     def _perform_comprehensive_system_analysis(self) -> Dict:
-        """Perform comprehensive system analysis using Gemini LLM"""
+        """Perform comprehensive system analysis using Agent LLM"""
         try:
-            print("    📊 Performing comprehensive system analysis...")
+            print("    ## Performing comprehensive system analysis...")
             
             # Gather comprehensive system data
             system_data = self._gather_comprehensive_system_data()
             
-            # Get current threats using actual Gemini analysis
+            # Get current threats using actual Agent analysis
             current_threats = self._get_current_threats()
             
-            # Use Gemini for comprehensive analysis if available
+            # Use Agent for comprehensive analysis if available
             if hasattr(self, 'llm_analyzer') and self.llm_analyzer and self.llm_analyzer.is_available:
-                print("    🧠 Using Gemini for comprehensive system analysis...")
+                print("    ## Using Agent for comprehensive system analysis...")
                 
-                # Prepare analysis data for Gemini
+                # Prepare analysis data for Agent
                 analysis_data = {
                     'system_data': system_data,
                     'current_threats': current_threats,
@@ -3512,7 +4621,7 @@ Return ONLY the JSON array, no other text."""
                     ]
                 }
                 
-                # Get Gemini analysis
+                # Get Agent analysis
                 gemini_analysis = self.llm_analyzer.analyze_system_with_context(
                     analysis_data, 
                     'comprehensive_system_analysis',
@@ -3532,15 +4641,15 @@ Return ONLY the JSON array, no other text."""
                     'system_health': self._assess_system_health(system_data, current_threats)
                 }
                 
-                print(f"    ✅ Comprehensive analysis complete with {len(comprehensive_analysis.get('recommendations', []))} recommendations")
+                print(f"    ## Comprehensive analysis complete with {len(comprehensive_analysis.get('recommendations', []))} recommendations")
                 return comprehensive_analysis
                 
             else:
-                print("    ⚠️ Gemini not available, using fallback analysis")
+                print("    ##?? Agent not available, using fallback analysis")
                 return self._fallback_comprehensive_analysis(system_data, current_threats)
                 
         except Exception as e:
-            print(f"    ❌ Comprehensive system analysis failed: {e}")
+            print(f"    ##XX Comprehensive system analysis failed: {e}")
             return self._fallback_comprehensive_analysis({}, {})
 
     def _gather_comprehensive_system_data(self) -> Dict:
@@ -3570,7 +4679,7 @@ Return ONLY the JSON array, no other text."""
             return system_data
             
         except Exception as e:
-            print(f"    ❌ Failed to gather comprehensive system data: {e}")
+            print(f"    ##XX Failed to gather comprehensive system data: {e}")
             return {'error': str(e), 'timestamp': time.time()}
 
     def _assess_system_health(self, system_data: Dict, current_threats: Dict) -> Dict:
@@ -3625,7 +4734,7 @@ Return ONLY the JSON array, no other text."""
             }
             
         except Exception as e:
-            print(f"    ❌ System health assessment failed: {e}")
+            print(f"    ##XX System health assessment failed: {e}")
             return {
                 'health_score': 50.0,
                 'health_status': 'unknown',
@@ -3634,7 +4743,7 @@ Return ONLY the JSON array, no other text."""
             }
 
     def _fallback_comprehensive_analysis(self, system_data: Dict, current_threats: Dict) -> Dict:
-        """Fallback comprehensive analysis when Gemini is not available"""
+        """Fallback comprehensive analysis when Agent is not available"""
         return {
             'timestamp': time.time(),
             'system_data': system_data,
@@ -3642,7 +4751,7 @@ Return ONLY the JSON array, no other text."""
             'analysis_source': 'fallback_simulation',
             'confidence_level': 0.5,
             'recommendations': [
-                'Enable Gemini LLM for enhanced threat analysis',
+                'Enable Agent LLM for enhanced threat analysis',
                 'Monitor system components for availability',
                 'Regular security assessments recommended'
             ],
@@ -3660,10 +4769,10 @@ Return ONLY the JSON array, no other text."""
 
     def _run_fallback_coordination(self, scenario, episode_num: int) -> Dict:
         """Fallback coordination when Enhanced LLM-RL coordinator is not available"""
-        print("📊 Phase 1: Comprehensive System Analysis")
+        print("## Phase 1: Comprehensive System Analysis")
         system_analysis = self._perform_comprehensive_system_analysis()
         
-        print("🎯 Phase 2: Threat-Based Attack Planning")
+        print("#??# Phase 2: Threat-Based Attack Planning")
         current_threats = system_analysis.get('current_threats', {})
         
         # Use threat information for attack planning
@@ -3705,11 +4814,11 @@ Return ONLY the JSON array, no other text."""
                 }
                 attack_scenarios.append(attack_scenario)
             
-            print(f"    ✅ Planned {len(attack_scenarios)} threat-based attack scenarios")
+            print(f"    ## Planned {len(attack_scenarios)} threat-based attack scenarios")
             return attack_scenarios
             
         except Exception as e:
-            print(f"    ❌ Failed to plan attacks from threats: {e}")
+            print(f"    ##XX Failed to plan attacks from threats: {e}")
             return self._create_fallback_attack_scenarios(6, 3600)
 
     def _execute_direct_rl_coordination(self, attack_scenarios: List[Dict], episode_num: int) -> Dict:
@@ -3717,7 +4826,7 @@ Return ONLY the JSON array, no other text."""
         try:
             # Use DQN/SAC coordinator if available
             if hasattr(self, 'dqn_sac_coordinator') and self.dqn_sac_coordinator:
-                print("    🤖 Using DQN/SAC coordinator for direct coordination")
+                print("    ## Using DQN/SAC coordinator for direct coordination")
                 
                 # Convert attack scenarios to RL actions
                 rl_actions = self._convert_scenarios_to_rl_actions(attack_scenarios)
@@ -3733,7 +4842,7 @@ Return ONLY the JSON array, no other text."""
                     'episode': episode_num
                 }
             else:
-                print("    ⚠️ No RL coordinator available, using simulation")
+                print("    ##?? No RL coordinator available, using simulation")
                 return {
                     'success': False,
                     'coordination_method': 'simulation_only',
@@ -3743,7 +4852,7 @@ Return ONLY the JSON array, no other text."""
                 }
                 
         except Exception as e:
-            print(f"    ❌ Direct RL coordination failed: {e}")
+            print(f"    ##XX Direct RL coordination failed: {e}")
             return {
                 'success': False,
                 'error': str(e),
@@ -3780,7 +4889,7 @@ Return ONLY the JSON array, no other text."""
             return rl_actions
             
         except Exception as e:
-            print(f"    ❌ Failed to convert scenarios to RL actions: {e}")
+            print(f"    ##XX Failed to convert scenarios to RL actions: {e}")
             return {}
 
     def _save_rl_feedback_to_file(self, agent_attacks: List[Dict], 
@@ -3798,9 +4907,9 @@ Return ONLY the JSON array, no other text."""
             filename = f"{output_dir}/rl_feedback_to_gemini_{timestamp}.txt"
             
             with open(filename, 'w') as f:
-                f.write("RL AGENT FEEDBACK DATA SENT TO GEMINI\n")
+                f.write("RL AGENT FEEDBACK DATA SENT TO Agent\n")
                 f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"Context: RL agent attacks and performance data for Gemini strategic analysis\n")
+                f.write(f"Context: RL agent attacks and performance data for Agent strategic analysis\n")
                 f.write("=" * 80 + "\n\n")
                 
                 # Basic simulation parameters
@@ -3866,11 +4975,11 @@ Return ONLY the JSON array, no other text."""
                                 f.write(f"  - Average PINN Impact: {pinn_metrics.get('average_pinn_impact', 0):.3f}\n")
                             f.write("\n")
                 
-                # Summary for Gemini
-                f.write("SUMMARY FOR GEMINI ANALYSIS\n")
+                # Summary for Agent
+                f.write("SUMMARY FOR Agent ANALYSIS\n")
                 f.write("-" * 40 + "\n")
-                f.write("This data represents the raw RL agent feedback that will be sent to Gemini LLM\n")
-                f.write("for strategic attack combination and optimization. Gemini will analyze these\n")
+                f.write("This data represents the raw RL agent feedback that will be sent to Agent LLM\n")
+                f.write("for strategic attack combination and optimization. Agent will analyze these\n")
                 f.write("individual attacks and create coordinated, multi-wave attack scenarios.\n\n")
                 
                 # Attack type distribution
@@ -3890,7 +4999,7 @@ Return ONLY the JSON array, no other text."""
             return filename
             
         except Exception as e:
-            print(f"    ❌ Failed to save RL feedback data: {str(e)}")
+            print(f"    ##XX Failed to save RL feedback data: {str(e)}")
             return ""
 
     def _save_attack_scenarios_to_file(self, attack_scenarios: List[Dict], 
@@ -3937,19 +5046,19 @@ Return ONLY the JSON array, no other text."""
             return filename
             
         except Exception as e:
-            print(f"    ❌ Failed to save attack scenarios: {e}")
+            print(f"    ##XX Failed to save attack scenarios: {e}")
             return None
 
     def _parse_gemini_strategic_response(self, gemini_response: Dict,
                                          original_attacks: List[Dict],
                                          simulation_duration: float,
                                          num_systems: int) -> List[Dict]:
-        """Parse Gemini's strategic response and convert to hierarchical simulation format"""
+        """Parse Agent's strategic response and convert to hierarchical simulation format"""
         try:
             import json
             import re
 
-            # Extract JSON from Gemini response
+            # Extract JSON from Agent response
             response_text = gemini_response.get('analysis', '')
             if not response_text:
                 response_text = gemini_response.get('response', '')
@@ -3976,10 +5085,10 @@ Return ONLY the JSON array, no other text."""
                     print("    🔧 Debug: Extracted content from generic code block")
             
             # Debug: Print first 500 characters of response to understand the format
-            print("    🔍 Debug: Gemini response preview (first 500 chars):")
+            print("    ### Debug: Agent response preview (first 500 chars):")
             print("    " + repr(response_text[:500]))
 
-            # Try multiple approaches to extract JSON from Gemini response
+            # Try multiple approaches to extract JSON from Agent response
             strategic_scenarios = None
             
             # Method 0: Direct JSON parsing (should work now that markdown is removed)
@@ -3988,11 +5097,11 @@ Return ONLY the JSON array, no other text."""
                     # Try direct parsing first
                     strategic_scenarios = json.loads(response_text)
                     if isinstance(strategic_scenarios, list):
-                        print("    ✅ Method 0: Direct JSON parsing successful with " + str(len(strategic_scenarios)) + " scenarios")
+                        print("    ## Method 0: Direct JSON parsing successful with " + str(len(strategic_scenarios)) + " scenarios")
                     else:
                         strategic_scenarios = None
                 except (json.JSONDecodeError, ValueError) as e:
-                    print("    ⚠️ Method 0 failed: " + str(e))
+                    print("    ##?? Method 0 failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 0b: Handle "Extra data" error by finding complete JSON boundaries
@@ -4017,11 +5126,11 @@ Return ONLY the JSON array, no other text."""
                             json_str = response_text[start_idx:end_idx+1]
                             strategic_scenarios = json.loads(json_str)
                             if isinstance(strategic_scenarios, list):
-                                print("    ✅ Method 0b: Found complete JSON array with " + str(len(strategic_scenarios)) + " scenarios")
+                                print("    ## Method 0b: Found complete JSON array with " + str(len(strategic_scenarios)) + " scenarios")
                             else:
                                 strategic_scenarios = None
                 except (json.JSONDecodeError, ValueError) as e:
-                    print("    ⚠️ Method 0b failed: " + str(e))
+                    print("    ##?? Method 0b failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 1: Look for JSON array with improved regex
@@ -4033,11 +5142,11 @@ Return ONLY the JSON array, no other text."""
                     json_str = json_str.strip()
                     strategic_scenarios = json.loads(json_str)
                     if isinstance(strategic_scenarios, list):
-                        print("    ✅ Method 1: Found JSON array with " + str(len(strategic_scenarios)) + " scenarios")
+                        print("    ## Method 1: Found JSON array with " + str(len(strategic_scenarios)) + " scenarios")
                     else:
                         strategic_scenarios = None
                 except json.JSONDecodeError as e:
-                    print("    ⚠️ Method 1 failed: " + str(e))
+                    print("    ##?? Method 1 failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 2: Try to find complete JSON object (in case it's wrapped)
@@ -4050,9 +5159,9 @@ Return ONLY the JSON array, no other text."""
                         parsed = json.loads(json_str)
                         if 'scenarios' in parsed:
                             strategic_scenarios = parsed['scenarios']
-                            print("    ✅ Method 2: Found scenarios in object with " + str(len(strategic_scenarios)) + " scenarios")
+                            print("    ## Method 2: Found scenarios in object with " + str(len(strategic_scenarios)) + " scenarios")
                 except (json.JSONDecodeError, KeyError) as e:
-                    print("    ⚠️ Method 2 failed: " + str(e))
+                    print("    ##?? Method 2 failed: " + str(e))
             
             # Method 3: Try to parse the entire response as JSON
             if not strategic_scenarios:
@@ -4063,18 +5172,18 @@ Return ONLY the JSON array, no other text."""
                             strategic_scenarios = strategic_scenarios['scenarios']
                         else:
                             strategic_scenarios = None
-                    print("    ✅ Method 3: Parsed entire response with " + str(len(strategic_scenarios)) + " scenarios")
+                    print("    ## Method 3: Parsed entire response with " + str(len(strategic_scenarios)) + " scenarios")
                 except json.JSONDecodeError as e:
-                    print("    ⚠️ Method 3 failed: " + str(e))
+                    print("    ##?? Method 3 failed: " + str(e))
             
             # Method 4: Fallback - create scenarios from text analysis
             if not strategic_scenarios:
-                print("    ⚠️ All JSON parsing methods failed, creating fallback scenarios")
+                print("    ##?? All JSON parsing methods failed, creating fallback scenarios")
                 strategic_scenarios = self._create_fallback_scenarios_from_text(response_text, original_attacks, simulation_duration, num_systems)
 
-            print("    ✅ Gemini generated " + str(len(strategic_scenarios)) + " strategic attack scenarios")
+            print("    ## Agent generated " + str(len(strategic_scenarios)) + " strategic attack scenarios")
 
-            # Convert Gemini scenarios to hierarchical simulation format
+            # Convert Agent scenarios to hierarchical simulation format
             hierarchical_scenarios = []
             for scenario in strategic_scenarios:
                 hierarchical_scenario = self._convert_gemini_scenario_to_hierarchical(
@@ -4082,7 +5191,7 @@ Return ONLY the JSON array, no other text."""
                 )
                 hierarchical_scenarios.append(hierarchical_scenario)
 
-                print("      🎯 " + str(scenario.get('scenario_name', 'Unnamed')) + ": " +
+                print("      #??# " + str(scenario.get('scenario_name', 'Unnamed')) + ": " +
                       str(int(scenario.get('start_time', 0))) + "s, " +
                       "systems " + str(scenario.get('target_systems', [])) + ", " +
                       "impact " + str(round(scenario.get('impact_factor', 0), 2)))
@@ -4090,10 +5199,10 @@ Return ONLY the JSON array, no other text."""
             return hierarchical_scenarios
 
         except json.JSONDecodeError as e:
-            print(f"    ❌ Failed to parse Gemini JSON response: {str(e)}")
+            print(f"    ##XX Failed to parse Agent JSON response: {str(e)}")
             return None
         except Exception as e:
-            print(f"    ❌ Failed to parse Gemini strategic response: {str(e)}")
+            print(f"    ##XX Failed to parse Agent strategic response: {str(e)}")
             import traceback
             traceback.print_exc()
             return None
@@ -4102,7 +5211,7 @@ Return ONLY the JSON array, no other text."""
                                            simulation_duration: float, num_systems: int) -> List[Dict]:
         """Create fallback scenarios when JSON parsing fails by analyzing text response"""
         try:
-            print("    🔄 Creating fallback scenarios from text analysis...")
+            print("    ## Creating fallback scenarios from text analysis...")
             
             # Extract key information from text using regex patterns
             scenarios = []
@@ -4166,11 +5275,11 @@ Return ONLY the JSON array, no other text."""
                 }
                 scenarios.append(scenario)
             
-            print(f"    ✅ Created {len(scenarios)} fallback scenarios from text analysis")
+            print(f"    ## Created {len(scenarios)} fallback scenarios from text analysis")
             return scenarios
             
         except Exception as e:
-            print(f"    ❌ Fallback scenario creation failed: {e}")
+            print(f"    ##XX Fallback scenario creation failed: {e}")
             return []
 
     def _convert_gemini_scenario_to_hierarchical(self, gemini_scenario: Dict,
@@ -4264,7 +5373,7 @@ Return ONLY the JSON array, no other text."""
             'power_reduction_factor': 1.0 - power_loss,
             'frequency_impact': frequency_deviation * stealth_multiplier,
             'active': False,
-            'gemini_optimized': True,  # Mark as Gemini-optimized
+            'gemini_optimized': True,  # Mark as Agent-optimized
             'scenario_name': scenario_name,
             'coordination_type': coordination,
             'combined_attack_types': attack_types,
@@ -4288,22 +5397,12 @@ Return ONLY the JSON array, no other text."""
         impact_factor = result.get('impact', 0.5)
         success_rate = 1.0 if result.get('success', False) else 0.0
 
-        # Map attack type to proper hierarchical simulation format
-        # Use more specific attack types instead of collapsing to generic ones
-        type_mapping = {
-            'voltage_manipulation': 'voltage_manipulation',
-            'current_injection': 'current_injection',
-            'power_disruption': 'power_disruption',
-            'frequency_attack': 'data_injection',
-            'model_poisoning': 'data_injection',
-            'soc_spoofing': 'communication_spoofing',
-            'charging_hijacking': 'protocol_manipulation',
-            'thermal_attack': 'protocol_manipulation'
-        }
-
-
-
-        hierarchical_type = type_mapping.get(attack_type, attack_type)  # Use original type if no mapping
+        # Keep original RL attack type names — the CMS _apply_input_attacks() and
+        # _optimize_heuristic() now handle all RL types directly:
+        # voltage_manipulation, current_injection, power_disruption,
+        # communication_spoofing, data_injection, protocol_manipulation,
+        # power_manipulation, load_manipulation
+        hierarchical_type = attack_type  # Pass through the original RL type name
 
         # Calculate impact metrics based on agent parameters
         voltage_deviation = magnitude * 0.15  # Scale to voltage deviation
@@ -4399,80 +5498,104 @@ Return ONLY the JSON array, no other text."""
 
         return attack_scenarios
 
+def _safe_nanmean(data_list):
+    """Compute mean of a list, ignoring NaN/Inf values. Returns None if no valid data."""
+    finite_vals = [v for v in data_list if isinstance(v, (int, float)) and np.isfinite(v)]
+    return float(np.mean(finite_vals)) if finite_vals else None
+
+
 def _print_comparison_summary(baseline_cosim, attack_cosim):
     """Print comparison summary between baseline and attack scenarios"""
     try:
-        print("\n  📊 Comparing Baseline vs Attack Impact:")
+        print("\n  ## Comparing Baseline vs Attack Impact:")
         print("  " + "-" * 86)
 
-        baseline_results = baseline_cosim.results
+        baseline_results = baseline_cosim.results if baseline_cosim else {}
         attack_results = attack_cosim.results if attack_cosim else {}
+
+        # Diagnostic: show what data is available
+        b_voltage_keys = list(baseline_results.get('evcs_voltage_data', {}).keys())
+        a_voltage_keys = list(attack_results.get('evcs_voltage_data', {}).keys())
+        print(f"\n  DEBUG: Baseline EVCS voltage sys_ids: {b_voltage_keys}")
+        print(f"  DEBUG: Attack EVCS voltage sys_ids:   {a_voltage_keys}")
 
         # Compare EVCS data for each distribution system
         for sys_id in range(1, 7):
-            print(f"\n  🔸 Distribution System {sys_id}:")
+            print(f"\n  ##Distribution System {sys_id}:")
 
             # Get baseline and attack voltage data
             baseline_voltage = baseline_results.get('evcs_voltage_data', {}).get(sys_id, {})
             attack_voltage = attack_results.get('evcs_voltage_data', {}).get(sys_id, {})
 
-            if baseline_voltage and attack_voltage:
-                # Calculate average voltages across all EVCS stations
+            if baseline_voltage or attack_voltage:
+                # Calculate average voltages across all EVCS stations (filter NaN/Inf)
                 baseline_avg_voltages = []
                 attack_avg_voltages = []
 
-                for station_id in baseline_voltage.keys():
-                    if station_id in attack_voltage:
-                        baseline_data = baseline_voltage[station_id]
-                        attack_data = attack_voltage[station_id]
+                all_station_ids = set(list(baseline_voltage.keys()) + list(attack_voltage.keys()))
+                for station_id in all_station_ids:
+                    b_data = baseline_voltage.get(station_id, [])
+                    a_data = attack_voltage.get(station_id, [])
 
-                        if baseline_data and attack_data:
-                            baseline_avg_voltages.append(np.mean(baseline_data))
-                            attack_avg_voltages.append(np.mean(attack_data))
+                    b_mean = _safe_nanmean(b_data) if b_data else None
+                    a_mean = _safe_nanmean(a_data) if a_data else None
 
-                if baseline_avg_voltages and attack_avg_voltages:
-                    baseline_v_avg = np.mean(baseline_avg_voltages)
-                    attack_v_avg = np.mean(attack_avg_voltages)
+                    if b_mean is not None:
+                        baseline_avg_voltages.append(b_mean)
+                    if a_mean is not None:
+                        attack_avg_voltages.append(a_mean)
+
+                baseline_v_avg = float(np.mean(baseline_avg_voltages)) if baseline_avg_voltages else None
+                attack_v_avg = float(np.mean(attack_avg_voltages)) if attack_avg_voltages else None
+
+                print(f"     Baseline Voltage: {f'{baseline_v_avg:.1f}V' if baseline_v_avg is not None else 'N/A (no data)'}")
+                print(f"     Attack Voltage:   {f'{attack_v_avg:.1f}V' if attack_v_avg is not None else 'N/A (no data)'}")
+                if baseline_v_avg is not None and attack_v_avg is not None and baseline_v_avg > 0:
                     voltage_drop = ((baseline_v_avg - attack_v_avg) / baseline_v_avg) * 100
-
-                    print(f"     Baseline Voltage: {baseline_v_avg:.1f}V")
-                    print(f"     Attack Voltage:   {attack_v_avg:.1f}V")
                     print(f"     Voltage Drop:     {voltage_drop:.2f}%")
+            else:
+                print(f"     No EVCS voltage data for this system")
 
             # Get baseline and attack power data
             baseline_power = baseline_results.get('evcs_power_data', {}).get(sys_id, {})
             attack_power = attack_results.get('evcs_power_data', {}).get(sys_id, {})
 
-            if baseline_power and attack_power:
+            if baseline_power or attack_power:
                 baseline_avg_power = []
                 attack_avg_power = []
 
-                for station_id in baseline_power.keys():
-                    if station_id in attack_power:
-                        baseline_data = baseline_power[station_id]
-                        attack_data = attack_power[station_id]
+                all_station_ids = set(list(baseline_power.keys()) + list(attack_power.keys()))
+                for station_id in all_station_ids:
+                    b_data = baseline_power.get(station_id, [])
+                    a_data = attack_power.get(station_id, [])
 
-                        if baseline_data and attack_data:
-                            baseline_avg_power.append(np.mean(baseline_data))
-                            attack_avg_power.append(np.mean(attack_data))
+                    b_mean = _safe_nanmean(b_data) if b_data else None
+                    a_mean = _safe_nanmean(a_data) if a_data else None
 
-                if baseline_avg_power and attack_avg_power:
-                    baseline_p_avg = np.mean(baseline_avg_power)
-                    attack_p_avg = np.mean(attack_avg_power)
+                    if b_mean is not None:
+                        baseline_avg_power.append(b_mean)
+                    if a_mean is not None:
+                        attack_avg_power.append(a_mean)
+
+                baseline_p_avg = float(np.mean(baseline_avg_power)) if baseline_avg_power else None
+                attack_p_avg = float(np.mean(attack_avg_power)) if attack_avg_power else None
+
+                print(f"     Baseline Power:   {f'{baseline_p_avg:.1f}kW' if baseline_p_avg is not None else 'N/A (no data)'}")
+                print(f"     Attack Power:     {f'{attack_p_avg:.1f}kW' if attack_p_avg is not None else 'N/A (no data)'}")
+                if baseline_p_avg is not None and attack_p_avg is not None and baseline_p_avg > 0:
                     power_reduction = ((baseline_p_avg - attack_p_avg) / baseline_p_avg) * 100
-
-                    print(f"     Baseline Power:   {baseline_p_avg:.1f}kW")
-                    print(f"     Attack Power:     {attack_p_avg:.1f}kW")
                     print(f"     Power Reduction:  {power_reduction:.2f}%")
+            else:
+                print(f"     No EVCS power data for this system")
 
         print("\n  " + "-" * 86)
-        print("  💡 Note: Attack impacts are visible in the individual EVCS plots")
+        print("  ## Note: Attack impacts are visible in the individual EVCS plots")
         print("     • Each EVCS station now shows as a separate colored line")
         print("     • Compare baseline plots with attack plots to see differences")
         print("     • Plots saved to current directory and sub_figures/")
 
     except Exception as e:
-        print(f"  ⚠️ Comparison summary failed: {e}")
+        print(f"  ##?? Comparison summary failed: {e}")
         print("     Baseline and attack plots were generated separately")
 
 def create_detailed_comparison_plots(baseline_cosim, attack_cosim, attack_scenario_name="LLM-Coordinated Attack"):
@@ -4485,7 +5608,7 @@ def create_detailed_comparison_plots(baseline_cosim, attack_cosim, attack_scenar
     os.makedirs('sub_figures', exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print("\n📊 Creating detailed comparison visualizations...")
+    print("\n## Creating detailed comparison visualizations...")
 
     # Extract baseline data
     base_time = np.array(baseline_cosim.results['time'])
@@ -4562,7 +5685,7 @@ def create_detailed_comparison_plots(baseline_cosim, attack_cosim, attack_scenar
 
     plt.tight_layout()
     plt.savefig(f'sub_figures/comparison_baseline_vs_attack_{timestamp}.pdf', format='pdf', bbox_inches='tight')
-    print(f"   ✅ Saved: sub_figures/comparison_baseline_vs_attack_{timestamp}.pdf")
+    print(f"   ## Saved: sub_figures/comparison_baseline_vs_attack_{timestamp}.pdf")
     plt.show()
 
     # Create individual metric plots
@@ -4616,7 +5739,7 @@ def _create_individual_comparison_plots(baseline_cosim, attack_cosim, timestamp,
              bbox=dict(facecolor='yellow', alpha=0.7, edgecolor='black'), fontsize=18)
     plt.tight_layout()
     plt.savefig(f'sub_figures/frequency_comparison_{timestamp}.pdf', format='pdf', bbox_inches='tight')
-    print(f"   ✅ Saved: sub_figures/frequency_comparison_{timestamp}.pdf")
+    print(f"   ## Saved: sub_figures/frequency_comparison_{timestamp}.pdf")
     plt.close(fig1)
 
     # 2. Load Comparison (Individual)
@@ -4636,7 +5759,7 @@ def _create_individual_comparison_plots(baseline_cosim, attack_cosim, timestamp,
              bbox=dict(facecolor='yellow', alpha=0.7, edgecolor='black'), fontsize=18)
     plt.tight_layout()
     plt.savefig(f'sub_figures/load_comparison_{timestamp}.pdf', format='pdf', bbox_inches='tight')
-    print(f"   ✅ Saved: sub_figures/load_comparison_{timestamp}.pdf")
+    print(f"   ## Saved: sub_figures/load_comparison_{timestamp}.pdf")
     plt.close(fig2)
 
     # 3. Frequency Delta (Individual)
@@ -4655,7 +5778,7 @@ def _create_individual_comparison_plots(baseline_cosim, attack_cosim, timestamp,
     plt.yticks(fontsize=24)
     plt.tight_layout()
     plt.savefig(f'sub_figures/frequency_delta_{timestamp}.pdf', format='pdf', bbox_inches='tight')
-    print(f"   ✅ Saved: sub_figures/frequency_delta_{timestamp}.pdf")
+    print(f"   ## Saved: sub_figures/frequency_delta_{timestamp}.pdf")
     plt.close(fig3)
 
     # 4. Load Delta (Individual)
@@ -4674,15 +5797,21 @@ def _create_individual_comparison_plots(baseline_cosim, attack_cosim, timestamp,
     plt.yticks(fontsize=24)
     plt.tight_layout()
     plt.savefig(f'sub_figures/load_delta_{timestamp}.pdf', format='pdf', bbox_inches='tight')
-    print(f"   ✅ Saved: sub_figures/load_delta_{timestamp}.pdf")
+    print(f"   ## Saved: sub_figures/load_delta_{timestamp}.pdf")
     plt.close(fig4)
 
-def main():
-    """Main function to run enhanced integrated system"""
+def main(run_mode='rl_coordinated'):
+    """Main function to run enhanced integrated system
+    
+    Args:
+        run_mode: 'rl_coordinated' (default) or 'baseline_random' or 'both'
+    """
     print("🚀 Enhanced Integrated EVCS LLM-RL System with Real SAC and PINN Integration")
     print("=" * 90)
+    print(f"#??# Run Mode: {run_mode}")
+    print("=" * 90)
     
-    # Check if Gemini is accessible
+    # Check if Agent is accessible
     try:
         import google.generativeai as genai
         
@@ -4696,9 +5825,9 @@ def main():
         # Test connection
         response = model.generate_content("test")
         if response.text:
-            print(" Gemini Pro is accessible and working")
+            print(" Agent Threat Analyzer is accessible and working")
         else:
-            raise Exception("Empty response from Gemini")
+            raise Exception("Empty response from Agent Threat Analyzer")
             
     except FileNotFoundError:
         print(" Gemini API key file (gemini_key.txt) not found. The system will use fallback mode.")
@@ -4718,10 +5847,11 @@ def main():
             'num_systems': 6,
             'dqn_timesteps': 30000,  # Reduced for demo
             'sac_timesteps': 30000,  # Reduced for demo
-            'coordination_training': True
+            'coordination_training': True,
+            'use_rl_coordination': run_mode in ['rl_coordinated', 'both']  # NEW: Control RL usage
         },
         'attack': {
-            'max_episodes': 10,  # Reduced for demo
+            'max_episodes': 10,  # Reduced for #demo
             'coordination_type': 'simultaneous'
         }
     }
@@ -4730,20 +5860,20 @@ def main():
     print("\n" + "=" * 90)
     print("🎓 STEP 1: Training Attack System (ONE TIME ONLY)")
     print("=" * 90)
-    print("💡 Note: Training happens once, then used for both baseline and attack scenarios")
+    print("## Note: Training happens once, then used for both baseline and attack scenarios")
 
     system = EnhancedIntegratedEVCSLLMRLSystem(config)
 
     try:
-        training_results = system.train_enhanced_system(total_timesteps=40000)
-        print("✅ Enhanced system training complete!")
-        print(f"   📊 Training took: {training_results.get('training_time', 'N/A')}")
+        training_results = system.train_enhanced_system(total_timesteps=300000)
+        print("## Enhanced system training complete!")
+        print(f"   ## Training took: {training_results.get('training_time', 'N/A')}")
 
         # STEP 2: Run BASELINE scenario (trained agents observe normal operation)
         print("\n" + "=" * 90)
-        print("📊 STEP 2: Running BASELINE Scenario (No Attacks)")
+        print("## STEP 2: Running BASELINE Scenario (No Attacks)")
         print("=" * 90)
-        print("💡 Using trained agents to monitor normal grid operation without attacks")
+        print("## Using trained agents to monitor normal grid operation without attacks")
 
         from hierarchical_cosimulation import HierarchicalCoSimulation
 
@@ -4767,34 +5897,310 @@ def main():
 
         baseline_results = baseline_cosim.run_hierarchical_simulation(attack_scenarios=[])  # Empty = no attacks
 
-        print("  ✅ Baseline simulation complete!")
-        print(f"  📊 Baseline results: {len(baseline_cosim.results.get('time', []))} timesteps")
+        print("  ## Baseline simulation complete!")
+        print(f"  ## Baseline results: {len(baseline_cosim.results.get('time', []))} timesteps")
 
         # Save baseline plots
-        print("\n  📈 Generating baseline plots...")
+        print("\n  ## Generating baseline plots...")
         baseline_cosim.plot_hierarchical_results()
-        print("  ✅ Baseline plots saved!")
+        print("  ## Baseline plots saved!")
 
         # STEP 3: Run ATTACK simulation (using SAME trained agents from Step 1)
         print("\n" + "=" * 90)
-        print("⚔️ STEP 3: Running ATTACK Scenario (With LLM-RL Coordination)")
+        print("## STEP 3: Running ATTACK Scenario (With LLM-RL Coordination)")
         print("=" * 90)
-        print("💡 Using the SAME trained agents from Step 1 to execute coordinated attacks")
+        print("## Using the SAME trained agents from Step 1 to execute coordinated attacks")
 
         results = system.run_enhanced_simulation(
             scenario_id="ENHANCED_001",  # Fixed: Use correct scenario ID
-            episodes=30
+            episodes=20
         )
 
-        print("\n✅ Enhanced attack simulation complete!")
-        print(f"   📊 Average Reward: {results['performance_metrics']['average_reward']:.2f}")
-        print(f"   ✅ Success Rate: {results['performance_metrics']['average_success_rate']:.1%}")
-        print(f"   🤝 Coordination Score: {results['performance_metrics']['coordination_effectiveness']:.3f}")
-        print(f"   🚨 Detection Rate: {results['performance_metrics']['average_detection_rate']:.1%}")
+        print("\n## Enhanced attack simulation complete!")
+        print(f"   ## Average Reward: {results['performance_metrics']['average_reward']:.2f}")
+        print(f"   ## Success Rate: {results['performance_metrics']['average_success_rate']:.1%}")
+        print(f"   ## Coordination Score: {results['performance_metrics']['coordination_effectiveness']:.3f}")
+        print(f"   ## Detection Rate: {results['performance_metrics']['average_detection_rate']:.1%}")
+        
+        # Save IDS/Detection results to file
+        import json
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        detection_results_dir = "detection_results"
+        os.makedirs(detection_results_dir, exist_ok=True)
+        
+        # Collect per-attack details and IDS classification counters
+        report_episodes = []
+        total_tp = 0  # Attack detected (correct)
+        total_fp = 0  # Benign flagged (false alarm)
+        total_fn = 0  # Attack missed
+        total_tn = 0  # Benign correctly passed
+        
+        # IDS detection threshold (same as used in baseline evaluation)
+        ids_threshold = 0.7
+        
+        for i, episode_result in enumerate(results.get('episode_results', [])):
+            episode_data = {
+                'episode': i + 1,
+                'detection_rate': float(episode_result.get('detection_rate', 0)),
+                'success_rate': float(episode_result.get('success_rate', 0)),
+                'total_impact': float(episode_result.get('total_impact', 0)),
+                'coordination_score': float(episode_result.get('coordination_score', 0)),
+                'attacks_detected': []
+            }
+            
+            # Add individual attack detection details.
+            # Evaluate each attack through the SAME IDS used in production
+            # (hierarchical_cosimulation.py uses BestIDSDetector per station).
+            # Protocol: reset → warm-up with SEQ_LEN//2 benign steps → feed
+            # SEQ_LEN//2 attack steps.  This mirrors the training-data construction
+            # in compare_ids_models.py (inject_at = SEQ_LEN//2 … SEQ_LEN).
+            _SEQ_HALF = 5   # SEQ_LEN // 2 = 10 // 2
+            for attack_result in episode_result.get('attack_results', episode_result.get('execution_results', [])):
+                inner = attack_result.get('result', attack_result) if isinstance(attack_result, dict) else attack_result
+                sys_id = attack_result.get('system_id', 1)
+                attack_success_rl = bool(inner.get('success', False))
+
+                # ── Real IDS evaluation — reset + warm-up + attack sequence ─
+                ids_detected = False
+                ids_anomaly = 0.0
+                if system.federated_manager and sys_id in system.federated_manager.anomaly_detectors:
+                    det = system.federated_manager.anomaly_detectors[sys_id]
+
+                    # Step 1: reset all state (clears window, load_history, buffers)
+                    det.reset_state()
+
+                    # Step 2: warm-up with SEQ_LEN//2 benign samples
+                    _b_soc = np.random.uniform(0.3, 0.7)
+                    _b_v   = np.random.uniform(220, 260)    # L2: 240V ±10%
+                    _b_i   = np.random.uniform(6, 32)       # L2: 6-32A (SAE J1772)
+                    _b_p   = np.random.uniform(1.0, 7.68)   # L2: 1.44-7.68 kW
+                    _b_temp = 25.0 + max(0, _b_p - 3.0) * 0.5
+                    _b_lf   = float(np.clip(_b_p / 7.68, 0.2, 1.3))
+                    _b_util = float(np.clip(_b_p / 7.68, 0.1, 1.0))
+                    _b_urg  = 1.0 + max(0, 1.0 - _b_soc) * 0.5
+                    _b_tod  = (time.time() / 3600.0) % 24.0
+                    for _ in range(_SEQ_HALF):
+                        det.multi_layer_detection({
+                            'soc':            float(_b_soc + np.random.uniform(-0.03, 0.03)),
+                            'voltage':        float(_b_v   + np.random.uniform(-5.0, 5.0)),
+                            'current':        float(_b_i   + np.random.uniform(-3.0, 3.0)),
+                            'power':          float(_b_p   + np.random.uniform(-2.0, 2.0)),
+                            'temperature':    float(np.clip(_b_temp + np.random.uniform(-1.0, 1.0), 20.0, 45.0)),
+                            'demand_factor':  float(np.clip(0.65 + np.random.uniform(-0.05, 0.05), 0.3, 1.2)),
+                            'load_factor':    float(np.clip(_b_lf   + np.random.uniform(-0.05, 0.05), 0.2, 1.3)),
+                            'grid_voltage':   float(1.0 + np.random.uniform(-0.01, 0.01)),
+                            'grid_frequency': float(60.0 + np.random.uniform(-0.02, 0.02)),
+                            'queue_length':   int(np.clip(3 + np.random.randint(-1, 2), 0, 10)),
+                            'utilization':    float(np.clip(_b_util + np.random.uniform(-0.05, 0.05), 0.1, 1.0)),
+                            'urgency_factor': float(np.clip(_b_urg  + np.random.uniform(-0.05, 0.05), 0.5, 2.0)),
+                            'time_of_day':    float(_b_tod  + np.random.uniform(-0.5, 0.5)),
+                            'system_id':      sys_id,
+                        }, sys_id)
+
+                    # Step 3: build attack features from type + magnitude
+                    # (same derivation as execute_attack_on_system() in
+                    #  run_baseline_attacks_actual_system.py)
+                    _mag  = float(np.clip(inner.get('magnitude', inner.get('attack_magnitude', 0.7)), 0.1, 2.0))
+                    _atype = str(attack_result.get('attack_type', 'unknown'))
+                    _vdev = _mag * 0.15 if 'voltage' in _atype else _mag * 0.05
+                    _idev = _mag * 0.20 if 'current' in _atype else _mag * 0.08
+                    _pdev = _mag * 0.25 if 'power'   in _atype else _mag * 0.10
+                    _atk_v    = float(240.0 * (1.0 - _vdev))
+                    _atk_i    = float(32.0  * (1.0 + _idev))
+                    _atk_p    = float(7.68  * (1.0 + _pdev))
+                    _atk_soc  = float(np.clip(0.5 - _mag * 0.2, 0.05, 0.95))
+                    _atk_temp = float(np.clip(25.0 + max(0, _atk_p - 3.0) * 0.5, 20.0, 55.0))
+                    _atk_lf   = float(np.clip(_atk_p / 7.68, 0.2, 1.5))
+                    _atk_gv   = float(np.clip(1.0 - _vdev, 0.85, 1.15))
+                    _atk_freq = float(np.clip(60.0 + (_mag * 2.0 if 'frequency' in _atype else 0.0), 59.0, 61.0))
+                    _atk_q    = int(np.clip(3 + _mag * 3, 0, 10))
+                    _atk_util = float(np.clip(_atk_p / 7.68, 0.1, 1.0))
+                    _atk_urg  = float(np.clip(1.0 + max(0, 1.0 - _atk_soc) * 0.5, 0.5, 2.0))
+                    attack_input = {
+                        'soc':            _atk_soc,
+                        'voltage':        _atk_v,
+                        'current':        _atk_i,
+                        'power':          _atk_p,
+                        'temperature':    _atk_temp,
+                        'demand_factor':  float(np.clip(0.7 + _mag * 0.8, 0.1, 1.5)),
+                        'load_factor':    _atk_lf,
+                        'grid_voltage':   _atk_gv,
+                        'grid_frequency': _atk_freq,
+                        'queue_length':   _atk_q,
+                        'utilization':    _atk_util,
+                        'urgency_factor': _atk_urg,
+                        'time_of_day':    float((time.time() / 3600.0) % 24.0),
+                        'system_id':      sys_id,
+                    }
+
+                    # Step 4: feed SEQ_LEN//2 attack steps; detection on the last one
+                    try:
+                        _last_det, _last_res = False, {}
+                        for _s in range(_SEQ_HALF):
+                            _last_det, _last_res = det.multi_layer_detection(attack_input, sys_id)
+                        ids_detected = _last_det
+                        ids_anomaly  = float(_last_res.get('layer3_lstm', {}).get('score', 0.0))
+                    except Exception:
+                        ids_anomaly  = float(inner.get('detection_risk', 0.0))
+                        ids_detected = ids_anomaly >= ids_threshold
+                else:
+                    ids_anomaly  = float(inner.get('detection_risk', inner.get('anomaly_score', 0.0)))
+                    ids_detected = ids_anomaly >= ids_threshold
+
+                # True success = caused impact AND evaded the real IDS
+                attack_success = attack_success_rl and not ids_detected
+
+                episode_data['attacks_detected'].append({
+                    'system_id':    sys_id,
+                    'attack_type':  attack_result.get('attack_type', 'unknown'),
+                    'detected':     ids_detected,
+                    'anomaly_score': ids_anomaly,
+                    'attack_impact': float(inner.get('impact', 0)),
+                    'attack_success': attack_success,
+                    'is_benign': False,
+                })
+                if ids_detected:
+                    total_tp += 1
+                else:
+                    total_fn += 1
+            
+            # Evaluate IDS on benign (normal) traffic samples for this episode.
+            # For a fair IDS evaluation we need both attack AND benign samples.
+            # Pass REAL benign EVCS traffic through the SAME multi-layer IDS.
+            # Reset detector state first so attack history doesn't contaminate,
+            # then warm up the LSTM buffer with benign data before counting.
+            num_attacks_this_ep = len(episode_data['attacks_detected'])
+            for b in range(num_attacks_this_ep):
+                benign_sys_id = (b % 6) + 1
+                
+                # Reset and warm up the detector for this benign evaluation
+                benign_detected = False
+                benign_anomaly = 0.0
+                if system.federated_manager and benign_sys_id in system.federated_manager.anomaly_detectors:
+                    det = system.federated_manager.anomaly_detectors[benign_sys_id]
+                    det.reset_state()
+                    
+                    # Warm-up: fill LSTM sequence buffer with benign traffic
+                    # Sample from the full PINN operating range with correlated features
+                    _b_soc = np.random.uniform(0.3, 0.7)
+                    _b_v = np.random.uniform(220, 260)   # L2: 240V ±10%
+                    _b_i = np.random.uniform(6, 32)      # L2: 6–32A (SAE J1772)
+                    _b_p = np.random.uniform(1.0, 7.68)  # L2: 1.44–7.68 kW
+                    _b_temp = 25.0 + max(0, _b_p - 3.0) * 0.5
+                    _b_lf = np.clip(_b_p / 7.68, 0.2, 1.3)
+                    _b_util = np.clip(_b_p / 7.68, 0.1, 1.0)
+                    _b_urg = 1.0 + max(0, 1.0 - _b_soc) * 0.5
+                    _b_tod = (time.time() / 3600.0) % 24.0
+                    for _ in range(det.sequence_length):
+                        warmup_input = {
+                            'soc': float(_b_soc + np.random.uniform(-0.03, 0.03)),
+                            'voltage': float(_b_v + np.random.uniform(-5.0, 5.0)),
+                            'current': float(_b_i + np.random.uniform(-3.0, 3.0)),
+                            'power': float(_b_p + np.random.uniform(-2.0, 2.0)),
+                            'temperature': float(np.clip(_b_temp + np.random.uniform(-1.0, 1.0), 20.0, 45.0)),
+                            'demand_factor': float(np.clip(0.65 + np.random.uniform(-0.05, 0.05), 0.3, 1.2)),
+                            'load_factor': float(np.clip(_b_lf + np.random.uniform(-0.05, 0.05), 0.2, 1.3)),
+                            'grid_voltage': float(1.0 + np.random.uniform(-0.01, 0.01)),
+                            'grid_frequency': float(60.0 + np.random.uniform(-0.02, 0.02)),
+                            'queue_length': int(np.clip(3 + np.random.randint(-1, 2), 0, 10)),
+                            'utilization': float(np.clip(_b_util + np.random.uniform(-0.05, 0.05), 0.1, 1.0)),
+                            'urgency_factor': float(np.clip(_b_urg + np.random.uniform(-0.05, 0.05), 0.5, 2.0)),
+                            'time_of_day': float(_b_tod + np.random.uniform(-0.5, 0.5)),
+                            'system_id': benign_sys_id
+                        }
+                        det.multi_layer_detection(warmup_input, benign_sys_id)
+                    
+                    # Now evaluate the actual benign sample (same operating point)
+                    benign_input = {
+                        'soc': float(_b_soc + np.random.uniform(-0.03, 0.03)),
+                        'voltage': float(_b_v + np.random.uniform(-5.0, 5.0)),
+                        'current': float(_b_i + np.random.uniform(-3.0, 3.0)),
+                        'power': float(_b_p + np.random.uniform(-2.0, 2.0)),
+                        'temperature': float(np.clip(_b_temp + np.random.uniform(-1.0, 1.0), 20.0, 45.0)),
+                        'demand_factor': float(np.clip(0.65 + np.random.uniform(-0.05, 0.05), 0.3, 1.2)),
+                        'load_factor': float(np.clip(_b_lf + np.random.uniform(-0.05, 0.05), 0.2, 1.3)),
+                        'grid_voltage': float(1.0 + np.random.uniform(-0.01, 0.01)),
+                        'grid_frequency': float(60.0 + np.random.uniform(-0.02, 0.02)),
+                        'queue_length': int(np.clip(3 + np.random.randint(-1, 2), 0, 10)),
+                        'utilization': float(np.clip(_b_util + np.random.uniform(-0.05, 0.05), 0.1, 1.0)),
+                        'urgency_factor': float(np.clip(_b_urg + np.random.uniform(-0.05, 0.05), 0.5, 2.0)),
+                        'time_of_day': float(_b_tod + np.random.uniform(-0.5, 0.5)),
+                        'system_id': benign_sys_id
+                    }
+                    is_det, det_res = det.multi_layer_detection(benign_input, benign_sys_id)
+                    benign_detected = is_det
+                    benign_anomaly = float(det_res.get('layer3_lstm', {}).get('score', 0.0))
+                
+                episode_data['attacks_detected'].append({
+                    'system_id': benign_sys_id,
+                    'attack_type': 'benign_normal',
+                    'detected': benign_detected,
+                    'anomaly_score': benign_anomaly,
+                    'attack_impact': 0.0,
+                    'attack_success': False,
+                    'is_benign': True
+                })
+                if benign_detected:
+                    total_fp += 1  # False alarm
+                else:
+                    total_tn += 1  # Correct: benign passed
+            
+            # Recompute episode-level rates from the now-correct real-IDS results
+            attack_entries = [e for e in episode_data['attacks_detected'] if not e['is_benign']]
+            if attack_entries:
+                episode_data['detection_rate'] = sum(1 for e in attack_entries if e['detected']) / len(attack_entries)
+                episode_data['success_rate']   = sum(1 for e in attack_entries if e['attack_success']) / len(attack_entries)
+
+            report_episodes.append(episode_data)
+        
+        # Compute IDS classification metrics
+        precision = total_tp / max(total_tp + total_fp, 1)
+        recall = total_tp / max(total_tp + total_fn, 1)
+        f1_score = 2 * precision * recall / max(precision + recall, 1e-9)
+        accuracy = (total_tp + total_tn) / max(total_tp + total_fp + total_fn + total_tn, 1)
+        
+        # Recompute summary rates from corrected real-IDS episode data
+        avg_det_rate  = float(np.mean([ep['detection_rate'] for ep in report_episodes])) if report_episodes else 0.0
+        avg_succ_rate = float(np.mean([ep['success_rate']   for ep in report_episodes])) if report_episodes else 0.0
+
+        detection_report = {
+            'timestamp': timestamp,
+            'scenario_id': "ENHANCED_001",
+            'episodes': len(report_episodes),
+            'performance_metrics': {
+                'average_reward': float(results['performance_metrics']['average_reward']),
+                'average_success_rate': avg_succ_rate,          # real IDS-conditioned success
+                'coordination_effectiveness': float(results['performance_metrics']['coordination_effectiveness']),
+                'average_detection_rate': avg_det_rate,          # real IDS detection rate
+                'precision': float(precision),
+                'recall': float(recall),
+                'f1_score': float(f1_score),
+                'accuracy': float(accuracy),
+                'confusion_matrix': {'TP': total_tp, 'FP': total_fp, 'FN': total_fn, 'TN': total_tn}
+            },
+            'episode_results': report_episodes
+        }
+        
+        detection_file = os.path.join(detection_results_dir, f"ids_detection_report_{timestamp}.json")
+        with open(detection_file, 'w') as f:
+            json.dump(detection_report, f, indent=2)
+        
+        print(f"\n## IDS Detection results saved to: {detection_file}")
+
+        # Auto-generate baseline comparison data so compare_rl_vs_baseline_actual.py can run
+        try:
+            from run_baseline_attacks_actual_system import run_baseline_attacks_actual_system as _run_baseline
+            print("\n" + "=" * 90)
+            print("## Generating baseline (non-RL) attack results for RL comparison...")
+            print("=" * 90)
+            _run_baseline(num_episodes=30, num_systems=6)
+        except Exception as _be:
+            print(f"\n## Baseline evaluation skipped: {_be}")
 
         # STEP 4: Compare baseline vs attack
         print("\n" + "=" * 90)
-        print("📊 STEP 4: Comparison - Baseline vs Attack")
+        print("## STEP 4: Comparison - Baseline vs Attack")
         print("=" * 90)
 
         # Print text summary
@@ -4802,7 +6208,7 @@ def main():
 
         # Create detailed comparison visualizations
         print("\n" + "=" * 90)
-        print("📈 STEP 5: Creating Detailed Comparison Visualizations")
+        print("## STEP 5: Creating Detailed Comparison Visualizations")
         print("=" * 90)
 
         comparison_metrics = create_detailed_comparison_plots(
@@ -4811,28 +6217,51 @@ def main():
             attack_scenario_name="LLM-Coordinated RL Attack (ENHANCED_001)"
         )
 
-        print("\n📊 Quantitative Attack Impact Metrics:")
+        print("\n## Quantitative Attack Impact Metrics:")
         print(f"   • Max Frequency Deviation:  {comparison_metrics['max_freq_delta']:.4f} Hz")
         print(f"   • Avg Frequency Deviation:  {comparison_metrics['avg_freq_delta']:.4f} Hz")
         print(f"   • Max Load Deviation:       {comparison_metrics['max_load_delta']:.2f} MW")
         print(f"   • Avg Load Deviation:       {comparison_metrics['avg_load_delta']:.2f} MW")
 
         print("\n" + "=" * 90)
-        print("💡 Enhanced Recommendations:")
+        print("## Enhanced Recommendations:")
         print("=" * 90)
         for rec in results['recommendations']:
             print(f"  • {rec}")
 
         print("\n" + "=" * 90)
-        print("✅ SIMULATION COMPLETE!")
+        print("## SIMULATION COMPLETE!")
         print("=" * 90)
-        print("📊 Summary:")
+
+        # ── LLM Metrics Summary ────────────────────────────────────────────
+        try:
+            from llm_metrics_logger import LLMMetricsLogger
+            logger = LLMMetricsLogger.instance()
+            if logger._records:
+                print("\n" + "=" * 90)
+                print("## LLM METRICS SUMMARY (all calls this run)")
+                print("=" * 90)
+                print(logger.summary_report())
+                print(logger.model_comparison_table())
+                print(f"\n   ## Full metrics saved to:")
+                print(f"      CSV  → {logger.csv_path}")
+                print(f"      JSONL→ {logger.jsonl_path}")
+            else:
+                print("\n## LLM Metrics: no LLM calls were logged this run "
+                      "(LLM may have been in fallback mode).")
+        except Exception as _me:
+            print(f"\n##??  LLM metrics summary failed: {_me}")
+        # ──────────────────────────────────────────────────────────────────
+
+        print("\n" + "=" * 90)
+        print("## Summary:")
+
         print(f"   • Training: Done once (Step 1)")
         print(f"   • Baseline: Normal operation without attacks (Step 2)")
         print(f"   • Attack: LLM-coordinated RL attacks (Step 3)")
         print(f"   • Text Comparison: Statistical attack impact (Step 4)")
         print(f"   • Visual Comparison: Detailed plots showing baseline vs attack (Step 5)")
-        print("\n📁 Output files:")
+        print("\n## Output files:")
         print(f"   • Baseline plots: sub_figures/baseline_*.pdf")
         print(f"   • Attack plots: sub_figures/attack_*.pdf")
         print(f"   • Comparison plots: sub_figures/comparison_*.pdf")
@@ -4841,6 +6270,8 @@ def main():
         print(f"                            sub_figures/frequency_delta_*.pdf")
         print(f"                            sub_figures/load_delta_*.pdf")
         print(f"   • All 6 distribution systems × 10 EVCS stations visible in EVCS plots")
+        print(f"   • Baseline (non-RL) results: detection_results/baseline_actual_system_*.json")
+        print(f"   • RL vs baseline comparison: python compare_rl_vs_baseline_actual.py")
         print("=" * 90)
             
     except Exception as e:

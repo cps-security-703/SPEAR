@@ -1,0 +1,35 @@
+# Core Vector Database and Embeddings
+chromadb==0.4.22
+sentence-transformers==2.3.1
+
+# Google Gemini Integration
+google-generativeai==0.3.2
+google-cloud-aiplatform==1.38.1
+
+# Data Collection and Processing
+requests==2.31.0
+beautifulsoup4==4.12.3
+pandas==2.1.4
+numpy==1.26.3
+
+# NVD and Security Data
+nvdlib==0.7.6
+xmltodict==0.13.0
+
+# Document Processing
+pypdf==3.17.4
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+python-docx==1.1.0
+openpyxl==3.1.2
+
+# Utilities
+python-dotenv==1.0.0
+tqdm==4.66.1
+pydantic==2.5.3
+loguru==0.7.2
+
+# Optional: LangChain for advanced RAG
+langchain==0.1.0
+langchain-google-genai==0.0.6
+langchain-community==0.0.13

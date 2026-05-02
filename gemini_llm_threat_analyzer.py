@@ -1,22 +1,202 @@
 #!/usr/bin/env python3
 """
-Gemini-based LLM Threat Analyzer for EVCS Attack Analytics
-Replaces Ollama deepseek with Google's Gemini Pro
+LLM Threat Analyzer for EVCS Attack Analytics
+Supports both Google Gemini (native SDK) and OpenRouter (multi-model API).
+
+Provider selection is controlled by the USE_GEMINI flag below.
+All API keys are read from the .env file (or environment variables).
+
+.env file format:
+    GEMINI_API_KEY=<your-google-api-key>
+    OPENROUTER_API_KEY=<your-openrouter-api-key>
 """
 
-import google.generativeai as genai
+from llm_metrics_logger import llm_call_metrics, LLMMetricsLogger
+
+# Load .env file (python-dotenv is optional; fallback to os.environ)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # .env variables must already be exported to environment
+
+import os
 import json
 import re
+import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-import time
+
+# ============================================================================
+# LLM PROVIDER CONFIGURATION (single source of truth)
+# ----------------------------------------------------------------------------
+# Flip USE_GEMINI to switch between Google Gemini and OpenRouter.
+# MODEL_NAME is resolved to the correct model id for the selected provider.
+# ============================================================================
+USE_GEMINI: bool = False           # False -> use OpenRouter
+GEMINI_MODEL_NAME: str = "models/gemini-2.5-flash"
+# Only JSON-response-capable OpenRouter models allowed (see whitelist below)
+OPENROUTER_MODEL_NAME: str = "google/gemini-3.1-flash-lite-preview"
+
+# OpenRouter models that reliably support response_format={"type":"json_object"}
+# NOTE: Free model availability rotates — check https://openrouter.ai/models
+JSON_CAPABLE_OPENROUTER_MODELS = {
+    # --- Paid (strong JSON mode) ---
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4-turbo",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "google/gemini-2.5-flash",         # ~$2.8/M tok
+    "google/gemini-2.5-pro",
+    "google/gemini-1.5-flash",
+    "google/gemini-1.5-pro",
+    "anthropic/claude-3.5-sonnet",
+    "deepseek/deepseek-v3.2",          # ~$0.6/M tok
+    "anthropic/claude-sonnet-4.5",
+    "anthropic/claude-3.5-haiku",
+    "deepseek/deepseek-v4-flash",
+    "google/gemini-2.5-flash",
+    "google/gemini-3.1-flash-lite-preview",
+    "google/gemini-3.1-flash",
+    # --- Free (availability may rotate; check OpenRouter) ---
+    "google/gemini-2.0-flash-exp:free",
+    "deepseek/deepseek-chat-v3.1:free",
+    "deepseek/deepseek-r1:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "minimax/minimax-m2.5:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "meta-llama/llama-3.3-70b-instruct",
+    "openrouter/elephant-alpha",
+    "openai/gpt-oss-120b:free",
+}
+
+# Conditional import of Gemini SDK only when needed
+if USE_GEMINI:
+    import google.generativeai as genai
+else:
+    genai = None  # not used in OpenRouter mode
+
+
+# ============================================================================
+# OpenRouter client: Gemini-compatible duck-typed wrapper
+# ----------------------------------------------------------------------------
+# Exposes the same .generate_content(prompt) -> response.text interface as
+# genai.GenerativeModel so that all downstream call sites work unchanged.
+# ============================================================================
+class _OpenRouterResponse:
+    """Mimics google.generativeai response object (has .text attribute)."""
+    __slots__ = ("text", "raw")
+
+    def __init__(self, text: str, raw=None):
+        self.text = text
+        self.raw = raw
+
+
+class OpenRouterClient:
+    """Gemini-compatible OpenRouter client (JSON-capable models only)."""
+
+    def __init__(self, api_key: str, model: str,
+                 max_output_tokens: int = 4096, temperature: float = 0.7):
+        if model not in JSON_CAPABLE_OPENROUTER_MODELS:
+            raise ValueError(
+                f"OpenRouter model '{model}' is not in the JSON-capable whitelist. "
+                f"Allowed: {sorted(JSON_CAPABLE_OPENROUTER_MODELS)}"
+            )
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError(
+                "OpenRouter requires the 'openai' package. Install with: pip install openai"
+            )
+
+        self.model_id = model
+        self.max_output_tokens = max_output_tokens
+        self.temperature = temperature
+        self._client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
+
+    def generate_content(self, prompt: str) -> _OpenRouterResponse:
+        """Agent-compatible generate_content; always requests JSON output."""
+        try:
+            resp = self._client.chat.completions.create(
+                model=self.model_id,
+                messages=[
+                    {"role": "system",
+                     "content": "You are a cybersecurity threat analyst for EVCS systems. "
+                                "Always respond with valid JSON when the user requests structured data."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=self.max_output_tokens,
+                temperature=self.temperature,
+                response_format={"type": "json_object"},
+                extra_headers={
+                    "HTTP-Referer": "https://research.evcs-llm-rl",
+                    "X-Title": "LLM-RL-EVCS-Comparison-Study",
+                },
+            )
+        except Exception:
+            # If response_format is unsupported (free/open-source models),
+            # retry without it so plain text is still captured.
+            resp = self._client.chat.completions.create(
+                model=self.model_id,
+                messages=[
+                    {"role": "system",
+                     "content": "You are a cybersecurity threat analyst for EVCS systems. "
+                                "Respond with valid JSON only when structured data is requested."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=self.max_output_tokens,
+                temperature=self.temperature,
+                extra_headers={
+                    "HTTP-Referer": "https://research.evcs-llm-rl",
+                    "X-Title": "LLM-RL-EVCS-Comparison-Study",
+                },
+            )
+
+        content = resp.choices[0].message.content or ""
+        # Strip markdown code fences if model wrapped JSON (common with Llama/Mistral)
+        fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+        if fenced:
+            content = fenced.group(1)
+        return _OpenRouterResponse(text=content, raw=resp)
+
+
+# ============================================================================
+# Helper: load API keys from environment (populated by .env via load_dotenv)
+# ============================================================================
+def _load_key_from_env(env_var: str, fallback_file: str = None) -> str:
+    """
+    Try os.environ first; if absent and fallback_file given, read that file.
+    Raises RuntimeError if neither source yields a non-empty key.
+    """
+    key = os.environ.get(env_var, "").strip()
+    if key:
+        return key
+    if fallback_file:
+        try:
+            with open(fallback_file, "r") as f:
+                key = f.read().strip()
+            if key:
+                print(f"##  Loaded {env_var} from fallback file '{fallback_file}'")
+                return key
+        except FileNotFoundError:
+            pass
+    raise RuntimeError(
+        f"API key '{env_var}' not found in environment or .env file. "
+        f"Please set {env_var} in your .env file."
+    )
+
 
 # Try to import existing classes for compatibility
 try:
     from llm_guided_evcs_attack_analytics import EVCSVulnerability, STRIDEMITREThreatMapper
 except ImportError:
     print("Warning: Could not import EVCSVulnerability. Creating minimal version.")
-    
+
     @dataclass
     class EVCSVulnerability:
         """EVCS vulnerability data class"""
@@ -30,25 +210,71 @@ except ImportError:
         mitigation: str
         detection_methods: List[str]
 
+
 class GeminiLLMThreatAnalyzer:
-    """Gemini Pro-powered threat analyzer for EVCS systems with conversation memory"""
-    
-    def __init__(self, api_key: str = None, model_name: str = "models/gemini-2.5-flash", max_history: int = 10):
+    """
+    Multi-provider LLM Threat Analyzer for EVCS systems.
+
+    Provider is selected by the module-level USE_GEMINI flag:
+      • USE_GEMINI = True  → Google Gemini (native SDK, key from GEMINI_API_KEY in .env)
+      • USE_GEMINI = False → OpenRouter   (openai-compat, key from OPENROUTER_API_KEY in .env)
+
+    All call sites remain unchanged — both backends expose the same
+    .model.generate_content(prompt) → response.text interface.
+    """
+
+    def __init__(self, api_key: str = None, model_name: str = None, max_history: int = 20):
         """
-        Initialize Gemini LLM Threat Analyzer
-        
+        Initialize LLM Threat Analyzer.
+
         Args:
-            api_key: Google API key for Gemini. If None, reads from gemini_key.txt
-            model_name: Gemini model to use (default: models/gemini-2.5-flash)
-            max_history: Maximum number of conversation turns to remember
+            api_key:    Override API key (usually left as None; read from .env).
+            model_name: Override model name (usually left as None; uses module-level constants).
+            max_history: Maximum conversation turns to remember.
         """
+        # ── Provider-aware model name resolution ─────────────────────────────
+        # Detect Gemini-format names ("models/gemini-*") vs OpenRouter-format
+        # ("provider/model-name").  If the caller passes a Gemini name but
+        # USE_GEMINI=False (or vice versa), override silently with the correct
+        # module-level constant.  This makes all legacy call sites like
+        #   GeminiLLMThreatAnalyzer(model_name='models/gemini-2.5-flash')
+        # work transparently after a provider switch.
+        _is_gemini_fmt = (model_name is not None and
+                          (model_name.startswith("models/gemini") or
+                           model_name.startswith("gemini")))
+        _is_or_fmt     = (model_name is not None and "/" in model_name
+                          and not _is_gemini_fmt)
+
+        if model_name is None:
+            # No override — use module-level default for the active provider
+            model_name = GEMINI_MODEL_NAME if USE_GEMINI else OPENROUTER_MODEL_NAME
+        elif USE_GEMINI and _is_or_fmt:
+            # OpenRouter name passed but Gemini selected → use Gemini default
+            print(f"##  Ignoring OpenRouter model '{model_name}' (USE_GEMINI=True); "
+                  f"using '{GEMINI_MODEL_NAME}'")
+            model_name = GEMINI_MODEL_NAME
+        elif not USE_GEMINI and _is_gemini_fmt:
+            # Gemini name passed but OpenRouter selected → use OpenRouter default
+            print(f"##  Ignoring Gemini model '{model_name}' (USE_GEMINI=False); "
+                  f"using '{OPENROUTER_MODEL_NAME}'")
+            model_name = OPENROUTER_MODEL_NAME
+        # else: caller passed a name that matches the active provider — keep it
+
+        # Expose attributes expected by llm_call_metrics decorator
         self.model_name = model_name
+        self.provider   = "gemini" if USE_GEMINI else "openrouter"
+
         self.is_available = False
         self.model = None
         self.max_history = max_history
-        self.min_request_interval = 15.0  # seconds between Gemini calls
+        self.min_request_interval = 15.0  # seconds between LLM calls
         self._last_request_time = 0.0
-        
+
+        # Fields required by llm_call_metrics decorator
+        self._last_raw_response  = None
+        self._last_prompt_length = 0
+        self._last_call_id       = None
+
         # Conversation memory
         self.conversation_history = []
         self.analysis_context = {
@@ -57,55 +283,109 @@ class GeminiLLMThreatAnalyzer:
             'system_learning': {},
             'threat_evolution': []
         }
-        
-        # Load API key
+
+        # ── Initialise the chosen backend ────────────────────────────────────
+        if USE_GEMINI:
+            self._init_gemini(api_key, model_name)
+        else:
+            # Legacy call sites (e.g. enhanced_integrated_evcs_system.py) read
+            # gemini_key.txt and pass the Google API key (starts with "AIza").
+            # That key is invalid for OpenRouter and causes a 401.
+            # When routing to OpenRouter, always discard Gemini-format keys so
+            # _init_openrouter reads OPENROUTER_API_KEY from .env instead.
+            _is_google_key = bool(api_key and str(api_key).startswith("AIza"))
+            if _is_google_key:
+                print("##  Discarding Gemini API key for OpenRouter; "
+                      "reading OPENROUTER_API_KEY from .env")
+                api_key = None
+            self._init_openrouter(api_key, model_name)
+
+    # ── Backend initializers ─────────────────────────────────────────────────
+
+    def _init_gemini(self, api_key: Optional[str], model_name: str) -> None:
+        """Configure and test the Google Gemini backend."""
         if api_key is None:
-            api_key = self._load_api_key()
-        
+            try:
+                api_key = _load_key_from_env("GEMINI_API_KEY", fallback_file="gemini_key.txt")
+            except RuntimeError as exc:
+                print(f"## {exc}")
+                return
         try:
-            # Configure Gemini
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel(model_name)
-            
-            # Test connection
+            self.model = genai.GenerativeModel(
+                model_name,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=4096,
+                    temperature=0.7,
+                ),
+            )
             self._test_connection()
-            
         except Exception as e:
-            print(f"Failed to initialize Gemini client: {e}")
+            print(f"Failed to initialize Agent client: {e}")
+            self.is_available = False
+
+    def _init_openrouter(self, api_key: Optional[str], model_name: str) -> None:
+        """Configure and test the OpenRouter backend."""
+        if api_key is None:
+            try:
+                api_key = _load_key_from_env("OPENROUTER_API_KEY")
+            except RuntimeError as exc:
+                print(f"## {exc}")
+                return
+        try:
+            self.model = OpenRouterClient(
+                api_key=api_key,
+                model=model_name,
+                max_output_tokens=4096,
+                temperature=0.7,
+            )
+            self._test_connection()
+        except Exception as e:
+            print(f"Failed to initialize OpenRouter client: {e}")
             self.is_available = False
 
     def _throttle_requests(self):
-        """Ensure a minimum delay between consecutive Gemini requests"""
+        """Ensure a minimum delay between consecutive LLM requests."""
         if self.min_request_interval <= 0:
             return
         now = time.time()
         elapsed = now - self._last_request_time
         if elapsed < self.min_request_interval:
-            wait_time = self.min_request_interval - elapsed
-            time.sleep(wait_time)
+            time.sleep(self.min_request_interval - elapsed)
         self._last_request_time = time.time()
-    
+
+    def _timed_generate(self, prompt: str):
+        """Call model.generate_content() and store artefacts for @llm_call_metrics.
+
+        Sets self._last_raw_response and self._last_prompt_length so the
+        decorator can extract token counts and build a full LLMCallRecord.
+        Also applies request throttling.
+        """
+        self._throttle_requests()
+        self._last_prompt_length = len(prompt)
+        response = self.model.generate_content(prompt)
+        # Store the full response object (not response.raw) so the
+        # llm_call_metrics decorator can find .raw on _OpenRouterResponse
+        # and extract token counts via usage.prompt_tokens / completion_tokens.
+        self._last_raw_response = response
+        return response
+
     def _load_api_key(self) -> str:
-        """Load API key from gemini_key.txt"""
-        try:
-            with open('gemini_key.txt', 'r') as f:
-                return f.read().strip()
-        except FileNotFoundError:
-            raise FileNotFoundError("gemini_key.txt not found. Please create the file with your Gemini API key.")
-        except Exception as e:
-            raise Exception(f"Error reading API key: {e}")
-    
+        """Legacy helper — now delegates to _load_key_from_env."""
+        return _load_key_from_env("GEMINI_API_KEY", fallback_file="gemini_key.txt")
+
     def _test_connection(self):
-        """Test connection to Gemini"""
+        """Test connection to the configured LLM backend."""
         try:
-            response = self.model.generate_content("Test connection")
+            response = self.model.generate_content("Reply with the word OK only.")
             if response.text:
                 self.is_available = True
-                print(f"✅ Gemini connection successful with model: {self.model_name}")
+                backend = "Gemini" if USE_GEMINI else "OpenRouter"
+                print(f"## {backend} connection successful with model: {self.model_name}")
             else:
-                raise Exception("Empty response from Gemini")
+                raise Exception("Empty response from LLM backend")
         except Exception as e:
-            print(f" Gemini connection failed: {e}")
+            print(f"##LLM connection failed: {e}")
             self.is_available = False
     
     def _add_to_conversation_history(self, user_input: str, assistant_response: str, analysis_type: str = None):
@@ -241,26 +521,38 @@ class GeminiLLMThreatAnalyzer:
             'system_learning': {},
             'threat_evolution': []
         }
-        print("🧠 Learning context reset")
+        print("## Learning context reset")
     
+    @llm_call_metrics()
     def analyze_threats(self, system_data: Dict) -> Dict:
-        """Analyze threats using Gemini Pro LLM"""
+        """Analyze threats using Agent Pro LLM"""
         if not self.is_available:
             return self._fallback_analysis(system_data, {})
         
         try:
-            # Prepare system data for analysis
-            system_summary = {
-                'evcs_systems': system_data.get('evcs_systems', 6),
-                'pinn_models': system_data.get('pinn_models', 'active'),
-                'federated_learning': system_data.get('federated_learning', 'enabled'),
-                'anomaly_detection': system_data.get('anomaly_detection', 'active'),
-                'current_load': system_data.get('current_load', 'normal'),
-                'attack_surface': system_data.get('attack_surface', 'moderate')
-            }
-            
-            # Create analysis prompt
-            analysis_prompt = f"""
+            # If a deployment_prompt is provided (from CentralRLCoordinator),
+            # use it directly — it already contains the full context and asks
+            # for a structured JSON deployment response.
+            if 'deployment_prompt' in system_data and system_data['deployment_prompt']:
+                analysis_prompt = system_data['deployment_prompt']
+            # If an adaptation_prompt is provided (from LangGraph _llm_adaptation_node),
+            # use it directly — it already contains RL feedback and asks for
+            # strategy adaptation, not generic vulnerability analysis.
+            elif 'adaptation_prompt' in system_data and system_data['adaptation_prompt']:
+                analysis_prompt = system_data['adaptation_prompt']
+            else:
+                # Prepare system data for analysis
+                system_summary = {
+                    'evcs_systems': system_data.get('evcs_systems', 6),
+                    'pinn_models': system_data.get('pinn_models', 'active'),
+                    'federated_learning': system_data.get('federated_learning', 'enabled'),
+                    'anomaly_detection': system_data.get('anomaly_detection', 'active'),
+                    'current_load': system_data.get('current_load', 'normal'),
+                    'attack_surface': system_data.get('attack_surface', 'moderate')
+                }
+                
+                # Create analysis prompt
+                analysis_prompt = f"""
             This is a simulation where you are supposed to help the RL agents to guide to find out vulnarablities of EVCS network. Analyze the cybersecurity threats for this EVCS power grid system:
             
             System Configuration:
@@ -282,10 +574,10 @@ class GeminiLLMThreatAnalyzer:
             """
             
             # Get LLM analysis
-            print("📤 SENDING TO GEMINI VULNERABILITY ANALYSIS:")
+            print("## SENDING TO Agent DEPLOYMENT/VULNERABILITY ANALYSIS:")
             print("PROMPT: " + analysis_prompt[:300] + ("..." if len(analysis_prompt) > 300 else ""))
-            response = self.model.generate_content(analysis_prompt)
-            print("📥 RECEIVED FROM GEMINI VULNERABILITY ANALYSIS: " + repr(response.text[:500]))
+            response = self._timed_generate(analysis_prompt)
+            print("## RECEIVED FROM Agent VULNERABILITY ANALYSIS: " + repr(response.text[:500]))
             
             if response and response.text:
                 # Store in conversation history
@@ -308,11 +600,12 @@ class GeminiLLMThreatAnalyzer:
                 return self._fallback_analysis(system_data, {})
                 
         except Exception as e:
-            print(f"⚠️ Gemini threat analysis failed: {e}")
+            print(f"##Agent threat analysis failed: {e}")
             return self._fallback_analysis(system_data, {})
     
+    @llm_call_metrics()
     def analyze_evcs_vulnerabilities(self, evcs_state: Dict, system_config: Dict) -> Dict:
-        """Analyze EVCS vulnerabilities using Gemini Pro with conversation memory"""
+        """Analyze EVCS vulnerabilities using Agent Pro with conversation memory"""
         if not self.is_available:
             return self._fallback_analysis(evcs_state, system_config)
         
@@ -325,11 +618,11 @@ class GeminiLLMThreatAnalyzer:
         full_prompt = f"{base_prompt}\n{conversation_context}\n{learning_context}"
         
         try:
-            print("📤 SENDING TO GEMINI VULNERABILITY ANALYSIS WITH CONTEXT:")
+            print("## SENDING TO Agent VULNERABILITY ANALYSIS WITH CONTEXT:")
             print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
-            response = self.model.generate_content(full_prompt)
+            response = self._timed_generate(full_prompt)
             llm_response = response.text
-            print("📥 RECEIVED FROM GEMINI VULNERABILITY ANALYSIS: " + repr(llm_response[:500]))
+            print("## RECEIVED FROM Agent VULNERABILITY ANALYSIS: " + repr(llm_response[:500]))
             result = self._parse_vulnerability_response(llm_response, evcs_state)
             
             # Update conversation history and learning context
@@ -343,12 +636,13 @@ class GeminiLLMThreatAnalyzer:
             return result
             
         except Exception as e:
-            print(f"Gemini analysis failed: {e}")
+            print(f"Agent analysis failed: {e}")
             return self._fallback_analysis(evcs_state, system_config)
     
-    def generate_attack_strategy(self, vulnerabilities: List[EVCSVulnerability], 
+    @llm_call_metrics()
+    def generate_attack_strategy(self, vulnerabilities: List[EVCSVulnerability],
                                evcs_state: Dict, constraints: Dict) -> Dict:
-        """Generate attack strategy using Gemini Pro with conversation memory"""
+        """Generate attack strategy using Agent Pro with conversation memory"""
         if not self.is_available:
             return self._fallback_strategy(vulnerabilities, constraints)
         
@@ -361,12 +655,11 @@ class GeminiLLMThreatAnalyzer:
         full_prompt = f"{base_prompt}\n{conversation_context}\n{learning_context}"
         
         try:
-            print("📤 SENDING TO GEMINI ATTACK STRATEGY:")
+            print("## SENDING TO Agent ATTACK STRATEGY:")
             print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
-            self._throttle_requests()
-            response = self.model.generate_content(full_prompt)
+            response = self._timed_generate(full_prompt)
             llm_response = response.text
-            print("📥 RECEIVED FROM GEMINI ATTACK STRATEGY: " + repr(llm_response[:500]))
+            print("## RECEIVED FROM Agent ATTACK STRATEGY: " + repr(llm_response[:500]))
             result = self._parse_strategy_response(llm_response, vulnerabilities)
             
             # Update conversation history and learning context
@@ -381,7 +674,7 @@ class GeminiLLMThreatAnalyzer:
             return result
             
         except Exception as e:
-            print(f"Gemini strategy generation failed: {e}")
+            print(f"Agent strategy generation failed: {e}")
             return self._fallback_strategy(vulnerabilities, constraints)
     
     def analyze_system_with_context(self, data: Dict, analysis_type: str, system_prompt: str = None) -> Dict:
@@ -413,12 +706,12 @@ class GeminiLLMThreatAnalyzer:
             
             full_prompt = "\n\n".join(prompt_parts)
             
-            print("📤 SENDING TO GEMINI GENERAL ANALYSIS:")
+            print("## SENDING TO Agent GENERAL ANALYSIS:")
             print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
             self._throttle_requests()
             response = self.model.generate_content(full_prompt)
             llm_response = response.text
-            print("📥 RECEIVED FROM GEMINI GENERAL ANALYSIS: " + repr(llm_response[:500]))
+            print("## RECEIVED FROM Agent GENERAL ANALYSIS: " + repr(llm_response[:500]))
             result = self._parse_llm_response(llm_response, analysis_type)
             
             # Update conversation history and learning context
@@ -432,9 +725,10 @@ class GeminiLLMThreatAnalyzer:
             return result
             
         except Exception as e:
-            print(f"Gemini analysis with context failed: {e}")
+            print(f"Agent analysis with context failed: {e}")
             return self._fallback_analysis_general(data, analysis_type)
     
+    @llm_call_metrics()
     def analyze_threat_scenario(self, scenario_data: Dict) -> Dict:
         """Analyze threat scenarios for strategic attack combination and optimization"""
         if not self.is_available:
@@ -464,12 +758,11 @@ Please analyze this threat scenario and provide strategic recommendations for at
 """
             
             # Generate response
-            print("📤 SENDING TO GEMINI THREAT SCENARIO ANALYSIS:")
+            print("## SENDING TO Agent THREAT SCENARIO ANALYSIS:")
             print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
-            self._throttle_requests()
-            response = self.model.generate_content(full_prompt)
+            response = self._timed_generate(full_prompt)
             llm_response = response.text
-            print("📥 RECEIVED FROM GEMINI THREAT SCENARIO ANALYSIS: " + repr(llm_response[:500]))
+            print("## RECEIVED FROM Agent THREAT SCENARIO ANALYSIS: " + repr(llm_response[:500]))
             
             # Parse response
             result = self._parse_llm_response(llm_response, context)
@@ -485,7 +778,7 @@ Please analyze this threat scenario and provide strategic recommendations for at
             return result
             
         except Exception as e:
-            print(f"Gemini threat scenario analysis failed: {e}")
+            print(f"Agent threat scenario analysis failed: {e}")
             return self._fallback_threat_scenario_analysis(scenario_data)
     
     def _create_vulnerability_prompt(self, evcs_state: Dict, system_config: Dict) -> str:
@@ -635,7 +928,7 @@ Please analyze this threat scenario and provide strategic recommendations for at
         """
     
     def _parse_vulnerability_response(self, response: str, evcs_state: Dict) -> Dict:
-        """Parse vulnerability analysis response from Gemini"""
+        """Parse vulnerability analysis response from Agent"""
         try:
             # Extract vulnerabilities, CVSS scores, etc.
             vulnerabilities = self._extract_vulnerabilities_from_text(response)
@@ -648,14 +941,14 @@ Please analyze this threat scenario and provide strategic recommendations for at
                 'mitre_techniques': mitre_techniques,
                 'stride_mapping': self._extract_stride_mapping(response),
                 'raw_analysis': response,
-                'confidence': 0.9  # High confidence for Gemini Pro
+                'confidence': 0.9  # High confidence for Agent Pro
             }
         except Exception as e:
             print(f"Failed to parse vulnerability response: {e}")
             return {'raw_analysis': response, 'parse_error': str(e)}
     
     def _parse_strategy_response(self, response: str, vulnerabilities: List[EVCSVulnerability]) -> Dict:
-        """Parse attack strategy response from Gemini"""
+        """Parse attack strategy response from Agent"""
         try:
             return {
                 'strategy_name': self._extract_strategy_name(response),
@@ -818,7 +1111,7 @@ Please analyze this threat scenario and provide strategic recommendations for at
         for line in lines:
             if 'strategy' in line.lower() and len(line.strip()) < 100:
                 return line.strip()
-        return "Gemini Generated Attack Strategy"
+        return "Agent Generated Attack Strategy"
     
     def _extract_success_probability(self, text: str) -> float:
         """Extract success probability from text"""
@@ -846,7 +1139,7 @@ Please analyze this threat scenario and provide strategic recommendations for at
         }
     
     def _fallback_analysis(self, evcs_state: Dict, system_config: Dict) -> Dict:
-        """Fallback analysis when Gemini is not available"""
+        """Fallback analysis when Agent is not available"""
         return {
             'vulnerabilities': [
                 {
@@ -863,7 +1156,7 @@ Please analyze this threat scenario and provide strategic recommendations for at
         }
     
     def _fallback_strategy(self, vulnerabilities: List[EVCSVulnerability], constraints: Dict) -> Dict:
-        """Fallback strategy when Gemini is not available"""
+        """Fallback strategy when Agent is not available"""
         return {
             'strategy_name': 'Fallback Attack Strategy',
             'attack_sequence': ['reconnaissance', 'initial_access', 'persistence', 'impact'],
@@ -875,15 +1168,15 @@ Please analyze this threat scenario and provide strategic recommendations for at
     def _fallback_analysis_general(self, data: Dict, analysis_type: str) -> Dict:
         """General fallback analysis"""
         return {
-            'analysis': 'Fallback analysis - Gemini not available',
+            'analysis': 'Fallback analysis - Agent is not available',
             'fallback': True,
             'analysis_type': analysis_type
         }
     
     def _fallback_threat_scenario_analysis(self, scenario_data: Dict) -> Dict:
-        """Fallback threat scenario analysis when Gemini is not available"""
+        """Fallback threat scenario analysis when Agent is not available"""
         return {
-            'analysis': 'Fallback threat scenario analysis - Gemini not available',
+            'analysis': 'Fallback threat scenario analysis - Agent is not available',
             'strategic_recommendations': [
                 'Use original agent attacks without optimization',
                 'Apply standard attack coordination patterns',
@@ -1003,98 +1296,91 @@ Please analyze this threat scenario and provide strategic recommendations for at
                     self.conversation_history = self.conversation_history[-self.max_history:]
                     
         except Exception as e:
-            print(f"⚠️ Failed to add to history: {e}")
+            print(f"##Failed to add to history: {e}")
             # Continue without failing
 
 # For backward compatibility
 class OllamaLLMThreatAnalyzer(GeminiLLMThreatAnalyzer):
-    """Backward compatibility wrapper that uses Gemini instead of Ollama"""
-    
+    """Backward compatibility wrapper — now delegates to the active LLM backend."""
+
     def __init__(self, base_url=None, model=None):
-        """Initialize with Gemini instead of Ollama"""
-        print(" Redirecting from Ollama to Gemini Pro...")
-        super().__init__(model_name="gemini-pro")
-        
-        # Override the model attribute for compatibility
-        self.base_url = "https://generativelanguage.googleapis.com"
-        self.model = "gemini-pro"
-        
-        # For compatibility with existing code that checks these attributes
+        """Initialize using the configured provider (Agent or OpenRouter)."""
+        backend = "Gemini" if USE_GEMINI else "OpenRouter"
+        print(f"##  Redirecting OllamaLLMThreatAnalyzer → {backend} backend...")
+        super().__init__()  # uses module-level defaults
+
+        # Legacy attributes kept for callers that inspect them
+        self.base_url = (
+            "https://generativelanguage.googleapis.com"
+            if USE_GEMINI
+            else "https://openrouter.ai/api/v1"
+        )
         self.client = self  # Point to self for client calls
-    
+
     def chat(self):
-        """Compatibility method for existing code"""
+        """Compatibility method for existing code."""
         return self
-    
+
     def completions(self):
-        """Compatibility method for existing code"""
+        """Compatibility method for existing code."""
         return self
-    
+
     def create(self, model=None, messages=None, max_tokens=None, temperature=None, **kwargs):
-        """Compatibility method for existing chat.completions.create calls"""
+        """Compatibility method for existing chat.completions.create calls."""
         if not messages:
             return type('Response', (), {'choices': [type('Choice', (), {'message': type('Message', (), {'content': 'Error: No messages provided'})()})()]})()
-        
+
         try:
-            # Extract the user message
             user_message = ""
             system_message = ""
-            
             for msg in messages:
                 if msg.get('role') == 'user':
                     user_message = msg.get('content', '')
                 elif msg.get('role') == 'system':
                     system_message = msg.get('content', '')
-            
-            # Combine system and user messages
+
             full_prompt = f"{system_message}\n\n{user_message}" if system_message else user_message
-            
-            # Generate response using Gemini
-            print("📤 SENDING TO GEMINI COMPATIBILITY LAYER:")
+
+            backend = "Gemini" if USE_GEMINI else "OpenRouter"
+            print(f"## SENDING TO {backend} COMPATIBILITY LAYER:")
             print("PROMPT: " + full_prompt[:300] + ("..." if len(full_prompt) > 300 else ""))
-            response = super().model.generate_content(full_prompt)
-            print("📥 RECEIVED FROM GEMINI COMPATIBILITY LAYER: " + repr(response.text[:500]))
-            
-            # Create compatible response object
+            response = self.model.generate_content(full_prompt)
+            print(f"## RECEIVED FROM {backend} COMPATIBILITY LAYER: " + repr(response.text[:500]))
+
             choice = type('Choice', (), {
                 'message': type('Message', (), {'content': response.text})()
             })()
-            
             return type('Response', (), {'choices': [choice]})()
-            
+
         except Exception as e:
-            print(f"Gemini API call failed: {e}")
-            # Return fallback response
+            print(f"LLM API call failed in compat layer: {e}")
             choice = type('Choice', (), {
                 'message': type('Message', (), {'content': 'Fallback response due to API error'})()
             })()
-            
             return type('Response', (), {'choices': [choice]})()
 
 if __name__ == "__main__":
-    # Test the Gemini LLM Threat Analyzer
-    print("Testing Gemini LLM Threat Analyzer...")
-    
-    analyzer = GeminiLLMThreatAnalyzer(model_name="models/gemini-2.5-flash")
-    
+    backend = "Gemini" if USE_GEMINI else "OpenRouter"
+    model   = GEMINI_MODEL_NAME if USE_GEMINI else OPENROUTER_MODEL_NAME
+    print(f"Testing LLM Threat Analyzer — provider: {backend}, model: {model}")
+
+    analyzer = GeminiLLMThreatAnalyzer()  # reads keys from .env automatically
+
     if analyzer.is_available:
-        # Test vulnerability analysis
         test_evcs_state = {
             'charging_stations': 6,
             'active_sessions': 12,
             'grid_frequency': 60.0,
             'system_load': 850.5
         }
-        
         test_config = {
             'max_power': 1000,
             'voltage_range': [0.95, 1.05]
         }
-        
-        print("\n Testing vulnerability analysis...")
+
+        print("\n## Testing vulnerability analysis...")
         results = analyzer.analyze_evcs_vulnerabilities(test_evcs_state, test_config)
         print(f"Found {len(results.get('vulnerabilities', []))} vulnerabilities")
-        
-        print("\n Gemini LLM Threat Analyzer test completed!")
+        print(f"\n## LLM Threat Analyzer test completed! (provider={backend})")
     else:
-        print(" Gemini LLM Threat Analyzer not available")
+        print(f"##LLM Threat Analyzer not available (provider={backend})")

@@ -36,6 +36,16 @@ from dss_function_qsts import get_loads, get_BusDistance
 import warnings
 warnings.filterwarnings('ignore')
 
+# ── ACN Caltech dataset EVSE parameters ────────────────────────────────────────
+# Source: acn_sim_interface.py  (CALTECH_EVSE_VOLTAGE_V / CALTECH_MAX_PILOT_A)
+ACN_EVSE_VOLTAGE_V  = 240.0                               # L2 single-phase (V)
+ACN_MAX_PILOT_A     = 32.0                                # Max pilot signal  (A)
+ACN_MIN_PILOT_A     = 0.0                                 # Min pilot signal  (A)
+ACN_P_MAX_KW        = ACN_EVSE_VOLTAGE_V * ACN_MAX_PILOT_A / 1000.0  # 7.68 kW
+ACN_VOLTAGE_MIN_V   = ACN_EVSE_VOLTAGE_V * 0.90          # 216 V  (−10% band)
+ACN_VOLTAGE_MAX_V   = ACN_EVSE_VOLTAGE_V * 1.10          # 264 V  (+10% band)
+ACN_VOLTAGE_RANGE   = ACN_VOLTAGE_MAX_V - ACN_VOLTAGE_MIN_V  # 48 V
+
 # Additional imports for enhanced PINN training
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import CosineAnnealingLR, OneCycleLR
@@ -57,18 +67,18 @@ class PINNConfig:
     data_weight: float = 1.0
     boundary_weight: float = 1.0
     initial_weight: float = 1.0
-    max_voltage: float = 500.0
-    max_current: float = 200.0
-    max_power: float = 100.0
-    min_voltage: float = 300.0
-    min_current: float = 10.0
-    min_power: float = 5.0
-    voltage_range: float = 200.0
-    current_range: float = 190.0
-    power_range: float = 95.0
-    rated_voltage: float = 400.0
-    rated_current: float = 100.0
-    rated_power: float = 50.0
+    max_voltage: float = ACN_VOLTAGE_MAX_V   # 264 V  (+10% ACN L2 band)
+    max_current: float = ACN_MAX_PILOT_A     # 32 A   (ACN max pilot signal)
+    max_power: float = ACN_P_MAX_KW          # 7.68 kW
+    min_voltage: float = ACN_VOLTAGE_MIN_V   # 216 V  (−10% ACN L2 band)
+    min_current: float = ACN_MIN_PILOT_A     # 0 A
+    min_power: float = 0.0
+    voltage_range: float = ACN_VOLTAGE_RANGE # 48 V
+    current_range: float = ACN_MAX_PILOT_A   # 32 A
+    power_range: float = ACN_P_MAX_KW        # 7.68 kW
+    rated_voltage: float = ACN_EVSE_VOLTAGE_V  # 240 V
+    rated_current: float = ACN_MAX_PILOT_A     # 32 A
+    rated_power: float = ACN_P_MAX_KW          # 7.68 kW
     lstm_hidden_size: int = 128
     lstm_num_layers: int = 2
     sequence_length: int = 8
@@ -97,23 +107,23 @@ class LSTMPINNConfig:
     boundary_weight: float = 0.8 # Moderate boundary weight
     temporal_weight: float = 0.3 # Moderate temporal weight
     
-    # EVCS Charging Specifications (Updated for Realistic Constraints)
-    # Base Reference Values
-    rated_voltage: float = 400.0  # V (base reference voltage)
-    rated_current: float = 100.0  # A (base reference current)
-    rated_power: float = 50.0     # kW (400V × 100A = 40kW base power)
-    
-    # Voltage Constraints
-    max_voltage: float = 500.0    # V (maximum voltage limit)
-    min_voltage: float = 300.0    # V (minimum voltage limit)
-    
-    # Current Constraints  
-    max_current: float = 150.0    # A (maximum current limit)
-    min_current: float = 50.0     # A (minimum current limit)
-    
-    # Power Constraints (calculated from voltage × current limits)
-    max_power: float = 75.0       # kW (500V × 150A = 75kW maximum)
-    min_power: float = 15.0       # kW (300V × 50A = 15kW minimum)
+    # EVCS Charging Specifications — ACN Caltech L2 profile
+    # Source: acn_sim_interface.py (CALTECH_EVSE_VOLTAGE_V=240V, CALTECH_MAX_PILOT_A=32A)
+    rated_voltage: float = ACN_EVSE_VOLTAGE_V   # 240 V  (L2 EVSE nominal)
+    rated_current: float = ACN_MAX_PILOT_A       # 32 A   (max pilot signal)
+    rated_power: float = ACN_P_MAX_KW            # 7.68 kW (240V × 32A)
+
+    # Voltage Constraints  (ACN L2: ±10% of 240V)
+    max_voltage: float = ACN_VOLTAGE_MAX_V       # 264 V
+    min_voltage: float = ACN_VOLTAGE_MIN_V       # 216 V
+
+    # Current Constraints  (ACN pilot signal range)
+    max_current: float = ACN_MAX_PILOT_A         # 32 A
+    min_current: float = ACN_MIN_PILOT_A         # 0 A
+
+    # Power Constraints (derived from ACN V × I limits)
+    max_power: float = ACN_P_MAX_KW              # 7.68 kW (264V × 32A / 1000)
+    min_power: float = 0.0                       # 0 kW    (no charge)
     
     # System constraints
     efficiency: float = 0.95
@@ -151,7 +161,7 @@ class DifferentiableEVCSDynamics(nn.Module):
         # Physics parameters (learnable)
         self.efficiency = nn.Parameter(torch.tensor(0.95))
         self.thermal_resistance = nn.Parameter(torch.tensor(0.1))
-        self.dc_link_voltage = nn.Parameter(torch.tensor(400.0))
+        self.dc_link_voltage = nn.Parameter(torch.tensor(ACN_EVSE_VOLTAGE_V))
         
     def forward(self, soc, grid_voltage, grid_frequency, demand_factor, 
                 urgency_factor, time_hours, voltage_ref, current_ref, power_ref):
@@ -185,7 +195,9 @@ class DifferentiableEVCSDynamics(nn.Module):
 class DynamicWeightAveraging:
     """Dynamic weight averaging for balancing multiple loss terms"""
     
-    def __init__(self, num_losses: int, alpha: float = 0.16):
+    def __init__(self, num_losses: int, alpha: float = 0.05):
+        """alpha=0.05 follows Kendall et al. (CVPR 2018) — smaller keeps the
+        log-variance regularization from dominating the total loss."""
         self.num_losses = num_losses
         self.alpha = alpha
         self.log_vars = nn.Parameter(torch.zeros(num_losses))
@@ -194,44 +206,40 @@ class DynamicWeightAveraging:
     def get_weights(self, losses: List[torch.Tensor]) -> List[torch.Tensor]:
         """Calculate dynamic weights for loss terms"""
         if self.initial_losses is None:
-            self.initial_losses = [loss.detach() for loss in losses]
+            self.initial_losses = [loss.detach().clamp(min=1e-8) for loss in losses]
         
-        # Calculate relative losses - ensure scalar comparisons
+        # Calculate relative losses (normalised by initial value → stays ~O(1))
         relative_losses = []
         for i, loss in enumerate(losses):
-            # Fix boolean tensor issue by using .item() to get scalar value
             initial_loss_scalar = self.initial_losses[i].mean() if self.initial_losses[i].numel() > 1 else self.initial_losses[i]
-            initial_loss_value = initial_loss_scalar.item()
-            
-            if initial_loss_value > 0:
-                # Use scalar division to avoid shape mismatches
-                loss_scalar = loss.mean() if loss.numel() > 1 else loss
-                relative_loss = loss_scalar / initial_loss_scalar
-            else:
-                relative_loss = loss.mean() if loss.numel() > 1 else loss
+            loss_scalar = loss.mean() if loss.numel() > 1 else loss
+            relative_loss = loss_scalar / (initial_loss_scalar + 1e-8)
             relative_losses.append(relative_loss)
         
-        # Calculate weights using learnable parameters
+        # Weights from clamped log_vars — prevents unbounded growth
         weights = []
         for i in range(self.num_losses):
-            weight = torch.exp(-self.log_vars[i])
+            # Clamp log_vars to [-3, 3] so exp(-log_var) stays in [0.05, 20]
+            log_var_clamped = torch.clamp(self.log_vars[i], -3.0, 3.0)
+            weight = torch.exp(-log_var_clamped)
             weights.append(weight)
         
         return weights, relative_losses
     
     def compute_weighted_loss(self, losses: List[torch.Tensor]) -> torch.Tensor:
-        """Compute weighted loss with dynamic balancing"""
+        """Compute weighted loss using RELATIVE losses so the total stays O(1)
+        throughout training regardless of the absolute magnitude of each term."""
         weights, relative_losses = self.get_weights(losses)
         
-        # Compute weighted loss - ensure all terms are scalars
         weighted_loss = torch.tensor(0.0, device=losses[0].device)
-        for i, (loss, weight) in enumerate(zip(losses, weights)):
-            # Ensure loss is a scalar
-            loss_scalar = loss.mean() if loss.numel() > 1 else loss
-            weight_scalar = weight.mean() if weight.numel() > 1 else weight
-            log_var_scalar = self.log_vars[i].mean() if self.log_vars[i].numel() > 1 else self.log_vars[i]
-            
-            weighted_loss += weight_scalar * loss_scalar + self.alpha * log_var_scalar
+        for i, (rel_loss, weight) in enumerate(zip(relative_losses, weights)):
+            # Use scalar relative loss (normalised by initial) so total ≈ O(num_losses)
+            rel_scalar    = rel_loss.mean() if rel_loss.numel() > 1 else rel_loss
+            weight_scalar = weight.mean()   if weight.numel()   > 1 else weight
+            # Clamp log_var before adding regularisation term
+            log_var_clamped = torch.clamp(self.log_vars[i], -3.0, 3.0)
+            log_var_scalar  = log_var_clamped.mean() if log_var_clamped.numel() > 1 else log_var_clamped
+            weighted_loss += weight_scalar * rel_scalar + self.alpha * log_var_scalar
         
         return weighted_loss
 
@@ -521,46 +529,152 @@ class LSTMPINNOptimizer(nn.Module):
         # Pass through fully connected layers
         normalized_output = self.fc_layers(last_output)
         
-        # Scale outputs to realistic EVCS physical ranges
-        voltage_ref = (normalized_output[:, 0] * 200.0 + 300.0)  # 300-500V (realistic EVCS range)
-        
-        current_ref = (normalized_output[:, 1] * 100.0 + 50.0)   # 50-150A (realistic EVCS range)
-        
-        power_ref = (normalized_output[:, 2] * 60.0 + 15.0)      # 15-75kW (realistic EVCS range)
+        # Scale outputs to ACN Caltech L2 physical ranges (240V ±10%, 0–32A, 0–7.68kW)
+        voltage_ref = normalized_output[:, 0] * ACN_VOLTAGE_RANGE + ACN_VOLTAGE_MIN_V  # 216–264 V
+        current_ref = normalized_output[:, 1] * ACN_MAX_PILOT_A                        #   0– 32 A
+        power_ref   = normalized_output[:, 2] * ACN_P_MAX_KW                           #   0–7.68 kW
         
         return torch.stack([voltage_ref, current_ref, power_ref], dim=1)
-    
+
+    def forward_sequence(self, x: torch.Tensor) -> torch.Tensor:
+        """Run FC head on ALL LSTM timesteps (not just the last).
+
+        Returns tensor of shape (batch_size, seq_len, 3) with physical-unit
+        predictions [V_ref, I_ref, P_ref] at every timestep.
+        Used by ode_residual_loss to compute finite-difference ODE residuals.
+        BatchNorm1d treats (batch*seq) as an independent batch — correct behaviour.
+        """
+        lstm_out, _ = self.lstm(x)               # (B, T, H)
+        B, T, H = lstm_out.shape
+        flat = lstm_out.reshape(B * T, H)         # (B*T, H)
+        out  = self.fc_layers(flat)               # (B*T, 3)
+        out  = out.reshape(B, T, -1)              # (B, T, 3)
+        V = out[:, :, 0] * ACN_VOLTAGE_RANGE + ACN_VOLTAGE_MIN_V  # 216–264 V (ACN L2 ±10%)
+        I = out[:, :, 1] * ACN_MAX_PILOT_A                        #   0– 32 A (ACN pilot)
+        P = out[:, :, 2] * ACN_P_MAX_KW                           #   0–7.68 kW (ACN max)
+        return torch.stack([V, I, P], dim=2)      # (B, T, 3)
+
     def temporal_consistency_loss(self, sequences: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
-        """Calculate temporal consistency loss for time series"""
-        # sequences shape: (batch_size, sequence_length, input_dim)
-        # outputs shape: (batch_size, output_dim)
-        
+        """Fast, normalized temporal consistency loss.
+
+        Uses the already-computed forward_sequence (from ode_residual_loss) rather
+        than running seq_len-1 separate forward passes.  Returns a value in [0, 1]
+        by normalising consecutive differences by the physical output ranges.
+        """
         batch_size, seq_len, _ = sequences.shape
-        
+
         if seq_len < 2:
             return torch.tensor(0.0, device=sequences.device)
-        
-        # Get predictions for previous time steps
-        prev_outputs = []
-        for i in range(seq_len - 1):
-            # Use subsequence ending at time i+1
-            subseq = sequences[:, :i+2, :]
-            if subseq.shape[1] >= 2:  # Need at least 2 time steps
-                prev_out = self.forward(subseq)
-                prev_outputs.append(prev_out)
-        
-        if not prev_outputs:
+
+        # Run ONE forward_sequence pass — (B, T, 3) in physical units
+        with torch.no_grad():
+            seq_out = self.forward_sequence(sequences.detach())  # detach: gradients from ODE loss
+
+        # Re-run WITH gradients for the loss to be meaningful
+        seq_out_grad = self.forward_sequence(sequences)  # (B, T, 3)
+
+        # Normalise by physical ranges so all three outputs contribute equally
+        v_range = ACN_VOLTAGE_RANGE  # 264 - 216 = 48 V  (ACN L2 ±10%)
+        i_range = ACN_MAX_PILOT_A    # 32 - 0 = 32 A
+        p_range = ACN_P_MAX_KW       # 7.68 - 0 = 7.68 kW
+
+        v_diff = (seq_out_grad[:, 1:, 0] - seq_out_grad[:, :-1, 0]) / v_range  # (B, T-1)
+        i_diff = (seq_out_grad[:, 1:, 1] - seq_out_grad[:, :-1, 1]) / i_range
+        p_diff = (seq_out_grad[:, 1:, 2] - seq_out_grad[:, :-1, 2]) / p_range
+
+        # Mean squared differences — encourages smooth temporal profiles
+        temporal_loss = (
+            torch.mean(v_diff ** 2) +
+            torch.mean(i_diff ** 2) +
+            torch.mean(p_diff ** 2)
+        ) / 3.0  # normalise to [0, ~1]
+
+        if torch.isnan(temporal_loss) or torch.isinf(temporal_loss):
             return torch.tensor(0.0, device=sequences.device)
-        
-        # Calculate smoothness constraint
-        temporal_loss = torch.tensor(0.0, device=sequences.device)
-        for i in range(len(prev_outputs) - 1):
-            # Penalize large changes between consecutive predictions
-            diff = torch.abs(prev_outputs[i+1] - prev_outputs[i])
-            temporal_loss += diff.mean()
-        
-        return temporal_loss / max(1, len(prev_outputs) - 1)
-    
+        return temporal_loss
+
+    def ode_residual_loss(self, sequences: torch.Tensor) -> torch.Tensor:
+        """Enforce the actual differential equations from evcs_dynamics.py as PINN residuals.
+
+        Applies the ODEs at EVERY timestep of the LSTM sequence using finite
+        differences, making the gradient signal from converter physics act across
+        the full temporal context — not just the last step.
+
+        ODE 1 — SOC dynamics  (evcs_dynamics.py line 197)
+        ────────────────────────────────────────────────
+          dsoc_dt = P_battery × η_charge / (capacity × 3600)
+          Finite-difference (Δt = 360 s, i.e. 6-min steps):
+            ΔSOC_raw = P[t] × η × Δt / (C_kWh × 3600)
+
+          The data generator samples SOC ∈ [0.2, 0.8], so MinMaxScaler maps
+          the raw SOC range (0.6 wide) to [0, 1].  Working in normalised space:
+            ΔSOC_norm = ΔSOC_raw / 0.6
+
+        ODE 2 — DC-link power balance at every timestep
+        ────────────────────────────────────────────────
+          At Δt = 6 min the converter is at quasi-static equilibrium, so the
+          capacitor ODE C·V·dV/dt = P_balance collapses to P = V·I / 1000.
+          Enforcing this at ALL T steps (not just the last) provides a stronger
+          temporal constraint than the single-step physics_loss term.
+
+        ODE 3 — Battery terminal voltage = f(SOC)  (evcs_dynamics.py line 191)
+        ────────────────────────────────────────────────────────────────────────
+          V_battery = SOC_raw × 200 + 300   →   V_battery = SOC_norm × 120 + 340
+          (derives from SOC_raw = SOC_norm × 0.6 + 0.2)
+          Enforced at every timestep across the sequence.
+        """
+        B, T, _ = sequences.shape
+        if T < 2:
+            return torch.tensor(0.0, device=sequences.device)
+
+        # ── Predictions at all T timesteps in physical units ─────────────────
+        seq_out = self.forward_sequence(sequences)   # (B, T, 3)
+        V_seq = seq_out[:, :, 0]                     # V: 300–500 V  (B, T)
+        I_seq = seq_out[:, :, 1]                     # I:  50–150 A
+        P_seq = seq_out[:, :, 2]                     # P:  15– 75 kW
+
+        # SOC input feature (index 0) — MinMaxScaler-normalised
+        SOC_norm = sequences[:, :, 0]                # (B, T) in [0, 1]
+
+        # ── Constants from evcs_dynamics.py ──────────────────────────────────
+        eta_charge    = 0.95      # params.efficiency_charge (line 31)
+        C_battery_kWh = 50.0      # params.capacity          (line 28)
+        dt_s          = 360.0     # 6 min per sequence step
+        # MinMaxScaler maps raw SOC [0.2, 0.8] → [0, 1], so:
+        SOC_raw_scale = 0.6       # (max_soc − min_soc) = 0.8 − 0.2
+        SOC_raw_min   = 0.2       # min_soc from data generator
+
+        losses = []
+        eps = 1e-8
+
+        # ── ODE 1: SOC dynamics ───────────────────────────────────────────────
+        # ΔSOC_norm = P[t] × η × Δt / (C_kWh × 3600 × SOC_raw_scale)
+        dsoc_norm_actual    = SOC_norm[:, 1:] - SOC_norm[:, :-1]          # (B, T-1)
+        dsoc_norm_predicted = (P_seq[:, :-1] * eta_charge * dt_s
+                               / (C_battery_kWh * 3600.0 * SOC_raw_scale))
+
+        # Reference ΔSOC_norm at rated power — for normalising the residual
+        dsoc_ref = (self.config.rated_power * eta_charge * dt_s
+                    / (C_battery_kWh * 3600.0 * SOC_raw_scale + eps))    # ≈ 0.158
+
+        soc_residual = (dsoc_norm_actual - dsoc_norm_predicted) / (dsoc_ref + eps)
+        losses.append(torch.mean(torch.square(soc_residual)) * 1.0)
+
+        # ── ODE 2: P = V × I (quasi-static DC-link balance, all T steps) ─────
+        pvi_residual = (P_seq - V_seq * I_seq / 1000.0) / self.config.rated_power
+        losses.append(torch.mean(torch.square(pvi_residual)) * 1.0)
+
+        # ── ODE 3: Battery voltage = f(SOC) at every timestep ────────────────
+        # evcs_dynamics.py line 191:  V = SOC_raw × 200 + 300
+        #   SOC_raw = SOC_norm × SOC_raw_scale + SOC_raw_min
+        #   V_battery = (SOC_norm × 0.6 + 0.2) × 200 + 300
+        #             =  SOC_norm × 120 + 340
+        V_battery = SOC_norm * (SOC_raw_scale * 200.0) + (SOC_raw_min * 200.0 + 300.0)
+        v_oc_residual = (V_seq - V_battery) / self.config.rated_voltage
+        losses.append(torch.mean(torch.square(v_oc_residual)) * 0.5)
+
+        return sum(losses)
+
     def physics_loss(self, inputs: torch.Tensor, outputs: torch.Tensor) -> torch.Tensor:
         """Enhanced physics-informed loss with explicit converter dynamics and DC-link balance"""
         # For LSTM, inputs are sequences, use the last time step for physics constraints
@@ -592,41 +706,50 @@ class LSTMPINNOptimizer(nn.Module):
         # Physics constraints with proper gradient flow
         losses = []
         
-        # 1. Power-Voltage-Current Relationship: P = V × I (most critical)
-        calculated_power = voltage_ref * current_ref / 1000.0  # Convert to kW
-        power_balance_loss = torch.mean(torch.square(power_ref - calculated_power))
+        # 1. Power-Voltage-Current Relationship: P = V × I  (most critical)
+        # Normalised by rated_power so the term stays ~O(0.01) at init,
+        # preventing it from overwhelming data_loss (~O(1)).
+        calculated_power = voltage_ref * current_ref / 1000.0  # kW
+        power_balance_loss = torch.mean(torch.square(
+            (power_ref - calculated_power) / self.config.rated_power))
         losses.append(power_balance_loss)
-        
+
         # 2. SOC-Power Relationship with smooth transitions
-        # Create smooth SOC-based power targets
-        target_power_low_soc = 60.0 * torch.sigmoid(10.0 * (0.3 - soc))  # High power for low SOC
-        target_power_high_soc = 25.0 * torch.sigmoid(10.0 * (soc - 0.8))  # Low power for high SOC
+        target_power_low_soc  = 60.0 * torch.sigmoid(10.0 * (0.3 - soc))
+        target_power_high_soc = 25.0 * torch.sigmoid(10.0 * (soc - 0.8))
         target_power = 40.0 + target_power_low_soc - target_power_high_soc
-        
-        soc_power_loss = torch.mean(torch.square(power_ref - target_power))
-        losses.append(soc_power_loss * 0.1)  # Scale appropriately
-        
-        # 3. Voltage constraints with smooth penalties
-        voltage_target = 400.0 + 50.0 * torch.tanh(2.0 * (soc - 0.5))  # Smooth voltage target
-        voltage_loss = torch.mean(torch.square(voltage_ref - voltage_target))
-        losses.append(voltage_loss * 0.001)  # Scale for voltage units
-        
-        # 4. Current consistency check
+
+        # Normalised by rated_power (same scale fix as above)
+        soc_power_loss = torch.mean(torch.square(
+            (power_ref - target_power) / self.config.rated_power))
+        losses.append(soc_power_loss * 0.1)
+
+        # 3. Voltage constraint — battery terminal voltage increases linearly with SOC.
+        # V_oc = V_min + SOC * (V_max - V_min) = 300 + SOC*200
+        # This matches evcs_dynamics.py line 191 and the data generator profile.
+        voltage_target = (self.config.min_voltage +
+                          soc * (self.config.max_voltage - self.config.min_voltage))
+        voltage_loss = torch.mean(torch.square(
+            (voltage_ref - voltage_target) / self.config.rated_voltage))
+        losses.append(voltage_loss * 0.1)   # weight raised: now normalised
+
+        # 4. Current consistency: I = P·1000 / V   (normalised by rated_current)
         expected_current = power_ref * 1000.0 / (voltage_ref + eps)
-        current_loss = torch.mean(torch.square(current_ref - expected_current))
-        losses.append(current_loss * 0.01)  # Scale for current units
+        current_loss = torch.mean(torch.square(
+            (current_ref - expected_current) / self.config.rated_current))
+        losses.append(current_loss * 0.5)   # weight raised: now normalised
         
-        # 5. Soft constraints for realistic ranges
-        # Voltage range penalty (300V - 500V)
-        voltage_penalty = torch.mean(torch.relu(300.0 - voltage_ref) + torch.relu(voltage_ref - 500.0))
+        # 5. Soft constraints for ACN L2 EVSE ranges
+        # Voltage range penalty (216V - 264V, ACN L2 ±10%)
+        voltage_penalty = torch.mean(torch.relu(ACN_VOLTAGE_MIN_V - voltage_ref) + torch.relu(voltage_ref - ACN_VOLTAGE_MAX_V))
         losses.append(voltage_penalty * 0.1)
-        
-        # Current range penalty (50A - 150A)
-        current_penalty = torch.mean(torch.relu(50.0 - current_ref) + torch.relu(current_ref - 150.0))
+
+        # Current range penalty (0A - 32A, ACN pilot signal)
+        current_penalty = torch.mean(torch.relu(-current_ref) + torch.relu(current_ref - ACN_MAX_PILOT_A))
         losses.append(current_penalty * 0.1)
-        
-        # Power range penalty (15kW - 75kW)
-        power_penalty = torch.mean(torch.relu(15.0 - power_ref) + torch.relu(power_ref - 75.0))
+
+        # Power range penalty (0 - 7.68 kW, ACN max)
+        power_penalty = torch.mean(torch.relu(-power_ref) + torch.relu(power_ref - ACN_P_MAX_KW))
         losses.append(power_penalty * 0.1)
         
         # ENHANCED: Add explicit converter dynamics terms
@@ -644,7 +767,7 @@ class LSTMPINNOptimizer(nn.Module):
         
         # 7. DC-DC Converter Dynamics (P_in = P_out / efficiency)
         # Assume DC-DC converter input is DC link voltage, output is battery voltage
-        v_dc_in = 400.0  # DC link voltage (fixed)
+        v_dc_in = ACN_EVSE_VOLTAGE_V  # DC link voltage (ACN L2 EVSE nominal: 240V)
         i_dc_in = power_ref * 1000.0 / (v_dc_in + eps)  # DC link current
         v_dc_out = voltage_ref  # Battery voltage
         i_dc_out = current_ref  # Battery current
@@ -670,9 +793,15 @@ class LSTMPINNOptimizer(nn.Module):
                                       torch.relu(calculated_efficiency - 0.98))
         losses.append(efficiency_penalty * 0.05)  # Much smaller weight
         
-        # 10. Thermal Dynamics (resistive and switching losses)
+        # 10. Thermal Dynamics (resistive + switching losses)
+        # thermal_dynamics() returns a per-sample tensor (I²·R + P·0.02).
+        # At rated conditions: 100²×0.1 + 50×0.02 ≈ 1001.
+        # Taking the mean and dividing by this reference brings the term to
+        # ~O(0.1), matching the scale of all other normalised physics terms.
         thermal_loss = self.thermal_dynamics(power_ref, current_ref)
-        losses.append(thermal_loss * 0.1)  # Tuned weight for thermal effects
+        thermal_ref  = (self.config.rated_current ** 2 * 0.1 +
+                        self.config.rated_power * 0.02)          # ≈ 1001
+        losses.append(thermal_loss.mean() / thermal_ref * 0.1)
         
         # 11. Differentiable EVCS Dynamics (surrogate model residuals)
         if hasattr(self, 'diff_dynamics') and self.diff_dynamics is not None:
@@ -725,24 +854,27 @@ class LSTMPINNOptimizer(nn.Module):
                                      torch.zeros_like(power_clamped))
         losses.append(high_soc_penalty.mean())
         
-        # 2. Voltage bounds (Realistic EVCS voltage range: 300V - 500V)
-        voltage_penalty = (torch.clamp(voltage_ref - 500.0, 0.0, None) / 100.0 +
-                          torch.clamp(300.0 - voltage_ref, 0.0, None) / 100.0)
+        # 2. Voltage bounds (ACN L2 EVSE range: 216V - 264V, ±10%)
+        _v_half_range = ACN_VOLTAGE_RANGE / 2.0  # 24 V
+        voltage_penalty = (torch.clamp(voltage_ref - ACN_VOLTAGE_MAX_V, 0.0, None) / _v_half_range +
+                          torch.clamp(ACN_VOLTAGE_MIN_V - voltage_ref, 0.0, None) / _v_half_range)
         losses.append(voltage_penalty.mean())
-        
-        # 3. Current bounds (Realistic EVCS current range: 50A - 150A)
-        current_penalty = (torch.clamp(current_ref - 150.0, 0.0, None) / 50.0 +
-                          torch.clamp(50.0 - current_ref, 0.0, None) / 50.0)
+
+        # 3. Current bounds (ACN pilot signal range: 0A - 32A)
+        _i_half = ACN_MAX_PILOT_A / 2.0  # 16 A
+        current_penalty = (torch.clamp(current_ref - ACN_MAX_PILOT_A, 0.0, None) / _i_half +
+                          torch.clamp(-current_ref, 0.0, None) / _i_half)
         losses.append(current_penalty.mean())
-        
-        # 4. Power bounds (Realistic EVCS power range: 15kW - 75kW)
-        power_penalty = (torch.clamp(power_ref - 75.0, 0.0, None) / 15.0 +
-                        torch.clamp(15.0 - power_ref, 0.0, None) / 15.0)
+
+        # 4. Power bounds (ACN L2 range: 0 - 7.68 kW)
+        _p_half = ACN_P_MAX_KW / 2.0  # 3.84 kW
+        power_penalty = (torch.clamp(power_ref - ACN_P_MAX_KW, 0.0, None) / _p_half +
+                        torch.clamp(-power_ref, 0.0, None) / _p_half)
         losses.append(power_penalty.mean())
-        
-        # 5. Rated power encouragement (Encourage operation near 40kW base reference)
-        rated_power_penalty = torch.abs(power_clamped - 40.0) / 40.0
-        losses.append(rated_power_penalty.mean())
+
+        # 5. Rated power encouragement (soft target at ACN max — kept light)
+        rated_power_penalty = torch.abs(power_clamped - ACN_P_MAX_KW) / ACN_P_MAX_KW
+        losses.append(rated_power_penalty.mean() * 0.2)
         
         # 6. Urgency-based power adjustment
         # High urgency should encourage higher power within realistic limits
@@ -779,16 +911,36 @@ class LSTMPINNOptimizer(nn.Module):
             print(f"DEBUG: Skipping constant target check due to: {e}")
             pass
         
-        # Scale outputs and targets to similar ranges for better gradient flow
-        # Voltage: scale by 1/400 (normalize around 400V)
-        voltage_loss = torch.mean(torch.square((outputs[:, 0] - targets[:, 0]) / 400.0))
-        
-        # Current: scale by 1/100 (normalize around 100A)
-        current_loss = torch.mean(torch.square((outputs[:, 1] - targets[:, 1]) / 100.0))
-        
-        # Power: scale by 1/40 (normalize around 40kW)
-        power_loss = torch.mean(torch.square((outputs[:, 2] - targets[:, 2]) / 40.0))
-        
+        # De-normalize targets from [0,1] to physical units so they match the
+        # model's forward() output (V∈[300,500], I∈[50,150], P∈[15,75]).
+        # Normalization convention (fixed ranges, same as _normalize_targets):
+        #   V_phys = target_norm * (max_V - min_V) + min_V  =  target_norm * 200 + 300
+        #   I_phys = target_norm * (max_I - min_I) + min_I  =  target_norm * 100 +  50
+        #   P_phys = target_norm * (max_P - min_P) + min_P  =  target_norm *  60 +  15
+        v_min = self.config.min_voltage                       # 300.0
+        v_rng = self.config.max_voltage - v_min               # 200.0
+        i_min = self.config.min_current                       # 50.0
+        i_rng = self.config.max_current - i_min               # 100.0
+        p_min = self.config.min_power                         # 15.0
+        p_rng = self.config.max_power   - p_min               # 60.0
+
+        targets_phys = torch.stack([
+            targets[:, 0] * v_rng + v_min,
+            targets[:, 1] * i_rng + i_min,
+            targets[:, 2] * p_rng + p_min,
+        ], dim=1)
+
+        # Compute losses in physical space, normalised by rated values for
+        # balanced gradient magnitudes across the three outputs.
+        voltage_loss = torch.mean(torch.square(
+            (outputs[:, 0] - targets_phys[:, 0]) / self.config.rated_voltage))   # /400
+
+        current_loss = torch.mean(torch.square(
+            (outputs[:, 1] - targets_phys[:, 1]) / self.config.rated_current))   # /100
+
+        power_loss   = torch.mean(torch.square(
+            (outputs[:, 2] - targets_phys[:, 2]) / self.config.rated_power))     # /50
+
         # Weighted combination with emphasis on power accuracy
         total_loss = voltage_loss + current_loss + 2.0 * power_loss
         
@@ -851,8 +1003,19 @@ class PhysicsDataGenerator:
             return False
     
     def generate_realistic_evcs_scenarios(self, n_samples: int = 5000, train_model: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Generate realistic EVCS scenarios based on physics and system data"""
-        print("🔬 Generating physics-based training data from EVCS dynamics...")
+        """Generate realistic EVCS scenarios based on physics and system data.
+
+        Priority: real ACN-Data CSVs → synthetic EVCSController dynamics.
+        """
+        print("🔬 Loading ACN-Data for physics-based training")
+
+        # ── Try ACN-Data first ────────────────────────────────────────────────
+        acn_result = self._try_generate_acn_data_scenarios(
+            n_samples, self.config.sequence_length)
+        if acn_result is not None:
+            print("## ACN-Data is not loaded successfully")
+            return acn_result
+        # ── Fall through to synthetic data ───────────────────────────────────
         
         # Setup OpenDSS if possible
         opendss_available = self._setup_opendss_system()
@@ -1064,29 +1227,45 @@ class PhysicsDataGenerator:
                     # Previous power for temporal consistency
                     prev_power = sequence_targets[-1][2] if sequence_targets else 0.0
                     
-                    # ENHANCED: Generate realistic voltage/current/power references using per-port capacity
-                    per_port_power = bus_config['max_power'] / max(bus_config.get('num_ports', 1), 1)
-                    
-                    if controller.soc < 0.3:
-                        # Low SOC - high power charging (up to ~80% of per-port capacity)
-                        power_target = per_port_power * 0.8 * (0.7 + np.random.uniform(-0.1, 0.1))
-                        voltage_target = 600.0 + controller.soc * 200.0
-                    elif controller.soc < 0.7:
-                        # Medium SOC - normal charging (40-60% of per-port capacity)
-                        power_target = per_port_power * (0.4 + np.random.uniform(0, 0.2))
-                        voltage_target = 500.0 + controller.soc * 250.0
+                    # ── Unified CC-CV charging profile (ACN L2) ─────────────────────
+                    # ACN Caltech EVSE: 240 V AC, pilot signal 0–32 A, P_max = 7.68 kW
+                    #
+                    #   Voltage: approximately constant at grid nominal (ACN_EVSE_VOLTAGE_V)
+                    #     with small ±10% band variation (216–264 V).
+                    #
+                    #   Current (pilot signal):
+                    #     CC phase (SOC < 0.8): near max pilot (~32 A) → constant power
+                    #     CV phase (SOC ≥ 0.8): taper from 32 A → 0 A as battery fills
+                    #
+                    #   Power is DERIVED as P = V × I  (always self-consistent)
+
+                    # Voltage — INCREASING with SOC (battery terminal voltage)
+                    voltage_target = (self.config.min_voltage +
+                                      controller.soc *
+                                      (self.config.max_voltage - self.config.min_voltage))
+
+                    # Current — CC-CV profile
+                    if controller.soc < 0.8:
+                        # CC phase: near-max ACN pilot signal with small downward jitter
+                        current_target = (self.config.rated_current +
+                                          np.random.uniform(-8.0, 0.0))   # 24–32 A (ACN pilot)
                     else:
-                        # High SOC - reduced power charging (10-30% of per-port capacity)
-                        power_target = per_port_power * (0.1 + np.random.uniform(0, 0.2))
-                        voltage_target = 400.0 + controller.soc * 300.0
-                    
-                    # Calculate consistent current
-                    current_target = power_target * 1000.0 / voltage_target
-                    
-                    # Clamp references to realistic ranges
-                    voltage_ref = np.clip(voltage_target, 400.0, 800.0)
-                    current_ref = np.clip(current_target, 1.0, 125.0)
-                    power_ref = np.clip(power_target, 1.0, per_port_power)
+                        # CV phase: taper linearly from rated_current to min_current
+                        taper = (controller.soc - 0.8) / 0.2          # 0→1 as SOC goes 0.8→1
+                        current_target = (self.config.rated_current -
+                                          taper * (self.config.rated_current -
+                                                   self.config.min_current))  # 100→50 A
+
+                    # Power — derived from P = V × I  (self-consistent by definition)
+                    power_target = voltage_target * current_target / 1000.0  # kW
+
+                    # Clamp all references to model EVCS operating range
+                    voltage_ref = np.clip(voltage_target,
+                                          self.config.min_voltage, self.config.max_voltage)
+                    current_ref = np.clip(current_target,
+                                          self.config.min_current, self.config.max_current)
+                    power_ref   = np.clip(power_target,
+                                          self.config.min_power,   self.config.max_power)
                     
                     # NEW: Set references in the controller for dynamics simulation
                     controller.set_references(voltage_ref, current_ref, power_ref)
@@ -1110,7 +1289,7 @@ class PhysicsDataGenerator:
                         dc_power_out = dynamics_result.get('dc_power_out', 0.0)
                         system_efficiency = dynamics_result.get('system_efficiency', 0.0)
                         power_balance_error = dynamics_result.get('power_balance_error', 0.0)
-                        dc_link_voltage = dynamics_result.get('dc_link_voltage', 400.0)
+                        dc_link_voltage = dynamics_result.get('dc_link_voltage', ACN_EVSE_VOLTAGE_V)
                         
                         # Update controller SOC from real dynamics
                         controller.soc = real_soc
@@ -1134,7 +1313,7 @@ class PhysicsDataGenerator:
                             ac_power_in / 100.0,                              # 10: AC power input (normalized)
                             system_efficiency,                                 # 11: System efficiency
                             power_balance_error / 10.0,                       # 12: Power balance error (normalized)
-                            (dc_link_voltage - 400.0) / 200.0                # 13: DC link voltage deviation (normalized)
+                            (dc_link_voltage - ACN_EVSE_VOLTAGE_V) / ACN_VOLTAGE_RANGE  # 13: DC link voltage deviation (normalised to ACN ±10% band)
                         ]
                         
                         # Log physics information for debugging (every 50th sample)
@@ -1198,12 +1377,12 @@ class PhysicsDataGenerator:
                 
                 # Check if we have enough samples
                 if sample_count >= total_target_samples:
-                    print(f"✅ Target samples reached: {sample_count}/{total_target_samples}")
+                    print(f"## Target samples reached: {sample_count}/{total_target_samples}")
                     break
             
             # Check if we have enough samples after each EVCS
             if sample_count >= total_target_samples:
-                print(f"✅ Target samples reached after {evcs_name}: {sample_count}/{total_target_samples}")
+                print(f"## Target samples reached after {evcs_name}: {sample_count}/{total_target_samples}")
                 break
         
         # Convert to tensors
@@ -1269,7 +1448,47 @@ class PhysicsDataGenerator:
         
         return voltages
     
+    def _try_generate_acn_data_scenarios(
+        self,
+        n_scenarios: int = 1000,
+        seq_len: int = 8,
+    ):
+        """
+        Load real ACN-Data CSVs and return (X, y) tensors for PINN training.
+
+        Searches the standard ACN-Data path used by acn_sim_interface.ACNDataLoader.
+        Returns None if ACN-Data is unavailable or contains too few sequences.
+        """
+        acn_data_dir = os.path.join(
+            "evcs_data", "ACN-Data-Static-main", "time series data"
+        )
+        if not os.path.isdir(acn_data_dir):
+            return None
+
+        try:
+            from acn_sim_interface import ACNDataLoader
+            loader = ACNDataLoader(acn_data_dir)
+            n_loaded = loader.load_all_csvs()
+            if n_loaded == 0:
+                print("  ⚠️  ACN-Data: no valid sessions found — using synthetic data")
+                return None
+
+            X, y = loader.build_training_sequences(
+                seq_len=seq_len, n_samples=n_scenarios, max_sessions=2000)
+            if X is None or len(X) < 100:
+                print("  ⚠️  ACN-Data: too few sequences — using synthetic data")
+                return None
+
+            print(f"  ## ACN-Data: loaded {n_loaded} sessions → "
+                  f"{len(X)} training sequences (seq_len={seq_len})")
+            return X, y
+
+        except Exception as exc:
+            print(f"  ⚠️  ACN-Data loading failed: {exc} — using synthetic data")
+            return None
+
     def _normalize_sequences(self, sequences: np.ndarray) -> np.ndarray:
+
         """Normalize input sequences"""
         # Reshape for normalization
         original_shape = sequences.shape
@@ -1282,32 +1501,35 @@ class PhysicsDataGenerator:
         return sequences_normalized.reshape(original_shape)
     
     def _normalize_targets(self, targets: np.ndarray) -> np.ndarray:
-        """Normalize target values to [0, 1] range with proper scaling for dynamics"""
+        """Normalize target values to [0, 1] using FIXED physical EVCS bounds.
+
+        Uses the same bounds as the model's forward() output scaling so that
+        the normalization is exactly invertible:
+            V  : [min_voltage,  max_voltage]  = [300, 500] V
+            I  : [min_current,  max_current]  = [ 50, 150] A
+            P  : [min_power,    max_power  ]  = [ 15,  75] kW
+        """
         normalized_targets = np.zeros_like(targets)
-        
-        # Voltage: 300-800V -> [0, 1] (expanded range for dynamics)
-        # Use actual min/max from data to avoid clipping issues
-        voltage_min, voltage_max = targets[:, 0].min(), targets[:, 0].max()
-        if voltage_max > voltage_min:
-            normalized_targets[:, 0] = (targets[:, 0] - voltage_min) / (voltage_max - voltage_min)
-        else:
-            normalized_targets[:, 0] = 0.5  # Default to middle if no variation
-        
-        # Current: 1-150A -> [0, 1] (expanded range for dynamics)
-        current_min, current_max = targets[:, 1].min(), targets[:, 1].max()
-        if current_max > current_min:
-            normalized_targets[:, 1] = (targets[:, 1] - current_min) / (current_max - current_min)
-        else:
-            normalized_targets[:, 1] = 0.5  # Default to middle if no variation
-        
-        # Power: 1-1000kW -> [0, 1] (support mega charging)
-        power_min, power_max = targets[:, 2].min(), targets[:, 2].max()
-        if power_max > power_min:
-            normalized_targets[:, 2] = (targets[:, 2] - power_min) / (power_max - power_min)
-        else:
-            normalized_targets[:, 2] = 0.5  # Default to middle if no variation
-        
-        return np.clip(normalized_targets, 0, 1)
+
+        # Voltage: fixed range [300, 500] V  (matches model forward() scaling)
+        v_min = self.config.min_voltage                           # 300.0
+        v_rng = self.config.max_voltage - v_min                  # 200.0
+        normalized_targets[:, 0] = np.clip(
+            (targets[:, 0] - v_min) / v_rng, 0.0, 1.0)
+
+        # Current: fixed range [50, 150] A  (matches model forward() scaling)
+        i_min = self.config.min_current                           # 50.0
+        i_rng = self.config.max_current - i_min                  # 100.0
+        normalized_targets[:, 1] = np.clip(
+            (targets[:, 1] - i_min) / i_rng, 0.0, 1.0)
+
+        # Power: fixed range [15, 75] kW  (matches model forward() scaling)
+        p_min = self.config.min_power                             # 15.0
+        p_rng = self.config.max_power - p_min                    # 60.0
+        normalized_targets[:, 2] = np.clip(
+            (targets[:, 2] - p_min) / p_rng, 0.0, 1.0)
+
+        return normalized_targets
 
 class LSTMPINNTrainer:
     """Enhanced trainer for LSTM-PINN optimizer with physics-based data"""
@@ -1323,8 +1545,11 @@ class LSTMPINNTrainer:
         # Enhanced learning rate scheduling with cosine annealing
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=config.epochs, eta_min=1e-6)
         
-        # Dynamic weight averaging for loss balancing
-        self.dynamic_weights = DynamicWeightAveraging(num_losses=4, alpha=0.16)
+        # Fixed-weight loss combination replaces DynamicWeightAveraging.
+        # All individual losses are already normalised to O(1) so equal weights
+        # give balanced gradients.  DWA is retained as an attribute so that
+        # any callers that reference it do not break.
+        self.dynamic_weights = DynamicWeightAveraging(num_losses=4, alpha=0.05)
         
         # Add differentiable dynamics to physics model
         if hasattr(self.model, 'physics_model'):
@@ -1342,7 +1567,8 @@ class LSTMPINNTrainer:
             'data_loss': [],
             'temporal_loss': [],
             'dynamics_loss': [],
-            'converter_loss': []
+            'converter_loss': [],
+            'ode_loss': []          # ODE residuals from evcs_dynamics.py equations
         }
         
         # Enhanced training parameters
@@ -1350,14 +1576,14 @@ class LSTMPINNTrainer:
         self.convergence_patience = 50
         self.best_loss = float('inf')
         self.patience_counter = 0
-        self.early_stopping_threshold = 1.0
+        self.early_stopping_threshold = 0.2
         
         # Gradient clipping for stability
         self.max_grad_norm = 1.0
     
     def generate_training_data(self, n_samples: int = 5000) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate physics-based training data using EVCS dynamics and bus system"""
-        print(" Generating physics-based training data (no random data used)...")
+        print(" Generating synthetic training data for trainig ### STOP ## the training ")
         return self.data_generator.generate_realistic_evcs_scenarios(n_samples)
     
     
@@ -1371,7 +1597,7 @@ class LSTMPINNTrainer:
             print(f"  📊 Enhanced data: {len(sequences)} sequences with {sequences.shape[-1]} features")
             print(f"  🎯 Target ranges: V={targets[:, 0].min():.1f}-{targets[:, 0].max():.1f}, I={targets[:, 1].min():.1f}-{targets[:, 1].max():.1f}, P={targets[:, 2].min():.2f}-{targets[:, 2].max():.2f}")
         else:
-            print(" LSTM-PINN Training: Generating physics-based training data from EVCS dynamics...")
+            print(" LSTM-PINN Training: Generating physics-based training data from EVCS dynamics... ## STOP the training ##")
             sequences, targets = self.generate_training_data(n_samples)
         
         print(f" LSTM-PINN Training: Starting time series optimization for up to {self.config.epochs} epochs...")
@@ -1380,12 +1606,22 @@ class LSTMPINNTrainer:
         
         start_time = time.time()
         
+        # Convert to float32 tensors if they are numpy arrays
+        if isinstance(sequences, np.ndarray):
+            sequences = torch.tensor(sequences, dtype=torch.float32)
+        if isinstance(targets, np.ndarray):
+            targets = torch.tensor(targets, dtype=torch.float32)
+            
+        # Ensure they are on the right device and float type
+        sequences = sequences.float()
+        targets = targets.float()
+        
         # Create data loader for batch processing
         dataset = torch.utils.data.TensorDataset(sequences, targets)
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
         
         for epoch in range(self.config.epochs):
-            epoch_losses = {'total': 0, 'physics': 0, 'boundary': 0, 'data': 0, 'temporal': 0, 'dynamics': 0, 'converter': 0}
+            epoch_losses = {'total': 0, 'physics': 0, 'boundary': 0, 'data': 0, 'temporal': 0, 'dynamics': 0, 'converter': 0, 'ode': 0}
             num_batches = 0
             
             for batch_sequences, batch_targets in dataloader:
@@ -1395,7 +1631,7 @@ class LSTMPINNTrainer:
                 try:
                     outputs = self.model(batch_sequences)
                 except Exception as e:
-                    print(f"❌ Forward pass failed: {e}")
+                    print(f"## Forward pass failed: {e}")
                     print(f"Batch sequences shape: {batch_sequences.shape}")
                     print(f"Batch targets shape: {batch_targets.shape}")
                     raise
@@ -1406,8 +1642,10 @@ class LSTMPINNTrainer:
                     boundary_loss = self.model.boundary_loss(batch_sequences, outputs)
                     data_loss = self.model.data_loss(batch_sequences, outputs, batch_targets)
                     temporal_loss = self.model.temporal_consistency_loss(batch_sequences, outputs)
+                    # ODE residuals: enforces actual evcs_dynamics.py equations across the sequence
+                    ode_loss = self.model.ode_residual_loss(batch_sequences)
                 except Exception as e:
-                    print(f"❌ Loss calculation failed: {e}")
+                    print(f"## Loss calculation failed: {e}")
                     print(f"Outputs shape: {outputs.shape}")
                     print(f"Batch sequences shape: {batch_sequences.shape}")
                     print(f"Batch targets shape: {batch_targets.shape}")
@@ -1432,17 +1670,29 @@ class LSTMPINNTrainer:
                         i_dc = outputs[:, 1]
                         
                         ac_dc_loss = self.model.physics_model.ac_dc_converter_dynamics(v_ac_rms, i_ac_rms, v_dc, i_dc)
-                        dc_dc_loss = self.model.physics_model.dc_dc_converter_dynamics(400.0, outputs[:, 2] * 1000.0 / 400.0, v_dc, i_dc)
+                        dc_dc_loss = self.model.physics_model.dc_dc_converter_dynamics(ACN_EVSE_VOLTAGE_V, outputs[:, 2] * 1000.0 / ACN_EVSE_VOLTAGE_V, v_dc, i_dc)
                         converter_loss = ac_dc_loss + dc_dc_loss
                 
-                # Use dynamic weight averaging for loss balancing
-                loss_terms = [data_loss, physics_loss, boundary_loss, temporal_loss]
-                total_loss = self.dynamic_weights.compute_weighted_loss(loss_terms)
+                # ── Fixed-weight loss combination ────────────────────────────
+                # All individual losses are already normalised to O(1).
+                # Explicit weights give stable, human-interpretable training.
+                #
+                #  data     : MSE in physical space / rated²      → O(0.5–1.0)
+                #  physics  : converter / power-balance residuals  → O(0.2–0.5)
+                #  boundary : SOC/V/I/P constraint violations       → O(0.5–1.5)
+                #  temporal : normalised consecutive-step MSE       → O(0.0–0.5)
+                #  ode      : finite-diff ODE residuals             → O(0.1–0.6)
                 
-                # Add dynamics and converter losses with fixed weights - ensure scalars
-                dynamics_scalar = dynamics_loss.mean() if dynamics_loss.numel() > 1 else dynamics_loss
-                converter_scalar = converter_loss.mean() if converter_loss.numel() > 1 else converter_loss
-                total_loss += 0.1 * dynamics_scalar + 0.05 * converter_scalar
+                ode_scalar = ode_loss.mean() if ode_loss.numel() > 1 else ode_loss
+                
+                total_loss = (
+                    1.0  * data_loss     +
+                    0.5  * physics_loss  +
+                    0.3  * boundary_loss +
+                    0.1  * temporal_loss +
+                    0.1  * ode_scalar
+                )
+                # ─────────────────────────────────────────────────────────────
                 
                 # Backward pass
                 total_loss.backward()
@@ -1460,6 +1710,7 @@ class LSTMPINNTrainer:
                 epoch_losses['temporal'] += temporal_loss.detach().item() if temporal_loss.numel() == 1 else temporal_loss.detach().mean().item()
                 epoch_losses['dynamics'] += dynamics_loss.detach().item() if dynamics_loss.numel() == 1 else dynamics_loss.detach().mean().item()
                 epoch_losses['converter'] += converter_loss.detach().item() if converter_loss.numel() == 1 else converter_loss.detach().mean().item()
+                epoch_losses['ode'] += ode_loss.detach().item() if ode_loss.numel() == 1 else ode_loss.detach().mean().item()
                 num_batches += 1
             
             # Average losses for epoch
@@ -1468,12 +1719,13 @@ class LSTMPINNTrainer:
             avg_boundary_loss = epoch_losses['boundary'] / num_batches
             avg_data_loss = epoch_losses['data'] / num_batches
             avg_temporal_loss = epoch_losses['temporal'] / num_batches
-            avg_dynamics_loss = epoch_losses['dynamics'] / num_batches
+            avg_dynamics_loss  = epoch_losses['dynamics']  / num_batches
             avg_converter_loss = epoch_losses['converter'] / num_batches
-            
+            avg_ode_loss       = epoch_losses['ode']       / num_batches
+
             # Update learning rate with cosine annealing
             self.scheduler.step()
-            
+
             # Record history
             self.training_history['total_loss'].append(avg_total_loss)
             self.training_history['physics_loss'].append(avg_physics_loss)
@@ -1482,7 +1734,19 @@ class LSTMPINNTrainer:
             self.training_history['temporal_loss'].append(avg_temporal_loss)
             self.training_history['dynamics_loss'].append(avg_dynamics_loss)
             self.training_history['converter_loss'].append(avg_converter_loss)
+            self.training_history['ode_loss'].append(avg_ode_loss)
             
+            # Progress reporting
+            if epoch % 100 == 0 or epoch < 10:
+                elapsed_time = time.time() - start_time
+                print(f"⚡ Epoch {epoch:4d}: Loss = {avg_total_loss:.6f} | "
+                      f"Data = {avg_data_loss:.6f} | "
+                      f"Physics = {avg_physics_loss:.6f} | "
+                      f"ODE = {avg_ode_loss:.6f} | "
+                      f"Boundary = {avg_boundary_loss:.6f} | "
+                      f"Temporal = {avg_temporal_loss:.6f} | "
+                      f"Time = {elapsed_time:.1f}s")
+                      
             # Convergence checking
             if auto_stop:
                 if avg_total_loss < self.best_loss - self.min_loss_threshold:
@@ -1496,16 +1760,6 @@ class LSTMPINNTrainer:
                     avg_total_loss < self.early_stopping_threshold):
                     print(f" LSTM-PINN Training: Converged at epoch {epoch} (loss: {avg_total_loss:.6f})")
                     break
-            
-            # Progress reporting
-            if epoch % 100 == 0 or epoch < 10:
-                elapsed_time = time.time() - start_time
-                print(f"⚡ Epoch {epoch:4d}: Loss = {avg_total_loss:.6f} | "
-                      f"Physics = {avg_physics_loss:.6f} | "
-                      f"Boundary = {avg_boundary_loss:.6f} | "
-                      f"Data = {avg_data_loss:.6f} | "
-                      f"Temporal = {avg_temporal_loss:.6f} | "
-                      f"Time = {elapsed_time:.1f}s")
         
         training_time = time.time() - start_time
         final_loss = self.training_history['total_loss'][-1]
@@ -1603,7 +1857,7 @@ class LSTMPINNChargingOptimizer:
  
     
     def train_model(self, n_samples: int = 3000, force_retrain: bool = False) -> Dict:
-        """Train the LSTM-PINN model with physics-based data"""
+        """Train the LSTM-PINN model, preferring real ACN data over synthetic."""
         if not force_retrain and hasattr(self, '_model_trained') and self._model_trained:
             print(" LSTM-PINN: Model already trained, skipping training...")
             return {
@@ -1696,7 +1950,7 @@ class LSTMPINNChargingOptimizer:
                     hist_data.get('ac_power_in', 50.0) / 100.0,                 # 10: AC power input (normalized)
                     hist_data.get('system_efficiency', 0.95),                    # 11: System efficiency
                     hist_data.get('power_balance_error', 0.0) / 10.0,           # 12: Power balance error (normalized)
-                    (hist_data.get('dc_link_voltage', 500.0) - 400.0) / 200.0   # 13: DC link voltage deviation (normalized)
+                    (hist_data.get('dc_link_voltage', ACN_EVSE_VOLTAGE_V) - ACN_EVSE_VOLTAGE_V) / ACN_VOLTAGE_RANGE  # 13: DC link voltage deviation (ACN-normalised)
                 ]
                 sequence.append(features)
         else:
@@ -1719,7 +1973,7 @@ class LSTMPINNChargingOptimizer:
                     station_data.get('ac_power_in', 50.0) / 100.0,               # 10: AC power input (normalized)
                     station_data.get('system_efficiency', 0.95),                  # 11: System efficiency
                     station_data.get('power_balance_error', 0.0) / 10.0,         # 12: Power balance error (normalized)
-                    (station_data.get('dc_link_voltage', 500.0) - 400.0) / 200.0 # 13: DC link voltage deviation (normalized)
+                    (station_data.get('dc_link_voltage', ACN_EVSE_VOLTAGE_V) - ACN_EVSE_VOLTAGE_V) / ACN_VOLTAGE_RANGE  # 13: DC link voltage deviation (ACN-normalised)
                 ]
                 sequence.append(features)
         

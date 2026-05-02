@@ -1,0 +1,1373 @@
+[
+  {
+    "doc_id": "STRIDE-SPOOFING-001",
+    "type": "stride_pattern",
+    "title": "EV Authentication Spoofing",
+    "description": "Attacker spoofs vehicle identity to gain unauthorized charging access or manipulate billing records",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Spoofing"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0862"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "Billing System",
+      "CMS"
+    ],
+    "affected_components": [
+      "authentication_module",
+      "billing_interface",
+      "iso15118_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Implement PKI-based vehicle authentication (ISO 15118)",
+      "Use certificate pinning and validation",
+      "Multi-factor authentication for user accounts",
+      "Implement mutual TLS authentication"
+    ],
+    "detection_methods": [
+      "Monitor authentication attempts for anomalies",
+      "Certificate validation failures",
+      "Unusual charging patterns from single vehicle ID",
+      "Behavioral analysis of charging sessions"
+    ],
+    "defensive_actions": [
+      "Implement PKI-based vehicle authentication (ISO 15118)",
+      "Use certificate pinning and validation",
+      "Multi-factor authentication for user accounts",
+      "Implement mutual TLS authentication"
+    ],
+    "countermeasures": [
+      "Implement PKI-based vehicle authentication (ISO 15118)",
+      "Use certificate pinning and validation",
+      "Multi-factor authentication for user accounts",
+      "Implement mutual TLS authentication"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker spoofs vehicle identity to gain unauthorized charging access or manipulate billing records",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "EV Authentication Spoofing Attacker spoofs vehicle identity to gain unauthorized charging access or manipulate billing records Implement PKI-based vehicle authentication (ISO 15118) Use certificate pinning and validation Multi-factor authentication for user accounts Implement mutual TLS authentication Monitor authentication attempts for anomalies Certificate validation failures Unusual charging patterns from single vehicle ID Behavioral analysis of charging sessions",
+    "keywords": [
+      "spoofing",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "ev",
+      "authentication",
+      "spoofing"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "spoofing",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-SPOOFING-002",
+    "type": "stride_pattern",
+    "title": "OCPP Message Spoofing",
+    "description": "Attacker spoofs OCPP messages between charging station and central system to manipulate operations",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Spoofing"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0855",
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS"
+    ],
+    "affected_components": [
+      "ocpp_handler",
+      "message_queue",
+      "websocket_connection"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Use OCPP 2.0.1 with security profile 3",
+      "Implement message signing and encryption",
+      "Certificate-based authentication for OCPP connections",
+      "Network segmentation and VPN tunnels"
+    ],
+    "detection_methods": [
+      "Message integrity validation failures",
+      "Unexpected message sources",
+      "Anomalous command sequences",
+      "TLS handshake failures"
+    ],
+    "defensive_actions": [
+      "Use OCPP 2.0.1 with security profile 3",
+      "Implement message signing and encryption",
+      "Certificate-based authentication for OCPP connections",
+      "Network segmentation and VPN tunnels"
+    ],
+    "countermeasures": [
+      "Use OCPP 2.0.1 with security profile 3",
+      "Implement message signing and encryption",
+      "Certificate-based authentication for OCPP connections",
+      "Network segmentation and VPN tunnels"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker spoofs OCPP messages between charging station and central system to manipulate operations",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "OCPP Message Spoofing Attacker spoofs OCPP messages between charging station and central system to manipulate operations Use OCPP 2.0.1 with security profile 3 Implement message signing and encryption Certificate-based authentication for OCPP connections Network segmentation and VPN tunnels Message integrity validation failures Unexpected message sources Anomalous command sequences TLS handshake failures",
+    "keywords": [
+      "spoofing",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "ocpp",
+      "message",
+      "spoofing"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "spoofing",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-SPOOFING-003",
+    "type": "stride_pattern",
+    "title": "Grid Operator Identity Spoofing",
+    "description": "Attacker impersonates grid operator to send fraudulent demand response or load control commands",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Spoofing"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0866",
+      "T0871"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "DMS",
+      "AGC",
+      "CCMS"
+    ],
+    "affected_components": [
+      "demand_response_module",
+      "load_control",
+      "scada_interface"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Strong authentication for grid operator interfaces",
+      "Digital signatures on control commands",
+      "Role-based access control (RBAC)",
+      "Command verification workflows"
+    ],
+    "detection_methods": [
+      "Unauthorized access attempts",
+      "Commands from unverified sources",
+      "Unusual command patterns",
+      "Geographic anomalies in access"
+    ],
+    "defensive_actions": [
+      "Strong authentication for grid operator interfaces",
+      "Digital signatures on control commands",
+      "Role-based access control (RBAC)",
+      "Command verification workflows"
+    ],
+    "countermeasures": [
+      "Strong authentication for grid operator interfaces",
+      "Digital signatures on control commands",
+      "Role-based access control (RBAC)",
+      "Command verification workflows"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker impersonates grid operator to send fraudulent demand response or load control commands",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Grid Operator Identity Spoofing Attacker impersonates grid operator to send fraudulent demand response or load control commands Strong authentication for grid operator interfaces Digital signatures on control commands Role-based access control (RBAC) Command verification workflows Unauthorized access attempts Commands from unverified sources Unusual command patterns Geographic anomalies in access",
+    "keywords": [
+      "spoofing",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "grid",
+      "operator",
+      "identity"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "spoofing",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-TAMPERING-001",
+    "type": "stride_pattern",
+    "title": "Energy Metering Data Manipulation",
+    "description": "Attacker modifies charging session energy measurements to alter billing or hide malicious activity",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0836",
+      "T0832"
+    ],
+    "attack_vector": "Physical/Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "Billing System"
+    ],
+    "affected_components": [
+      "energy_meter",
+      "data_logger",
+      "billing_calculator"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Cryptographic signing of metering data",
+      "Tamper-evident hardware seals",
+      "Real-time integrity checking",
+      "Blockchain-based transaction logging"
+    ],
+    "detection_methods": [
+      "Hash validation failures",
+      "Discrepancies between meter and billing",
+      "Unexpected data modifications",
+      "Physical tamper alerts"
+    ],
+    "defensive_actions": [
+      "Cryptographic signing of metering data",
+      "Tamper-evident hardware seals",
+      "Real-time integrity checking",
+      "Blockchain-based transaction logging"
+    ],
+    "countermeasures": [
+      "Cryptographic signing of metering data",
+      "Tamper-evident hardware seals",
+      "Real-time integrity checking",
+      "Blockchain-based transaction logging"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker modifies charging session energy measurements to alter billing or hide malicious activity",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Energy Metering Data Manipulation Attacker modifies charging session energy measurements to alter billing or hide malicious activity Cryptographic signing of metering data Tamper-evident hardware seals Real-time integrity checking Blockchain-based transaction logging Hash validation failures Discrepancies between meter and billing Unexpected data modifications Physical tamper alerts",
+    "keywords": [
+      "tampering",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "energy",
+      "metering",
+      "data"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "tampering",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-TAMPERING-002",
+    "type": "stride_pattern",
+    "title": "Firmware Tampering",
+    "description": "Attacker injects malicious firmware into charging station or DMS components",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0873",
+      "T0839"
+    ],
+    "attack_vector": "Physical/Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "DMS",
+      "SCADA"
+    ],
+    "affected_components": [
+      "firmware_update_module",
+      "bootloader",
+      "control_processor"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Secure boot with verified signatures",
+      "Firmware signing and validation",
+      "Over-the-air update authentication",
+      "Hardware security modules (HSM)"
+    ],
+    "detection_methods": [
+      "Firmware signature validation failures",
+      "Unexpected firmware versions",
+      "Boot integrity check failures",
+      "Anomalous system behavior post-update"
+    ],
+    "defensive_actions": [
+      "Secure boot with verified signatures",
+      "Firmware signing and validation",
+      "Over-the-air update authentication",
+      "Hardware security modules (HSM)"
+    ],
+    "countermeasures": [
+      "Secure boot with verified signatures",
+      "Firmware signing and validation",
+      "Over-the-air update authentication",
+      "Hardware security modules (HSM)"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker injects malicious firmware into charging station or DMS components",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Firmware Tampering Attacker injects malicious firmware into charging station or DMS components Secure boot with verified signatures Firmware signing and validation Over-the-air update authentication Hardware security modules (HSM) Firmware signature validation failures Unexpected firmware versions Boot integrity check failures Anomalous system behavior post-update",
+    "keywords": [
+      "tampering",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "firmware",
+      "tampering"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "tampering",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-TAMPERING-003",
+    "type": "stride_pattern",
+    "title": "Load Balancing Algorithm Manipulation",
+    "description": "Attacker modifies AGC or DMS load balancing algorithms to destabilize grid or favor specific charging stations",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Tampering"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0836",
+      "T0856"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "AGC",
+      "DMS",
+      "CCMS"
+    ],
+    "affected_components": [
+      "load_balancer",
+      "optimization_engine",
+      "control_algorithm"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Code integrity monitoring",
+      "Configuration management and version control",
+      "Anomaly detection on control outputs",
+      "Redundant control systems"
+    ],
+    "detection_methods": [
+      "Unexpected load distribution patterns",
+      "Algorithm output validation failures",
+      "Configuration change alerts",
+      "Performance degradation"
+    ],
+    "defensive_actions": [
+      "Code integrity monitoring",
+      "Configuration management and version control",
+      "Anomaly detection on control outputs",
+      "Redundant control systems"
+    ],
+    "countermeasures": [
+      "Code integrity monitoring",
+      "Configuration management and version control",
+      "Anomaly detection on control outputs",
+      "Redundant control systems"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker modifies AGC or DMS load balancing algorithms to destabilize grid or favor specific charging stations",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Load Balancing Algorithm Manipulation Attacker modifies AGC or DMS load balancing algorithms to destabilize grid or favor specific charging stations Code integrity monitoring Configuration management and version control Anomaly detection on control outputs Redundant control systems Unexpected load distribution patterns Algorithm output validation failures Configuration change alerts Performance degradation",
+    "keywords": [
+      "tampering",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "load",
+      "balancing",
+      "algorithm"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "tampering",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-REPUDIATION-001",
+    "type": "stride_pattern",
+    "title": "Charging Transaction Repudiation",
+    "description": "User or attacker denies conducting charging session to avoid payment or accountability",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Repudiation"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0831"
+    ],
+    "attack_vector": "Local",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "Billing System"
+    ],
+    "affected_components": [
+      "transaction_log",
+      "audit_system",
+      "payment_gateway"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Immutable audit logs with timestamps",
+      "Digital signatures on transactions",
+      "Blockchain-based transaction recording",
+      "Multi-party transaction verification"
+    ],
+    "detection_methods": [
+      "Missing log entries",
+      "Log tampering attempts",
+      "Billing disputes without valid records",
+      "Audit trail inconsistencies"
+    ],
+    "defensive_actions": [
+      "Immutable audit logs with timestamps",
+      "Digital signatures on transactions",
+      "Blockchain-based transaction recording",
+      "Multi-party transaction verification"
+    ],
+    "countermeasures": [
+      "Immutable audit logs with timestamps",
+      "Digital signatures on transactions",
+      "Blockchain-based transaction recording",
+      "Multi-party transaction verification"
+    ],
+    "prerequisites": "",
+    "impact": "User or attacker denies conducting charging session to avoid payment or accountability",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Charging Transaction Repudiation User or attacker denies conducting charging session to avoid payment or accountability Immutable audit logs with timestamps Digital signatures on transactions Blockchain-based transaction recording Multi-party transaction verification Missing log entries Log tampering attempts Billing disputes without valid records Audit trail inconsistencies",
+    "keywords": [
+      "repudiation",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "charging",
+      "transaction",
+      "repudiation"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "repudiation",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-REPUDIATION-002",
+    "type": "stride_pattern",
+    "title": "Control Command Repudiation",
+    "description": "Operator denies issuing critical control commands during incident investigation",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Repudiation"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0831",
+      "T0858"
+    ],
+    "attack_vector": "Local",
+    "severity": "High",
+    "affected_systems": [
+      "DMS",
+      "AGC",
+      "SCADA"
+    ],
+    "affected_components": [
+      "command_logger",
+      "audit_trail",
+      "operator_interface"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Comprehensive audit logging",
+      "Non-repudiation mechanisms (digital signatures)",
+      "Video surveillance of control rooms",
+      "Multi-factor command authorization"
+    ],
+    "detection_methods": [
+      "Audit log gaps",
+      "Unsigned commands",
+      "Conflicting operator statements",
+      "Missing authentication records"
+    ],
+    "defensive_actions": [
+      "Comprehensive audit logging",
+      "Non-repudiation mechanisms (digital signatures)",
+      "Video surveillance of control rooms",
+      "Multi-factor command authorization"
+    ],
+    "countermeasures": [
+      "Comprehensive audit logging",
+      "Non-repudiation mechanisms (digital signatures)",
+      "Video surveillance of control rooms",
+      "Multi-factor command authorization"
+    ],
+    "prerequisites": "",
+    "impact": "Operator denies issuing critical control commands during incident investigation",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Control Command Repudiation Operator denies issuing critical control commands during incident investigation Comprehensive audit logging Non-repudiation mechanisms (digital signatures) Video surveillance of control rooms Multi-factor command authorization Audit log gaps Unsigned commands Conflicting operator statements Missing authentication records",
+    "keywords": [
+      "repudiation",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "control",
+      "command",
+      "repudiation"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "repudiation",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-INFORMATION_DISCLOSURE-001",
+    "type": "stride_pattern",
+    "title": "PII Leakage from Charging Data",
+    "description": "Attacker extracts personally identifiable information from charging session logs and user profiles",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Information Disclosure"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0868",
+      "T0877"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CMS",
+      "Cloud Backend"
+    ],
+    "affected_components": [
+      "user_database",
+      "session_logs",
+      "api_endpoints"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Data encryption at rest and in transit",
+      "Data minimization and anonymization",
+      "Access control and least privilege",
+      "GDPR/privacy compliance measures"
+    ],
+    "detection_methods": [
+      "Unusual database queries",
+      "Large data exports",
+      "Unauthorized API access",
+      "Data exfiltration patterns"
+    ],
+    "defensive_actions": [
+      "Data encryption at rest and in transit",
+      "Data minimization and anonymization",
+      "Access control and least privilege",
+      "GDPR/privacy compliance measures"
+    ],
+    "countermeasures": [
+      "Data encryption at rest and in transit",
+      "Data minimization and anonymization",
+      "Access control and least privilege",
+      "GDPR/privacy compliance measures"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker extracts personally identifiable information from charging session logs and user profiles",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "PII Leakage from Charging Data Attacker extracts personally identifiable information from charging session logs and user profiles Data encryption at rest and in transit Data minimization and anonymization Access control and least privilege GDPR/privacy compliance measures Unusual database queries Large data exports Unauthorized API access Data exfiltration patterns",
+    "keywords": [
+      "information disclosure",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "pii",
+      "leakage",
+      "from"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "information disclosure",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-INFORMATION_DISCLOSURE-002",
+    "type": "stride_pattern",
+    "title": "Grid Topology Information Disclosure",
+    "description": "Attacker obtains sensitive grid topology and configuration data from DMS/SCADA systems",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Information Disclosure"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0868",
+      "T0842"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "DMS",
+      "SCADA",
+      "AGC"
+    ],
+    "affected_components": [
+      "topology_database",
+      "configuration_files",
+      "network_diagrams"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Network segmentation (IT/OT separation)",
+      "Encryption of sensitive data",
+      "Access controls and authentication",
+      "Data classification and handling policies"
+    ],
+    "detection_methods": [
+      "Unauthorized file access",
+      "Abnormal network traffic patterns",
+      "Failed authentication attempts",
+      "Data loss prevention alerts"
+    ],
+    "defensive_actions": [
+      "Network segmentation (IT/OT separation)",
+      "Encryption of sensitive data",
+      "Access controls and authentication",
+      "Data classification and handling policies"
+    ],
+    "countermeasures": [
+      "Network segmentation (IT/OT separation)",
+      "Encryption of sensitive data",
+      "Access controls and authentication",
+      "Data classification and handling policies"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker obtains sensitive grid topology and configuration data from DMS/SCADA systems",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Grid Topology Information Disclosure Attacker obtains sensitive grid topology and configuration data from DMS/SCADA systems Network segmentation (IT/OT separation) Encryption of sensitive data Access controls and authentication Data classification and handling policies Unauthorized file access Abnormal network traffic patterns Failed authentication attempts Data loss prevention alerts",
+    "keywords": [
+      "information disclosure",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "grid",
+      "topology",
+      "information"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "information disclosure",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-INFORMATION_DISCLOSURE-003",
+    "type": "stride_pattern",
+    "title": "Charging Pattern Analysis",
+    "description": "Attacker analyzes charging patterns to infer user behavior, location, and schedules",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Information Disclosure"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0877",
+      "T0802"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CMS",
+      "Analytics Platform"
+    ],
+    "affected_components": [
+      "analytics_engine",
+      "data_warehouse",
+      "reporting_module"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Differential privacy techniques",
+      "Data aggregation and anonymization",
+      "Access controls on analytics systems",
+      "Privacy-preserving analytics"
+    ],
+    "detection_methods": [
+      "Unusual analytics queries",
+      "Unauthorized data mining activities",
+      "Privacy policy violations",
+      "Abnormal data access patterns"
+    ],
+    "defensive_actions": [
+      "Differential privacy techniques",
+      "Data aggregation and anonymization",
+      "Access controls on analytics systems",
+      "Privacy-preserving analytics"
+    ],
+    "countermeasures": [
+      "Differential privacy techniques",
+      "Data aggregation and anonymization",
+      "Access controls on analytics systems",
+      "Privacy-preserving analytics"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker analyzes charging patterns to infer user behavior, location, and schedules",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Charging Pattern Analysis Attacker analyzes charging patterns to infer user behavior, location, and schedules Differential privacy techniques Data aggregation and anonymization Access controls on analytics systems Privacy-preserving analytics Unusual analytics queries Unauthorized data mining activities Privacy policy violations Abnormal data access patterns",
+    "keywords": [
+      "information disclosure",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "charging",
+      "pattern",
+      "analysis"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "information disclosure",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-DENIAL_OF_SERVICE-001",
+    "type": "stride_pattern",
+    "title": "Charging Station Flooding Attack",
+    "description": "Attacker floods charging stations with requests causing service unavailability",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Denial of Service"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0814",
+      "T0816"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure"
+    ],
+    "affected_components": [
+      "communication_module",
+      "api_gateway",
+      "websocket_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Rate limiting on API endpoints",
+      "DDoS protection mechanisms",
+      "Network traffic filtering",
+      "Resource allocation limits"
+    ],
+    "detection_methods": [
+      "Abnormal request rates",
+      "Resource exhaustion alerts",
+      "Service degradation",
+      "Network congestion"
+    ],
+    "defensive_actions": [
+      "Rate limiting on API endpoints",
+      "DDoS protection mechanisms",
+      "Network traffic filtering",
+      "Resource allocation limits"
+    ],
+    "countermeasures": [
+      "Rate limiting on API endpoints",
+      "DDoS protection mechanisms",
+      "Network traffic filtering",
+      "Resource allocation limits"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker floods charging stations with requests causing service unavailability",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Charging Station Flooding Attack Attacker floods charging stations with requests causing service unavailability Rate limiting on API endpoints DDoS protection mechanisms Network traffic filtering Resource allocation limits Abnormal request rates Resource exhaustion alerts Service degradation Network congestion",
+    "keywords": [
+      "denial of service",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "charging",
+      "station",
+      "flooding"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "denial of service",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-DENIAL_OF_SERVICE-002",
+    "type": "stride_pattern",
+    "title": "AGC Disruption Attack",
+    "description": "Attacker disrupts automatic generation control causing frequency instability",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Denial of Service"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0816",
+      "T0826"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "AGC",
+      "DMS",
+      "Generation Units"
+    ],
+    "affected_components": [
+      "frequency_controller",
+      "generation_dispatch",
+      "communication_links"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Redundant control systems",
+      "Failover mechanisms",
+      "Network resilience measures",
+      "Manual override capabilities"
+    ],
+    "detection_methods": [
+      "Frequency deviation alerts",
+      "Control signal anomalies",
+      "Communication failures",
+      "System instability indicators"
+    ],
+    "defensive_actions": [
+      "Redundant control systems",
+      "Failover mechanisms",
+      "Network resilience measures",
+      "Manual override capabilities"
+    ],
+    "countermeasures": [
+      "Redundant control systems",
+      "Failover mechanisms",
+      "Network resilience measures",
+      "Manual override capabilities"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker disrupts automatic generation control causing frequency instability",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "AGC Disruption Attack Attacker disrupts automatic generation control causing frequency instability Redundant control systems Failover mechanisms Network resilience measures Manual override capabilities Frequency deviation alerts Control signal anomalies Communication failures System instability indicators",
+    "keywords": [
+      "denial of service",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "agc",
+      "disruption",
+      "attack"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "denial of service",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-DENIAL_OF_SERVICE-003",
+    "type": "stride_pattern",
+    "title": "Coordinated Charging Disruption",
+    "description": "Attacker coordinates simultaneous charging start/stop to create grid instability",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Denial of Service"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0816",
+      "T0831"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CCMS",
+      "DMS"
+    ],
+    "affected_components": [
+      "charging_scheduler",
+      "load_management",
+      "grid_interface"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Load ramping controls",
+      "Randomization of charging schedules",
+      "Grid stability monitoring",
+      "Emergency load shedding"
+    ],
+    "detection_methods": [
+      "Synchronized charging patterns",
+      "Unusual load spikes",
+      "Grid stability warnings",
+      "Coordinated command sequences"
+    ],
+    "defensive_actions": [
+      "Load ramping controls",
+      "Randomization of charging schedules",
+      "Grid stability monitoring",
+      "Emergency load shedding"
+    ],
+    "countermeasures": [
+      "Load ramping controls",
+      "Randomization of charging schedules",
+      "Grid stability monitoring",
+      "Emergency load shedding"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker coordinates simultaneous charging start/stop to create grid instability",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Coordinated Charging Disruption Attacker coordinates simultaneous charging start/stop to create grid instability Load ramping controls Randomization of charging schedules Grid stability monitoring Emergency load shedding Synchronized charging patterns Unusual load spikes Grid stability warnings Coordinated command sequences",
+    "keywords": [
+      "denial of service",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "coordinated",
+      "charging",
+      "disruption"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "denial of service",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-ELEVATION_OF_PRIVILEGE-001",
+    "type": "stride_pattern",
+    "title": "API Privilege Escalation",
+    "description": "Attacker exploits API vulnerability to gain administrative access to charging network",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Elevation of Privilege"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0890",
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "EVSE",
+      "CMS",
+      "CCMS"
+    ],
+    "affected_components": [
+      "api_gateway",
+      "authentication_service",
+      "admin_panel"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Regular security audits and penetration testing",
+      "Principle of least privilege",
+      "Input validation and sanitization",
+      "API security best practices (OAuth 2.0, JWT)"
+    ],
+    "detection_methods": [
+      "Unexpected privilege changes",
+      "Unauthorized admin actions",
+      "API abuse patterns",
+      "Privilege escalation attempts"
+    ],
+    "defensive_actions": [
+      "Regular security audits and penetration testing",
+      "Principle of least privilege",
+      "Input validation and sanitization",
+      "API security best practices (OAuth 2.0, JWT)"
+    ],
+    "countermeasures": [
+      "Regular security audits and penetration testing",
+      "Principle of least privilege",
+      "Input validation and sanitization",
+      "API security best practices (OAuth 2.0, JWT)"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker exploits API vulnerability to gain administrative access to charging network",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "API Privilege Escalation Attacker exploits API vulnerability to gain administrative access to charging network Regular security audits and penetration testing Principle of least privilege Input validation and sanitization API security best practices (OAuth 2.0, JWT) Unexpected privilege changes Unauthorized admin actions API abuse patterns Privilege escalation attempts",
+    "keywords": [
+      "elevation of privilege",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "api",
+      "privilege",
+      "escalation"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "elevation of privilege",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-ELEVATION_OF_PRIVILEGE-002",
+    "type": "stride_pattern",
+    "title": "SCADA HMI Privilege Escalation",
+    "description": "Attacker escalates privileges on SCADA HMI to gain control over critical infrastructure",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Elevation of Privilege"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0890",
+      "T0874"
+    ],
+    "attack_vector": "Network/Local",
+    "severity": "High",
+    "affected_systems": [
+      "SCADA",
+      "DMS",
+      "AGC"
+    ],
+    "affected_components": [
+      "hmi_interface",
+      "user_management",
+      "access_control"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Strong authentication mechanisms",
+      "Role-based access control",
+      "Privilege separation",
+      "Regular access reviews"
+    ],
+    "detection_methods": [
+      "Unauthorized privilege modifications",
+      "Suspicious user account activities",
+      "Access control violations",
+      "Privilege escalation exploits"
+    ],
+    "defensive_actions": [
+      "Strong authentication mechanisms",
+      "Role-based access control",
+      "Privilege separation",
+      "Regular access reviews"
+    ],
+    "countermeasures": [
+      "Strong authentication mechanisms",
+      "Role-based access control",
+      "Privilege separation",
+      "Regular access reviews"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker escalates privileges on SCADA HMI to gain control over critical infrastructure",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "SCADA HMI Privilege Escalation Attacker escalates privileges on SCADA HMI to gain control over critical infrastructure Strong authentication mechanisms Role-based access control Privilege separation Regular access reviews Unauthorized privilege modifications Suspicious user account activities Access control violations Privilege escalation exploits",
+    "keywords": [
+      "elevation of privilege",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "scada",
+      "hmi",
+      "privilege"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "elevation of privilege",
+      "evse",
+      "power_systems"
+    ]
+  },
+  {
+    "doc_id": "STRIDE-ELEVATION_OF_PRIVILEGE-003",
+    "type": "stride_pattern",
+    "title": "Database Privilege Escalation",
+    "description": "Attacker gains elevated database privileges to modify critical charging or grid data",
+    "source": "ARES STRIDE Threat Modeling Framework",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Elevation of Privilege"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [
+      "T0890",
+      "T0866"
+    ],
+    "attack_vector": "Network",
+    "severity": "High",
+    "affected_systems": [
+      "CMS",
+      "DMS",
+      "Billing System"
+    ],
+    "affected_components": [
+      "database_server",
+      "user_accounts",
+      "stored_procedures"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation",
+      "Critical Infrastructure"
+    ],
+    "mitigation_strategies": [
+      "Database security hardening",
+      "Least privilege database accounts",
+      "SQL injection prevention",
+      "Database activity monitoring"
+    ],
+    "detection_methods": [
+      "Unauthorized database modifications",
+      "Privilege grant operations",
+      "SQL injection attempts",
+      "Abnormal database queries"
+    ],
+    "defensive_actions": [
+      "Database security hardening",
+      "Least privilege database accounts",
+      "SQL injection prevention",
+      "Database activity monitoring"
+    ],
+    "countermeasures": [
+      "Database security hardening",
+      "Least privilege database accounts",
+      "SQL injection prevention",
+      "Database activity monitoring"
+    ],
+    "prerequisites": "",
+    "impact": "Attacker gains elevated database privileges to modify critical charging or grid data",
+    "cvss_score": 7.5,
+    "exploitability": "Medium",
+    "references": [],
+    "embedding_text": "Database Privilege Escalation Attacker gains elevated database privileges to modify critical charging or grid data Database security hardening Least privilege database accounts SQL injection prevention Database activity monitoring Unauthorized database modifications Privilege grant operations SQL injection attempts Abnormal database queries",
+    "keywords": [
+      "elevation of privilege",
+      "evse",
+      "charging",
+      "power",
+      "grid",
+      "database",
+      "privilege",
+      "escalation"
+    ],
+    "relevance_tags": [
+      "stride",
+      "threat_model",
+      "elevation of privilege",
+      "evse",
+      "power_systems"
+    ]
+  }
+]

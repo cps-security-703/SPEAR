@@ -1,0 +1,39 @@
+run_id,call_id,timestamp_utc,provider,model_name,method_name,total_time_s,ttft_s,prompt_tokens,completion_tokens,total_tokens,cost_usd,is_valid_json,schema_valid,json_parse_error,mitre_id_count,stride_category_count,quality_score_rule,prompt_length_chars,response_length_chars,response_snippet,task_success,rl_plan_accepted,rl_reward_before,rl_reward_after,rl_reward_delta,grid_id,episode,step,is_fallback,error_message
+62d40db6,969bebf7-6e2b-424a-81c0-f1fbfc3acea7,2026-04-30T09:11:01.566414+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.5734,,781,765,1546,0.0,True,True,,6,6,1.0,2704,2290,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid voltage stability on System 1 with high stealth.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 20.0,
+  ",False,True,0.0,479.0162213105168,479.016221,,,,False,
+62d40db6,3989b297-d654-445d-a386-e1ae3140f388,2026-04-30T19:33:22.423324+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.9253,,950,764,1714,0.0,True,True,,6,4,0.8667,2707,2327,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [2],
+      ""magnitude"": 0.5,
+      ""duration"": 15.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating to System 2; increased stealth to mitigate detection.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [3],
+      ""magnitude"": 0.4,
+      ""duration"": 20.0,
+      ""stealth",,,,,,,,,False,

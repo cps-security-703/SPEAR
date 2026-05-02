@@ -1,0 +1,52 @@
+run_id,call_id,timestamp_utc,provider,model_name,method_name,total_time_s,ttft_s,prompt_tokens,completion_tokens,total_tokens,cost_usd,is_valid_json,schema_valid,json_parse_error,mitre_id_count,stride_category_count,quality_score_rule,prompt_length_chars,response_length_chars,response_snippet,task_success,rl_plan_accepted,rl_reward_before,rl_reward_after,rl_reward_delta,grid_id,episode,step,is_fallback,error_message
+8b735871,77da973a-7103-465b-93ad-bc7e52e7c7bc,2026-04-26T20:15:40.482051+00:00,openrouter,deepseek/deepseek-v4-flash,analyze_threats,15.0641,,762,960,1722,0.0,True,True,,6,6,1.0,2704,2477,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.75,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.8,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""System 1 selected for initial voltage testing to observe grid voltage falsification impact.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": ",True,True,0.0,2837.376109519,2837.37611,,,,False,
+8b735871,2449013a-508a-48d5-be0a-45aa6905890d,2026-04-26T21:11:58.714558+00:00,openrouter,deepseek/deepseek-v4-flash,analyze_threats,123.5587,,898,789,1687,0.0,True,True,,4,5,0.8133,2731,2627,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [2],
+      ""magnitude"": 0.7,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.7,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Rotating from System 1 to untested System 2; reward was high (12954.3) so keeping params""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.8,",True,True,2837.376109519,2750.7321004704127,-86.644009,,,,False,
+8b735871,e4b2a09b-dfd5-4adb-82c6-3f2f5a28177c,2026-04-26T22:09:10.439632+00:00,openrouter,deepseek/deepseek-v4-flash,analyze_threats,102.591,,898,905,1803,0.0,True,True,,6,4,0.8667,2731,2971,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [3],
+      ""magnitude"": 0.7,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.7,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Rotating from previous systems [1,2] to untested System 3; reward was high so keeping params.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [4],
+      ""magnitude"":",,,,,,,,,False,

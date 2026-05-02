@@ -9,31 +9,35 @@ from typing import Dict, List, Tuple
 
 @dataclass
 class EVCSParameters:
-    """EVCS specifications - Updated for Realistic Constraints"""
-    # Base Reference Values
-    rated_voltage: float = 400.0  # V (base reference voltage)
-    rated_current: float = 100.0  # A (base reference current)
-    rated_power: float = 50.0     # kW (400V × 100A = 40kW base power)
-    
-    # Voltage and Current Limits
-    max_voltage: float = 500.0    # V (maximum voltage limit)
-    min_voltage: float = 300.0    # V (minimum voltage limit)
-    max_current: float = 150.0    # A (maximum current limit)
-    min_current: float = 50.0     # A (minimum current limit)
-    
+    """EVCS specifications — Level-2 AC EVSE matching Caltech ACN-Data.
+
+    Reference: Caltech ACN-Data (ev.caltech.edu/dataset), SAE J1772-2017.
+      240 V single-phase L2, 32 A max pilot, 7.68 kW peak per port.
+    """
+    # Base Reference Values — match Caltech ACN EVSE (240 V / 32 A / 7.68 kW)
+    rated_voltage: float = 240.0  # V  (L2 single-phase, CALTECH_EVSE_VOLTAGE_V)
+    rated_current: float = 24.0   # A  (typical L2 setpoint, below 32 A SAE max)
+    rated_power:   float = 5.76   # kW (240 V × 24 A)
+
+    # Voltage and Current Limits — SAE J1772-2017 L2 bounds
+    max_voltage: float = 240.0    # V  (L2 is fixed AC voltage)
+    min_voltage: float = 208.0    # V  (87 % of 240 V, NEMA 6-20 minimum)
+    max_current: float = 32.0     # A  (CALTECH_MAX_PILOT_A, SAE J1772 L2 max)
+    min_current: float = 6.0      # A  (SAE J1772 minimum pilot signal)
+
     # Power Limits
-    max_power: float = 75.0       # kW (500V × 150A = 75kW maximum)
-    min_power: float = 15.0       # kW (300V × 50A = 15kW minimum)
-    
+    max_power: float = 7.68       # kW (240 V × 32 A)
+    min_power: float = 1.44       # kW (240 V × 6 A)
+
     # Battery and Efficiency Parameters
-    capacity: float = 50.0        # kWh
+    capacity: float = 60.0        # kWh (Idaho NL EV Project default)
     efficiency_charge: float = 0.95
     efficiency_discharge: float = 0.92
-    min_soc: float = 0.1         # 10%
-    max_soc: float = 0.9         # 90%
-    disconnect_soc: float = 0.90  # 90% - SOC threshold for EV disconnection
-    voltage_bandwidth: float = 10.0  # V, for voltage regulation
-    current_bandwidth: float = 5.0   # A, for current regulation
+    min_soc: float = 0.1          # 10 %
+    max_soc: float = 0.9          # 90 %
+    disconnect_soc: float = 0.80  # 80 % — typical L2 workplace target SOC
+    voltage_bandwidth: float = 5.0   # V, for voltage regulation
+    current_bandwidth: float = 2.0   # A, for current regulation
 
 class EVCSController:
     """Individual EVCS Controller with power electronics dynamics"""
@@ -57,42 +61,42 @@ class EVCSController:
         self.current_error_integral = 0.0
         self.power_error_integral = 0.0
         
-        # References from CMS
-        self.voltage_reference = 400.0  # V (DC side) - Updated to rated voltage
-        self.current_reference = 100.0    # A
-        self.power_reference = 50.0      # kW
-        
-        # Measured values (simulated dynamics)
-        self.voltage_measured = 400.0   # V - Updated to rated voltage
-        self.current_measured = 100.0     # A
-        self.power_measured = 50.0       # kW
-        
+        # References from CMS — L2 ACN nominal values
+        self.voltage_reference = 240.0  # V (L2 AC EVSE, CALTECH_EVSE_VOLTAGE_V)
+        self.current_reference = 24.0   # A (typical L2 setpoint)
+        self.power_reference   = 5.76   # kW (240 V × 24 A)
+
+        # Measured values — initialised at L2 nominal
+        self.voltage_measured = 240.0   # V
+        self.current_measured = 24.0    # A
+        self.power_measured   = 5.76    # kW
+
         # AC side measurements
-        self.ac_voltage_rms = 7200.0    # V (line-neutral)
-        self.ac_current_rms = 100.0       # A
+        self.ac_voltage_rms = 240.0     # V (L2 EVSE input; onboard charger secondary)
+        self.ac_current_rms = 24.0      # A
         self.grid_frequency = 60.0      # Hz
-        self.pll_angle = 0.0           # radians
-        
-        # Power electronics states
-        self.dc_link_voltage = 400.0    # V - Updated to rated voltage
+        self.pll_angle = 0.0            # radians
+
+        # Power electronics states (onboard charger in EV, referenced at EVSE level)
+        self.dc_link_voltage = 240.0    # V
         self.switching_frequency = 10000 # Hz
         self.filter_time_constant = 0.02 # s (50 Hz cutoff)
-        
+
         # Power flow coupling variables
-        self.dc_link_capacitance = 0.1  # F (DC link capacitor)
-        self.dc_link_power_demand = 50.0  # kW (power demanded by DC-DC converter)
-        self.ac_dc_efficiency = 0.98    # AC-DC converter efficiency
-        self.dc_dc_efficiency = 0.96    # DC-DC converter efficiency
+        self.dc_link_capacitance = 0.1  # F
+        self.dc_link_power_demand = 5.76 # kW
+        self.ac_dc_efficiency = 0.95    # onboard charger efficiency (L2 typical)
+        self.dc_dc_efficiency = 1.00    # no separate DC-DC stage for L2
         
         # Power balance tracking
         self.power_balance_error = 0.0  # kW
         self.total_efficiency = self.ac_dc_efficiency * self.dc_dc_efficiency
         
     def set_references(self, voltage_ref: float, current_ref: float, power_ref: float):
-        """Set references from CMS"""
-        self.voltage_reference = voltage_ref
-        self.current_reference = current_ref
-        self.power_reference = power_ref
+        """Set references from CMS (clamped to L2 ACN-matched bounds)"""
+        self.voltage_reference = float(np.clip(voltage_ref, 0.0, 240.0))    # L2 max: 240V
+        self.current_reference = float(np.clip(current_ref, 0.0, 32.0))     # L2 max: 32A (SAE J1772)
+        self.power_reference = float(np.clip(power_ref, 0.0, 7.68))         # L2 max: 7.68 kW (240V×32A)
     
     def park_transformation(self, va: float, vb: float, vc: float, theta: float) -> Tuple[float, float]:
         """Park transformation for AC-DC conversion"""
@@ -439,21 +443,21 @@ class EVCSController:
         
         # Clamp measured current to realistic range
         if hasattr(self, 'current_measured'):
-            self.current_measured = np.clip(self.current_measured, 0.0, 500.0)  # 0-500A range
+            self.current_measured = np.clip(self.current_measured, 0.0, 32.0)  # L2 max: 32A (SAE J1772)
             if not np.isfinite(self.current_measured):
                 self.current_measured = 0.0
-        
+
         # Clamp SOC to valid range [0.01, 0.99] to avoid boundary issues
         if hasattr(self, 'soc'):
             self.soc = np.clip(self.soc, 0.01, 0.99)
             if not np.isfinite(self.soc):
                 self.soc = 0.5  # Default to 50%
-        
+
         # Clamp DC link voltage to realistic range
         if hasattr(self, 'dc_link_voltage'):
-            self.dc_link_voltage = np.clip(self.dc_link_voltage, 100.0, 1000.0)  # 100V-1000V range
+            self.dc_link_voltage = np.clip(self.dc_link_voltage, 208.0, 240.0)  # L2: 208–240V
             if not np.isfinite(self.dc_link_voltage):
-                self.dc_link_voltage = 400.0  # Default to 400V
+                self.dc_link_voltage = 240.0  # Default to L2 nominal
     
     def update_dynamics_with_solve_ivp(self, grid_voltage_rms: float, dt: float,
                                        system_frequency: Optional[float] = None) -> Dict:
@@ -821,11 +825,11 @@ class ChargingManagementSystem:
                 print(f"PINN optimization failed for {evcs_name}: {e}, using fallback")
                 # Fallback to realistic EVCS heuristic
                 if controller.soc < 0.3:
-                    power_ref, voltage_ref, current_ref = 60.0, 480.0, 125.0  # Fast charging within limits
+                    power_ref, voltage_ref, current_ref = 7.68, 240.0, 32.0  # L2 max (high urgency)
                 elif controller.soc < 0.7:
-                    power_ref, voltage_ref, current_ref = 40.0, 400.0, 100.0  # Rated charging
+                    power_ref, voltage_ref, current_ref = 5.76, 240.0, 24.0  # L2 rated (nominal)
                 else:
-                    power_ref, voltage_ref, current_ref = 20.0, 350.0, 60.0   # Trickle charging
+                    power_ref, voltage_ref, current_ref = 2.88, 240.0, 12.0  # L2 trickle (50% rate)
                 
                 references[evcs_name] = {
                     'power_ref': power_ref,

@@ -337,51 +337,64 @@ class LangGraphAttackCoordinator:
         return state
     
     def _should_continue_attack(self, state: AttackState) -> Literal["continue", "adapt", "abort"]:
-        """Decide whether to continue, adapt, or abort attack"""
+        """Decide whether to continue, adapt, or abort attack.
+
+        Previous bug: the 0.8 detection threshold caused an immediate 'abort'
+        in the inference phase where detection_probability is always 1.0, so
+        the workflow never reached impact_evaluation and iterated zero times.
+
+        Fix:
+        - Only abort when detection is extreme AND the iteration budget is
+          already exhausted (there is nothing more to try).
+        - Otherwise route to 'adapt' so the LLM can attempt a strategy change.
+        """
         stealth_metrics = state.get("stealth_metrics", {})
-        detection_prob = stealth_metrics.get("detection_probability", 0.0)
-        stealth_score = stealth_metrics.get("stealth_score", 1.0)
-        
-        # Abort if detection risk is too high
-        if detection_prob > 0.8:
+        detection_prob  = stealth_metrics.get("detection_probability", 0.0)
+        stealth_score   = stealth_metrics.get("stealth_score", 1.0)
+        iteration_count = state.get("iteration_count", 0)
+        max_iterations  = state.get("max_iterations", 5)
+
+        # Abort only when budget exhausted AND fully detected — nothing left to try
+        if detection_prob >= 1.0 and iteration_count >= max_iterations:
             return "abort"
-        
-        # Adapt if stealth is compromised but not critically
+
+        # Adapt if stealth is compromised (always route here instead of abort
+        # so the strategy adaptation node gets a chance to act)
         if stealth_score < 0.5 or detection_prob > 0.6:
             return "adapt"
-        
-        # Continue if stealth is maintained
+
         return "continue"
-    
+
     def _should_adapt_strategy(self, state: AttackState) -> Literal["adapt", "continue", "complete"]:
-        """Decide whether to adapt strategy, continue, or complete episode"""
+        """Decide whether to adapt strategy, continue, or complete episode.
+
+        Previous bug: iteration_count was never incremented before the
+        'continue' branch, so the max_iterations guard was never reached and
+        the graph looped indefinitely.
+        """
         success_metrics = state.get("success_metrics", {})
-        success_rate = success_metrics.get("success_rate", 0.0)
-        impact_score = success_metrics.get("impact_score", 0.0)
-        
+        success_rate    = success_metrics.get("success_rate", 0.0)
+        impact_score    = success_metrics.get("impact_score", 0.0)
         iteration_count = state.get("iteration_count", 0)
-        max_iterations = state.get("max_iterations", 5)
-        
-        # Complete if max iterations reached
+        max_iterations  = state.get("max_iterations", 5)
+
+        # Always increment first so the counter reflects completed iterations
+        state["iteration_count"] = iteration_count + 1
+
+        # Hard stop: budget exhausted
         if iteration_count >= max_iterations:
             return "complete"
-        
-        # Adapt if performance is poor
-        if success_rate < 0.3 or impact_score < 30.0:
-            state["iteration_count"] = iteration_count + 1
-            return "adapt"
-        
-        # Complete after a few iterations to prevent infinite loops
-        if iteration_count >= 5:  # Limit to 2 iterations max
+
+        # Performance is good enough — finish early
+        if success_rate >= 0.7 and impact_score >= 70.0:
             return "complete"
-        
-        # Continue if performance is acceptable but not optimal
-        if success_rate < 0.7 or impact_score < 70.0:
-            state["iteration_count"] = iteration_count + 1
-            return "continue"
-        
-        # Complete if performance is good
-        return "complete"
+
+        # Poor performance — request strategy adaptation
+        if success_rate < 0.3 or impact_score < 30.0:
+            return "adapt"
+
+        # Acceptable but not optimal — re-execute with current strategy
+        return "continue"
     
     def run_attack_episode(self, scenario, episode_number: int) -> Dict[str, Any]:
         """Run a complete attack episode using LangGraph workflow"""

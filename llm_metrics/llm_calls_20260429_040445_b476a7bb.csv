@@ -1,0 +1,255 @@
+run_id,call_id,timestamp_utc,provider,model_name,method_name,total_time_s,ttft_s,prompt_tokens,completion_tokens,total_tokens,cost_usd,is_valid_json,schema_valid,json_parse_error,mitre_id_count,stride_category_count,quality_score_rule,prompt_length_chars,response_length_chars,response_snippet,task_success,rl_plan_accepted,rl_reward_before,rl_reward_after,rl_reward_delta,grid_id,episode,step,is_fallback,error_message
+b476a7bb,579e52f8-5b24-4c33-aae4-4cd7ccdab5c2,2026-04-29T08:04:45.553054+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.8491,,779,785,1564,0.0,True,True,,6,6,1.0,2704,2441,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""High stealth assessment on System 1 to baseline grid feedback loops.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 2",True,True,0.0,2382.9473328001177,2382.947333,,,,False,
+b476a7bb,3a94ecec-6ad9-4b59-948c-dff87183d6ee,2026-04-29T10:03:03.507731+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.6327,,972,811,1783,0.0,True,True,,6,3,0.8,2737,2462,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [2],
+      ""magnitude"": 0.33,
+      ""duration"": 30.0,
+      ""stealth_level"": 0.73,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating from System 1 to untested System 2; maintaining high-reward parameters.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [3],
+      ""magnitude"": 0.71,
+      ""duration"":",True,True,2382.9473328001177,2803.2489690257307,420.301636,,,,False,
+b476a7bb,5169e1d7-f022-43d3-8e8c-64feb2af09de,2026-04-29T11:51:30.368225+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,3.2678,,972,781,1753,0.0,True,True,,6,4,0.8667,2737,2425,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [3],
+      ""magnitude"": 0.6,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.7,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating to untested system 3; maintaining moderate magnitude following high reward.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [4],
+      ""magnitude"": 0.9,
+      ""duration""",True,True,2803.2489690257307,1636.343451238826,-1166.905518,,,,False,
+b476a7bb,916bb748-a442-42ea-ada0-6138ca42f602,2026-04-29T13:42:40.610390+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.8925,,974,799,1773,0.0,True,True,,6,4,0.8667,2737,2445,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [4],
+      ""magnitude"": 0.45,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.65,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating to untested System 4; increasing magnitude to optimize reward-impact ratio.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.25,
+      ""durati",True,True,1636.343451238826,1722.4562820280973,86.112831,,,,False,
+b476a7bb,baccb155-2537-4019-a382-9ffe5b350fcd,2026-04-29T15:26:17.689138+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.7817,,974,778,1752,0.0,True,True,,6,4,0.8667,2737,2355,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [5],
+      ""magnitude"": 0.4,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.65,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating to untested system 5; maintaining balanced impact profile.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [6],
+      ""magnitude"": 0.15,
+      ""duration"": 60.0,
+      """,True,True,1722.4562820280973,1767.2145848754944,44.758303,,,,False,
+b476a7bb,8f590053-7c10-4b72-bbd4-17237c949c6d,2026-04-29T17:13:32.766159+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,3.5064,,972,784,1756,0.0,True,True,,6,4,0.8667,2737,2402,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [6],
+      ""magnitude"": 0.4,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.7,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Tampering"",
+      ""rationale"": ""Rotating to untested system 6; maintaining successful parameters.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [5],
+      ""magnitude"": 0.1,
+      ""duration"": 30.0,
+      ""stea",True,True,1767.2145848754944,1723.8242073707975,-43.390378,,,,False,
+b476a7bb,9e4240a2-e8db-4423-b947-bea9288f98c3,2026-04-29T18:57:31.648867+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,3.1349,,3595,697,4292,0.0,True,True,,0,1,0.0667,8326,2297,"{
+  ""ordered_attacks"": [
+    {
+      ""attack_type"": ""communication_spoofing"",
+      ""target_system"": 5,
+      ""override_rl_target"": false,
+      ""override_justification"": null,
+      ""magnitude"": 2.0,
+      ""duration"": 5.0,
+      ""stealth_level"": 1.0,
+      ""timing_rationale"": ""High stealth used to establish initial persistence and bypass authentication before more disruptive actions.""
+    },
+    {
+      ""attack_type"": ""data_injection"",
+      ""target_system"": 6,
+      ""override_rl_target"": false",,,,,,,,,False,
+b476a7bb,fd76eaf4-8432-4bcb-8952-090d6ef26887,2026-04-30T00:10:43.024188+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,2.3357,,781,776,1557,0.0,True,True,,6,6,1.0,2704,2308,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 3,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid voltage transparency on System 1.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 20.0,
+      ""stealth_le",True,True,0.0,2340.4980216422796,2340.498022,,,,False,
+b476a7bb,8b8f5344-96a9-46f1-9c7b-eaa750864486,2026-04-30T00:10:58.703626+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,13.6251,,779,757,1536,0.0,True,True,,6,6,1.0,2704,2245,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid stability reporting on System 1""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 20.0,
+      ""stealth_leve",True,True,2340.4980216422796,2386.5532687420077,46.055247,,,,False,
+b476a7bb,5f923105-2ddb-4b6a-9f13-cab004037d82,2026-04-30T00:11:13.344449+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,13.0454,,781,779,1560,0.0,True,True,,6,6,1.0,2704,2312,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid voltage stability on System 1 with high stealth""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 20.0,
+   ",True,True,2386.5532687420077,2361.2149078367215,-25.338361,,,,False,
+b476a7bb,ed976879-939c-46f0-8789-312d04455d5f,2026-04-30T00:11:28.439803+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,13.4528,,779,762,1541,0.0,True,True,,6,6,1.0,2704,2269,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid voltage stability on System 1.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 20.0,
+      ""stealth_level",True,True,2361.2149078367215,2278.7822920837516,-82.432616,,,,False,
+b476a7bb,d7014efe-6a70-4270-8b73-79b22f4bf290,2026-04-30T00:11:43.350128+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,13.1786,,779,776,1555,0.0,True,True,,6,6,1.0,2704,2341,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing grid voltage stability on System 1 distribution logic.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": 1.2,
+      ""duration"": 15.0,
+ ",True,True,2278.7822920837516,2295.1580763311194,16.375784,,,,False,
+b476a7bb,40e4a13e-50a8-4f15-882f-190c796c03ca,2026-04-30T00:11:58.333512+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threats,13.3667,,781,781,1562,0.0,True,True,,6,6,1.0,2704,2451,"{
+  ""deployments"": [
+    {
+      ""attack_type"": ""voltage_manipulation"",
+      ""target_systems"": [1],
+      ""magnitude"": 0.5,
+      ""duration"": 45.0,
+      ""stealth_level"": 0.9,
+      ""priority"": 1,
+      ""mitre_technique"": ""T0831"",
+      ""stride_category"": ""Information Disclosure"",
+      ""rationale"": ""Testing voltage stability in System 1 with high stealth to avoid triggering grid protection.""
+    },
+    {
+      ""attack_type"": ""current_injection"",
+      ""target_systems"": [2],
+      ""magnitude"": ",True,True,2295.1580763311194,2382.4481826101232,87.290106,,,,False,
+b476a7bb,bac48018-8967-424a-89f5-2ae1aa0a4f18,2026-04-30T00:12:12.769250+00:00,openrouter,google/gemini-3.1-flash-lite-preview,analyze_threat_scenario,13.6942,,2246,497,2743,0.0,True,False,,0,1,0.0667,6474,1397,"[
+  {
+    ""scenario_name"": ""Wave 1: Reconnaissance and Defense Subversion"",
+    ""start_time"": 360.0,
+    ""duration"": 934.0,
+    ""target_systems"": [5, 6],
+    ""attack_types"": [""communication_spoofing"", ""data_injection""],
+    ""combined_magnitude"": 2.0,
+    ""stealth_level"": 1.0,
+    ""strategic_goal"": ""Establish persistence and corrupt monitoring data across nodes 5 and 6"",
+    ""coordination"": ""simultaneous"",
+    ""impact_factor"": 0.75,
+    ""success_rate"": 0.95
+  },
+  {
+    ""scenario_name"": ""Wave 2: ",,,,,,,,,False,

@@ -1,0 +1,1036 @@
+[
+  {
+    "doc_id": "CICEVSE-SYN_FLOOD-001",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: SYN_Flood",
+    "description": "Network attack of type SYN_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703139539414.72",
+      "bidirectional_last_seen_ms: mean=1703139836483.33",
+      "bidirectional_duration_ms: mean=297068.61",
+      "bidirectional_packets: mean=150.58",
+      "bidirectional_bytes: mean=9041.91",
+      "src2dst_first_seen_ms: mean=1703139539414.72",
+      "src2dst_last_seen_ms: mean=1703139836482.64",
+      "src2dst_duration_ms: mean=297067.92"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type SYN_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "SYN_Flood Network attack of type SYN_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "syn_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "syn_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-SYNONYMOUSIP_FLOOD-002",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: SynonymousIP_Flood",
+    "description": "Network attack of type SynonymousIP_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703184577039.66",
+      "bidirectional_last_seen_ms: mean=1703184873185.68",
+      "bidirectional_duration_ms: mean=296146.02",
+      "bidirectional_packets: mean=162.02",
+      "bidirectional_bytes: mean=9728.08",
+      "src2dst_first_seen_ms: mean=1703184577039.66",
+      "src2dst_last_seen_ms: mean=1703184873184.73",
+      "src2dst_duration_ms: mean=296145.07"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type SynonymousIP_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "SynonymousIP_Flood Network attack of type SynonymousIP_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "synonymousip_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "synonymousip_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-TCP_FLOOD-003",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: TCP_Flood",
+    "description": "Network attack of type TCP_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703139410915.28",
+      "bidirectional_last_seen_ms: mean=1703139705665.31",
+      "bidirectional_duration_ms: mean=294750.03",
+      "bidirectional_packets: mean=145.90",
+      "bidirectional_bytes: mean=8760.79",
+      "src2dst_first_seen_ms: mean=1703139410915.28",
+      "src2dst_last_seen_ms: mean=1703139705665.30",
+      "src2dst_duration_ms: mean=294750.03"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type TCP_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "TCP_Flood Network attack of type TCP_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "tcp_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "tcp_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-PSHACK_FLOOD-004",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: PSHACK_Flood",
+    "description": "Network attack of type PSHACK_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.01",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703181952520.06",
+      "bidirectional_last_seen_ms: mean=1703182249966.15",
+      "bidirectional_duration_ms: mean=297446.09",
+      "bidirectional_packets: mean=160.04",
+      "bidirectional_bytes: mean=9611.11",
+      "src2dst_first_seen_ms: mean=1703181952520.06",
+      "src2dst_last_seen_ms: mean=1703182249960.12",
+      "src2dst_duration_ms: mean=297440.06"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type PSHACK_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "PSHACK_Flood Network attack of type PSHACK_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "pshack_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "pshack_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-SYN_STEALTH_SCAN-005",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: SYN_Stealth_Scan",
+    "description": "Network attack of type SYN_Stealth_Scan against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703144729950.16",
+      "bidirectional_last_seen_ms: mean=1703144729979.25",
+      "bidirectional_duration_ms: mean=29.10",
+      "bidirectional_packets: mean=2.33",
+      "bidirectional_bytes: mean=180.04",
+      "src2dst_first_seen_ms: mean=1703144729950.16",
+      "src2dst_last_seen_ms: mean=1703144729972.26",
+      "src2dst_duration_ms: mean=22.11"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type SYN_Stealth_Scan against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "SYN_Stealth_Scan Network attack of type SYN_Stealth_Scan against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "syn_stealth_scan",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "syn_stealth_scan"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-TCP_PORT_SCAN-006",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: TCP_Port_Scan",
+    "description": "Network attack of type TCP_Port_Scan against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703140434198.97",
+      "bidirectional_last_seen_ms: mean=1703140434235.61",
+      "bidirectional_duration_ms: mean=36.65",
+      "bidirectional_packets: mean=2.42",
+      "bidirectional_bytes: mean=191.94",
+      "src2dst_first_seen_ms: mean=1703140434198.97",
+      "src2dst_last_seen_ms: mean=1703140434227.91",
+      "src2dst_duration_ms: mean=28.94"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type TCP_Port_Scan against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "TCP_Port_Scan Network attack of type TCP_Port_Scan against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "tcp_port_scan",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "tcp_port_scan"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-SERVICE_VERSION_DETECTION-007",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: Service_Version_Detection",
+    "description": "Network attack of type Service_Version_Detection against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703149930345.50",
+      "bidirectional_last_seen_ms: mean=1703149932393.43",
+      "bidirectional_duration_ms: mean=2047.93",
+      "bidirectional_packets: mean=2.64",
+      "bidirectional_bytes: mean=229.50",
+      "src2dst_first_seen_ms: mean=1703149930345.50",
+      "src2dst_last_seen_ms: mean=1703149932385.86",
+      "src2dst_duration_ms: mean=2040.36"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type Service_Version_Detection against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "Service_Version_Detection Network attack of type Service_Version_Detection against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "service_version_detection",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "service_version_detection"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-VULNERABILITY_SCAN-008",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: Vulnerability_Scan",
+    "description": "Network attack of type Vulnerability_Scan against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.00",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703160296752.18",
+      "bidirectional_last_seen_ms: mean=1703160298724.10",
+      "bidirectional_duration_ms: mean=1971.92",
+      "bidirectional_packets: mean=2.82",
+      "bidirectional_bytes: mean=259.53",
+      "src2dst_first_seen_ms: mean=1703160296752.18",
+      "src2dst_last_seen_ms: mean=1703160298710.67",
+      "src2dst_duration_ms: mean=1958.49"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type Vulnerability_Scan against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "Vulnerability_Scan Network attack of type Vulnerability_Scan against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "vulnerability_scan",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "vulnerability_scan"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-UDP_FLOOD-009",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: UDP_Flood",
+    "description": "Network attack of type UDP_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=16.99",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703203425105.72",
+      "bidirectional_last_seen_ms: mean=1703203425213.00",
+      "bidirectional_duration_ms: mean=107.29",
+      "bidirectional_packets: mean=1009.95",
+      "bidirectional_bytes: mean=60764.08",
+      "src2dst_first_seen_ms: mean=1703203425105.72",
+      "src2dst_last_seen_ms: mean=1703203425212.93",
+      "src2dst_duration_ms: mean=107.21"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type UDP_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "UDP_Flood Network attack of type UDP_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "udp_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "udp_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-OS_FINGERPRINTING-010",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: OS_Fingerprinting",
+    "description": "Network attack of type OS_Fingerprinting against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.07",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703140652416.00",
+      "bidirectional_last_seen_ms: mean=1703140652724.65",
+      "bidirectional_duration_ms: mean=308.65",
+      "bidirectional_packets: mean=3.33",
+      "bidirectional_bytes: mean=342.15",
+      "src2dst_first_seen_ms: mean=1703140652416.00",
+      "src2dst_last_seen_ms: mean=1703140652715.03",
+      "src2dst_duration_ms: mean=299.03"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type OS_Fingerprinting against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "OS_Fingerprinting Network attack of type OS_Fingerprinting against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "os_fingerprinting",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "os_fingerprinting"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-AGGRESSIVE_SCAN-011",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: Aggressive_Scan",
+    "description": "Network attack of type Aggressive_Scan against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=6.09",
+      "ip_version: mean=4.00",
+      "bidirectional_first_seen_ms: mean=1703167383632.27",
+      "bidirectional_last_seen_ms: mean=1703167384023.52",
+      "bidirectional_duration_ms: mean=391.25",
+      "bidirectional_packets: mean=4.13",
+      "bidirectional_bytes: mean=488.31",
+      "src2dst_first_seen_ms: mean=1703167383632.27",
+      "src2dst_last_seen_ms: mean=1703167384012.89",
+      "src2dst_duration_ms: mean=380.62"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type Aggressive_Scan against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "Aggressive_Scan Network attack of type Aggressive_Scan against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "aggressive_scan",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "aggressive_scan"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-SLOWLORIS_SCAN-012",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: Slowloris_Scan",
+    "description": "Network attack of type Slowloris_Scan against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "bidirectional_first_seen_ms: mean=1703133582868.82",
+      "bidirectional_last_seen_ms: mean=1703133605681.83",
+      "bidirectional_duration_ms: mean=22813.02",
+      "bidirectional_packets: mean=4.05",
+      "bidirectional_bytes: mean=372.25",
+      "src2dst_first_seen_ms: mean=1703133582868.82",
+      "src2dst_last_seen_ms: mean=1703133605676.81",
+      "src2dst_duration_ms: mean=22808.00"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type Slowloris_Scan against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "Slowloris_Scan Network attack of type Slowloris_Scan against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "slowloris_scan",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "slowloris_scan"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-ICMP_FLOOD-013",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: ICMP_Flood",
+    "description": "Network attack of type ICMP_Flood against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=79.00",
+      "ip_version: mean=4.19",
+      "bidirectional_first_seen_ms: mean=1703193728883.94",
+      "bidirectional_last_seen_ms: mean=1703193774065.72",
+      "bidirectional_duration_ms: mean=45181.78",
+      "bidirectional_packets: mean=659799.50",
+      "bidirectional_bytes: mean=39641431.94",
+      "src2dst_first_seen_ms: mean=1703193728883.94",
+      "src2dst_last_seen_ms: mean=1703193774059.62",
+      "src2dst_duration_ms: mean=45175.69"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type ICMP_Flood against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "ICMP_Flood Network attack of type ICMP_Flood against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "icmp_flood",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "icmp_flood"
+    ]
+  },
+  {
+    "doc_id": "CICEVSE-ICMP_FRAGMENTATION-014",
+    "type": "dataset",
+    "title": "CICEVSE2024 Attack Pattern: ICMP_Fragmentation",
+    "description": "Network attack of type ICMP_Fragmentation against EV charging infrastructure",
+    "source": "CICEVSE2024 Dataset",
+    "date_published": "2024-01-01",
+    "last_updated": "2024-01-01",
+    "stride_categories": [
+      "Unknown"
+    ],
+    "mitre_tactics": [],
+    "mitre_techniques": [],
+    "attack_vector": "Network",
+    "severity": "Low",
+    "affected_systems": [
+      "EVSE",
+      "Network Infrastructure",
+      "CMS"
+    ],
+    "affected_components": [
+      "network_interface",
+      "communication_module",
+      "protocol_handler"
+    ],
+    "industry_sectors": [
+      "Energy",
+      "Transportation"
+    ],
+    "mitigation_strategies": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "detection_methods": [
+      "protocol: mean=13.04",
+      "ip_version: mean=4.14",
+      "bidirectional_first_seen_ms: mean=1703145287143.57",
+      "bidirectional_last_seen_ms: mean=1703145361053.75",
+      "bidirectional_duration_ms: mean=73910.18",
+      "bidirectional_packets: mean=379678.43",
+      "bidirectional_bytes: mean=574819574.36",
+      "src2dst_first_seen_ms: mean=1703145287143.57",
+      "src2dst_last_seen_ms: mean=1703145360740.75",
+      "src2dst_duration_ms: mean=73597.18"
+    ],
+    "defensive_actions": [
+      "Monitor and alert",
+      "Investigate suspicious activity"
+    ],
+    "countermeasures": [
+      "Implement security best practices",
+      "Regular monitoring and updates"
+    ],
+    "prerequisites": "Network access to charging infrastructure",
+    "impact": "Network attack of type ICMP_Fragmentation against EV charging infrastructure",
+    "cvss_score": 3.5,
+    "exploitability": "Medium",
+    "references": [
+      "https://www.unb.ca/cic/datasets/"
+    ],
+    "embedding_text": "ICMP_Fragmentation Network attack of type ICMP_Fragmentation against EV charging infrastructure CICEVSE2024 dataset",
+    "keywords": [
+      "icmp_fragmentation",
+      "cicevse",
+      "network",
+      "attack"
+    ],
+    "relevance_tags": [
+      "cicevse2024",
+      "dataset",
+      "network_attack",
+      "icmp_fragmentation"
+    ]
+  }
+]
