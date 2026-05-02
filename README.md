@@ -218,7 +218,7 @@ Switch between LLM providers in `gemini_llm_threat_analyzer.py`:
 ```python
 USE_GEMINI: bool = False           # True → Gemini  |  False → OpenRouter
 GEMINI_MODEL_NAME    = "models/gemini-2.5-flash"
-OPENROUTER_MODEL_NAME = "google/gemini-3.1-flash-lite-preview"
+OPENROUTER_MODEL_NAME = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 ```
 
 ---
@@ -367,20 +367,13 @@ Six FDI attack types are implemented, each with a dedicated DQN/SAC agent:
 
 ## Technical Architecture
 
-### 3-Layer Intrusion Detection System
+### Robust Intrusion Detection System
 
-The 3-layer IDS is implemented inside `hierarchical_cosimulation.py` and fires once per timestep per EVCS station.
+The roust IDS is implemented inside `hierarchical_cosimulation.py` and fires once per timestep per EVCS station.
 
 ```
-Layer 1 — Physical Constraints (rule-based, hierarchical_cosimulation.py)
-    SOC bounds [0.05, 0.95] | Grid voltage [0.85, 1.15 pu]
-    Grid frequency [59.5, 60.5 Hz] | Demand / load factor thresholds
 
-Layer 2 — Pattern Detection (statistical, hierarchical_cosimulation.py)
-    Rate-of-change analysis | Oscillation detection
-    Cross-feature correlation checks
-
-Layer 3 — ML Detection  (best_ids_model.BestIDSDetector)
+— ML Detection  (best_ids_model.BestIDSDetector)
     Loads models/best_ids_model.pkl produced by compare_ids_models_update.py
     Sliding window of 10 timesteps × 14 features → sklearn predict_proba
     Alert confirmed only when ≥1 of L1/L2 also fires (corroboration gate)
@@ -418,7 +411,7 @@ ACN-Data sessions  ──▶  build_dataset()  ──▶  14-D feature sequences
 ### LLM Integration (Gemini / OpenRouter)
 
 - **Provider switching**: `USE_GEMINI` flag in `gemini_llm_threat_analyzer.py`
-- **Supported models**: Gemini 2.5 Flash, GPT-4o, Claude Sonnet 4.5, DeepSeek V3, and others via OpenRouter
+- **Supported models**: Gemini 2.5 Flash,Gemini 3.1 Flash via google AI studio or  GPT-4o, Claude Sonnet 4.5, DeepSeek V3, and others via OpenRouter
 - **Conversation memory**: up to 20-turn rolling context + learning context
 - **STRIDE/MITRE mapping**: structured prompts return JSON with T-codes, CVSS scores, and countermeasures
 
@@ -438,17 +431,7 @@ Retrieval → Confidence scoring → Top-K ranked RL action recommendations
 
 ## Results Summary
 
-Representative results from the full simulation (6-system, 3 600 s co-simulation):
-
-| Metric | Baseline (random attack) | RL-Coordinated (SPEAR) | Change |
-|--------|--------------------------|------------------------|--------|
-| IDS Detection Rate | ~96 % | ~18 % | ↓ 78 pp |
-| Attack Success Rate | ~62 % | ~87 % | ↑ 25 pp |
-| Evasion Rate | ~4 % | ~78 % | ↑ 74 pp |
-| Mean Anomaly Score | 0.85 | 0.22 | ↓ 74 % |
-| Grid Frequency Deviation | 0.02 Hz | 0.18 Hz | ↑ 9× |
-
-> See `sub_figures/` for per-run PDF figures and `detection_results/` for JSON reports.
+> See `sub_figures/` for per-run PDF figures and `detection_results/` for JSON reports `plots/` for comparative performance of IDS module or PINN based CMS 
 
 ---
 
@@ -461,7 +444,7 @@ Edit the top of `gemini_llm_threat_analyzer.py`:
 ```python
 USE_GEMINI: bool = False                        # True → Gemini, False → OpenRouter
 GEMINI_MODEL_NAME    = "models/gemini-2.5-flash"
-OPENROUTER_MODEL_NAME = "google/gemini-3.1-flash-lite-preview"
+OPENROUTER_MODEL_NAME = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 ```
 
 ### Simulation Scale
