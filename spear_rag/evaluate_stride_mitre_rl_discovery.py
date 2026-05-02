@@ -1,7 +1,4 @@
 """
-Discovery Mode: Let Gemini generate STRIDE-MITRE-RL mappings freely
-Compare RAG vs Non-RAG to see which produces better/more comprehensive mappings
-No pre-defined ground truth - we analyze what Gemini discovers
 """
 
 import json

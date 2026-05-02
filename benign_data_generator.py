@@ -2,15 +2,6 @@
 """
 Benign EVCS Data Generator
 
-Generates realistic benign (normal) operational data for Electric Vehicle Charging Stations.
-This data is used to train the LSTM anomaly detection model to recognize normal behavior patterns.
-
-Key Features:
-- Realistic charging cycle simulation
-- Temporal sequence generation (10 timesteps)
-- 14-dimensional feature space matching LSTM input
-- Configurable number of sequences and variation levels
-- PyTorch-compatible dataset export
 """
 
 import numpy as np
@@ -23,20 +14,6 @@ import os
 class EVCSBenignDataGenerator:
     """
     Generator for benign EVCS operational data
-    
-    Simulates realistic charging cycles with:
-    - SOC progression (0.2 → 0.8)
-    - Voltage stability (380-420V)
-    - Current variation based on SOC
-    - Power consumption patterns
-    - Temperature gradual increase
-    - Demand factor daily patterns
-    - Normal operational noise
-    
-    Args:
-        sequence_length: Length of temporal sequences (default: 10)
-        feature_size: Number of features per timestep (default: 14)
-        noise_level: Amount of random noise to add (default: 0.05)
     """
     
     def __init__(self, sequence_length: int = 10, feature_size: int = 14, 
@@ -64,7 +41,6 @@ class EVCSBenignDataGenerator:
         soc_increment = (target_soc - initial_soc) / self.sequence_length
         
         # Base parameters — cover the full PINN CMS output envelope
-        # PINN outputs: V ∈ [300,500], I ∈ [50,150], P ∈ [15,75]
         base_voltage = np.random.uniform(350, 450)  # Full EVCS voltage range
         base_temperature = np.random.uniform(20, 30)  # Initial temperature
         demand_factor_base = np.random.uniform(0.3, 1.0)
@@ -234,7 +210,7 @@ class EVCSBenignDataGenerator:
         # Save to npz format
         np.savez_compressed(filepath, sequences=sequences, labels=labels)
         
-        print(f"💾 Benign dataset saved to: {filepath}")
+        print(f"# Benign dataset saved to: {filepath}")
         print(f"   Sequences: {num_sequences}")
         print(f"   Shape: {sequences.shape}")
         print(f"   Labels: all benign (0)")
@@ -340,33 +316,33 @@ if __name__ == "__main__":
     )
     
     # Generate training data
-    print("📊 Generating training data...")
+    print("# Generating training data...")
     generator.save_dataset(
         filepath='data/evcs_benign_train.npz',
         num_sequences=8000
     )
     
     # Generate validation data
-    print("\n📊 Generating validation data...")
+    print("\n# Generating validation data...")
     generator.save_dataset(
         filepath='data/evcs_benign_val.npz',
         num_sequences=2000
     )
     
     # Create combined dataset with synthetic attacks
-    print("\n🔀 Creating combined dataset with synthetic attacks...")
+    print("\n# Creating combined dataset with synthetic attacks...")
     dataset = EVCSAnomalyDataset.combine_datasets(
         benign_file='data/evcs_benign_train.npz',
         attack_ratio=0.1  # 10% attack samples
     )
     
-    print(f"\n✅ Combined dataset created:")
+    print(f"\n# Combined dataset created:")
     print(f"   Total samples: {len(dataset)}")
     print(f"   Benign: {(dataset.labels == 0).sum().item()}")
     print(f"   Attack: {(dataset.labels == 1).sum().item()}")
     
     # Show sample
     sample_seq, sample_label = dataset[0]
-    print(f"\n📋 Sample sequence shape: {sample_seq.shape}")
+    print(f"\n# Sample sequence shape: {sample_seq.shape}")
     print(f"   Label: {'Attack' if sample_label == 1 else 'Benign'}")
     print(f"   First timestep features: {sample_seq[0].numpy()}")

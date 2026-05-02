@@ -33,14 +33,14 @@ def test_cve_citations():
     print(f"\n✓ CVE citations found: {cve_count}")
     
     if cve_count > 0:
-        print("✅ SUCCESS: CVE IDs are being cited in the response!")
+        print("# SUCCESS: CVE IDs are being cited in the response!")
         
         # Extract CVE IDs
         import re
         cves = re.findall(r'CVE-\d{4}-\d{4,7}', response)
         print(f"\nCVE IDs found: {', '.join(set(cves))}")
     else:
-        print("❌ ISSUE: No CVE IDs found in response")
+        print("# ISSUE: No CVE IDs found in response")
         print("The prompt improvements may need adjustment or context docs don't contain CVEs")
     
     return cve_count > 0

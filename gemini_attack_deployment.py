@@ -1,10 +1,6 @@
 """
 Gemini Coordination Extensions for Attack-Specific RL Agents
 
-New coordination logic:
-- Gemini deploys attack-specialist agents to target systems
-- Can deploy multiple attack types to same system
-- Adapts deployment strategy based on feedback
 """
 
 from typing import Dict, List, Any
@@ -237,7 +233,7 @@ def parse_gemini_deployment_response(llm_response: Any) -> List[AttackDeployment
         return deployments
         
     except Exception as e:
-        print(f"⚠️ Error parsing Gemini deployment response: {e}")
+        print(f"# Error parsing Gemini deployment response: {e}")
         return create_fallback_deployments()
 
 

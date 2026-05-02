@@ -59,7 +59,7 @@ class RLEvasionComparator:
         
         # Run baseline (non-RL) attacks
         print("\n" + "="*90)
-        print("📊 SCENARIO 1: BASELINE (Non-RL Random Attacks)")
+        print("# SCENARIO 1: BASELINE (Non-RL Random Attacks)")
         print("="*90)
         print("💡 Testing naive/random attacks (no evasion strategy)")
         np.random.seed(self.random_seed)  # Reset seed for baseline
@@ -68,7 +68,7 @@ class RLEvasionComparator:
         
         # Run RL-evasive attacks
         print("\n" + "="*90)
-        print("🎯 SCENARIO 2: RL-COORDINATED EVASIVE ATTACKS")
+        print("# SCENARIO 2: RL-COORDINATED EVASIVE ATTACKS")
         print("="*90)
         print("💡 Testing RL-optimized stealthy attacks (with evasion)")
         np.random.seed(self.random_seed + 1000)  # Use different seed for RL scenario
@@ -124,7 +124,7 @@ class RLEvasionComparator:
             'total_detected': sum([int(ep['detection_rate'] * attacks_per_episode) for ep in episode_results])
         }
         
-        print(f"\n✅ Baseline Complete:")
+        print(f"\n# Baseline Complete:")
         print(f"   Detection Rate: {overall['avg_detection_rate']:.1%}")
         print(f"   Success Rate: {overall['avg_success_rate']:.1%}")
         print(f"   Avg Anomaly Score: {overall['avg_anomaly_score']:.3f}")
@@ -173,7 +173,7 @@ class RLEvasionComparator:
             'total_detected': sum([int(ep['detection_rate'] * attacks_per_episode) for ep in episode_results])
         }
         
-        print(f"\n✅ RL-Evasive Complete:")
+        print(f"\n# RL-Evasive Complete:")
         print(f"   Detection Rate: {overall['avg_detection_rate']:.1%}")
         print(f"   Success Rate: {overall['avg_success_rate']:.1%}")
         print(f"   Avg Anomaly Score: {overall['avg_anomaly_score']:.3f}")
@@ -259,7 +259,7 @@ class RLEvasionComparator:
     def _print_comparison(self):
         """Print comparison between baseline and RL-evasive attacks"""
         print("\n" + "="*90)
-        print("📊 COMPARISON: BASELINE vs RL-EVASIVE")
+        print("# COMPARISON: BASELINE vs RL-EVASIVE")
         print("="*90)
         
         baseline = self.results['baseline']['overall']
@@ -287,21 +287,21 @@ class RLEvasionComparator:
               f"{rl_evasive['avg_anomaly_score']:>20.3f}    {anom_improvement:>6.1f}% ↓")
         
         print("\n" + "="*90)
-        print("✅ KEY FINDINGS:")
+        print("# KEY FINDINGS:")
         print("="*90)
         
         if baseline['avg_detection_rate'] > 0.5:
-            print("  ✅ IDS is effective: Detects >50% of baseline attacks")
+            print("  # IDS is effective: Detects >50% of baseline attacks")
         else:
-            print("  ⚠️  IDS needs tuning: Low detection on baseline attacks")
+            print("  #  IDS needs tuning: Low detection on baseline attacks")
         
         if rl_evasive['avg_detection_rate'] < baseline['avg_detection_rate'] * 0.5:
-            print("  ✅ RL evasion is effective: Reduces detection by >50%")
+            print("  # RL evasion is effective: Reduces detection by >50%")
         else:
-            print("  ⚠️  RL evasion needs improvement: Similar detection to baseline")
+            print("  #  RL evasion needs improvement: Similar detection to baseline")
         
         if rl_evasive['avg_success_rate'] > baseline['avg_success_rate']:
-            print(f"  ✅ RL improves attack success: +{suc_improvement:.1f}%")
+            print(f"  # RL improves attack success: +{suc_improvement:.1f}%")
         
         print("="*90)
     
@@ -319,7 +319,7 @@ class RLEvasionComparator:
         with open(output_file, 'w') as f:
             json.dump(serializable_results, f, indent=2)
         
-        print(f"\n💾 Results saved to: {output_file}")
+        print(f"\n# Results saved to: {output_file}")
     
     def _convert_to_serializable(self, obj):
         """Convert numpy types to Python native types for JSON serialization"""
@@ -424,13 +424,13 @@ class RLEvasionComparator:
         plt.tight_layout()
         plot_file = os.path.join(output_dir, f"rl_evasion_comparison_{timestamp}.png")
         plt.savefig(plot_file, dpi=300, bbox_inches='tight')
-        print(f"📈 Visualization saved to: {plot_file}")
+        print(f"# Visualization saved to: {plot_file}")
         plt.close()
 
 
 def main():
     """Main function"""
-    print("🚀 RL Evasion Comparison Evaluator")
+    print("# RL Evasion Comparison Evaluator")
     print("="*90)
     print("💡 Note: Using fixed random seed for reproducible results")
     print("="*90)
@@ -440,7 +440,7 @@ def main():
     results = comparator.run_comparison(num_episodes=30, attacks_per_episode=6)
     
     print("\n" + "="*90)
-    print("✅ EVALUATION COMPLETE!")
+    print("# EVALUATION COMPLETE!")
     print("="*90)
     print("💡 To reproduce these exact results, use random_seed=42")
     print("💡 To get different results, change the random_seed value")

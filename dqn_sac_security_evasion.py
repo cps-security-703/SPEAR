@@ -691,7 +691,7 @@ class DQNSACSecurityEvasionTrainer:
         self.dqn_agent = None
         
         if use_both:
-            print("🎯 Initializing DQN and SAC agents for security evasion...")
+            print("# Initializing DQN and SAC agents for security evasion...")
             
             # SAC Agent (continuous actions)
             self.sac_agent = SAC(
@@ -737,7 +737,7 @@ class DQNSACSecurityEvasionTrainer:
     def train_agents(self, sac_timesteps: int = 50000, dqn_timesteps: int = 50000):
         """Train both DQN and SAC agents"""
         
-        print("🚀 Starting DQN/SAC Security Evasion Training")
+        print("# Starting DQN/SAC Security Evasion Training")
         
         if self.sac_agent:
             print(f"\n🤖 Training SAC Agent ({sac_timesteps} timesteps)...")
@@ -746,7 +746,7 @@ class DQNSACSecurityEvasionTrainer:
                 log_interval=1000,
                 progress_bar=True
             )
-            print("✅ SAC training completed")
+            print("# SAC training completed")
         
         if self.dqn_agent:
             print(f"\n🤖 Training DQN Agent ({dqn_timesteps} timesteps)...")

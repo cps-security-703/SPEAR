@@ -215,7 +215,7 @@ class EnhancedLLMRLCoordinator:
         if enhanced_system and hasattr(enhanced_system, 'attack_specific_coordinator'):
             self.attack_specific_coordinator = enhanced_system.attack_specific_coordinator
             if self.attack_specific_coordinator:
-                print("   ✅ Using Attack-Specific Coordinator (RECOMMENDED)")
+                print("   # Using Attack-Specific Coordinator (RECOMMENDED)")
         
         # Analysis components
         self.stride_analyzer = STRIDEThreatAnalyzer()
@@ -234,9 +234,9 @@ class EnhancedLLMRLCoordinator:
         # Initialize LangGraph workflow
         if LANGGRAPH_AVAILABLE:
             self._build_langgraph_workflow()
-            print("✅ Enhanced LLM-RL Coordinator initialized with LangGraph workflow and STRIDE/MITRE analysis")
+            print("# Enhanced LLM-RL Coordinator initialized with LangGraph workflow and STRIDE/MITRE analysis")
         else:
-            print("⚠️ Enhanced LLM-RL Coordinator initialized without LangGraph (fallback mode)")
+            print("# Enhanced LLM-RL Coordinator initialized without LangGraph (fallback mode)")
     
     def _build_langgraph_workflow(self):
         """Build the enhanced LangGraph workflow for LLM-RL coordination"""
@@ -306,7 +306,7 @@ class EnhancedLLMRLCoordinator:
                 return "complete"
                 
         except Exception as e:
-            print(f"⚠️ Strategy adaptation routing failed: {e}")
+            print(f"# Strategy adaptation routing failed: {e}")
             return "complete"
     
     def _should_continue_adaptation(self, state: EnhancedAttackState) -> str:
@@ -326,12 +326,12 @@ class EnhancedLLMRLCoordinator:
                 return "complete"
                 
         except Exception as e:
-            print(f"⚠️ Adaptation continuation routing failed: {e}")
+            print(f"# Adaptation continuation routing failed: {e}")
             return "complete"
     
     def run_enhanced_attack_episode(self, scenario, episode_num: int) -> Dict:
         """Run complete attack episode using LangGraph workflow"""
-        print(f"\n🎯 Enhanced Attack Episode {episode_num} with LangGraph Workflow")
+        print(f"\n# Enhanced Attack Episode {episode_num} with LangGraph Workflow")
         print("=" * 60)
 
         # Track the current episode so the deployment cache can detect episode changes
@@ -340,7 +340,7 @@ class EnhancedLLMRLCoordinator:
         if LANGGRAPH_AVAILABLE and self.app:
             return self._run_langgraph_workflow(scenario, episode_num)
         else:
-            print("⚠️ LangGraph not available, using fallback coordination")
+            print("# LangGraph not available, using fallback coordination")
             return self._run_fallback_coordination(scenario, episode_num)
     
     def _ensure_json_serializable(self, obj):
@@ -414,7 +414,7 @@ class EnhancedLLMRLCoordinator:
                 'constraints': scenario.constraints
             }
             
-            print("🔄 Executing LangGraph workflow...")
+            print("# Executing LangGraph workflow...")
             
             # Ensure initial state is serializable
             serializable_state = self._ensure_json_serializable(initial_state)
@@ -430,27 +430,27 @@ class EnhancedLLMRLCoordinator:
             }
             final_state = self.app.invoke(serializable_state, config=config)
             
-            print("✅ LangGraph workflow completed successfully")
+            print("# LangGraph workflow completed successfully")
             
             # Extract results from final state
             return self._extract_workflow_results(final_state)
             
         except Exception as e:
-            print(f"❌ LangGraph workflow failed: {e}")
-            print("🔄 Falling back to direct coordination...")
+            print(f"# LangGraph workflow failed: {e}")
+            print("# Falling back to direct coordination...")
             return self._run_fallback_coordination(scenario, episode_num)
     
     def _run_fallback_coordination(self, scenario, episode_num: int) -> Dict:
         """Fallback coordination when LangGraph is not available"""
-        print("📊 Phase 1: Comprehensive System Analysis")
+        print("# Phase 1: Comprehensive System Analysis")
         system_analysis = self._perform_comprehensive_system_analysis()
         
-        print("🔍 Phase 2: STRIDE/MITRE Threat Analysis")
+        print("# Phase 2: STRIDE/MITRE Threat Analysis")
         threat_analysis = self._perform_stride_mitre_analysis(system_analysis)
         
         # NEW: Use attack-specific coordination if available
         if self.attack_specific_coordinator and ATTACK_DEPLOYMENT_AVAILABLE:
-            print("🎯 Phase 3: Attack-Specific Agent Coordination (NEW ARCHITECTURE)")
+            print("# Phase 3: Attack-Specific Agent Coordination (NEW ARCHITECTURE)")
             
             # Extract STRIDE/MITRE data
             stride_threats = threat_analysis.get('stride_threats', {})
@@ -495,16 +495,16 @@ class EnhancedLLMRLCoordinator:
         
         # OLD: Fallback to system-specific coordination
         else:
-            print("🧠 Phase 3: LLM Strategic Planning (OLD ARCHITECTURE)")
+            print("Phase 3: LLM Strategic Planning (OLD ARCHITECTURE)")
             llm_instructions = self._get_llm_strategic_instructions(system_analysis, threat_analysis, scenario)
             
-            print("🤖 Phase 4: RL Agent Coordination (OLD)")
+            print("Phase 4: RL Agent Coordination (OLD)")
             rl_results = self._coordinate_rl_agents(llm_instructions, system_analysis)
             
-            print("🔄 Phase 5: Feedback Analysis")
+            print(" Phase 5: Feedback Analysis")
             feedback = self._analyze_rl_feedback(rl_results, llm_instructions)
             
-            print("🎯 Phase 6: LLM Adaptation")
+            print(" Phase 6: LLM Adaptation")
             adaptation_results = self._perform_llm_adaptation(feedback, system_analysis)
         
         return {
@@ -521,7 +521,7 @@ class EnhancedLLMRLCoordinator:
     
     def _perform_comprehensive_system_analysis(self) -> SystemAnalysisData:
         """Perform comprehensive system analysis for LLM"""
-        print("  📈 Gathering system state data...")
+        print("   Gathering system state data...")
         
         # Get transmission system state
         transmission_state = self._get_transmission_system_state()
@@ -576,15 +576,15 @@ class EnhancedLLMRLCoordinator:
             operational_mode="normal"
         )
         
-        print(f"  ✅ System analysis complete: {len(distribution_states)} distribution systems, {len(evcs_states)} EVCS stations")
+        print(f"  # System analysis complete: {len(distribution_states)} distribution systems, {len(evcs_states)} EVCS stations")
         return system_analysis
     
     def _perform_stride_mitre_analysis(self, system_analysis: SystemAnalysisData) -> Dict:
         """Perform STRIDE and MITRE threat analysis"""
-        print("  🔍 Performing STRIDE analysis...")
+        print("   Performing STRIDE analysis...")
         stride_analysis = self.stride_analyzer.analyze_system(system_analysis)
         
-        print("  🎯 Performing MITRE ATT&CK analysis...")
+        print("  # Performing MITRE ATT&CK analysis...")
         mitre_analysis = self.mitre_analyzer.analyze_system(system_analysis)
         
         # Combine analyses
@@ -596,7 +596,7 @@ class EnhancedLLMRLCoordinator:
             'vulnerability_priorities': self._prioritize_vulnerabilities(stride_analysis, mitre_analysis)
         }
         
-        print(f"  ✅ Threat analysis complete: {len(stride_analysis)} STRIDE threats, {len(mitre_analysis)} MITRE tactics")
+        print(f"  # Threat analysis complete: {len(stride_analysis)} STRIDE threats, {len(mitre_analysis)} MITRE tactics")
         return threat_analysis
 
     def _prioritize_vulnerabilities(self, stride_analysis: Dict, mitre_analysis: Dict) -> List[Dict]:
@@ -743,7 +743,7 @@ class EnhancedLLMRLCoordinator:
     def _get_llm_strategic_instructions(self, system_analysis: SystemAnalysisData, 
                                       threat_analysis: Dict, scenario) -> LLMInstructions:
         """Get strategic instructions from LLM based on comprehensive analysis"""
-        print("  🧠 Querying LLM for strategic guidance...")
+        print("  # Querying LLM for strategic guidance...")
         
         # Create comprehensive prompt for LLM
         llm_prompt = self._create_comprehensive_llm_prompt(system_analysis, threat_analysis, scenario)
@@ -761,10 +761,10 @@ class EnhancedLLMRLCoordinator:
                 instructions = self._parse_llm_instructions(llm_response, system_analysis, threat_analysis)
                 
             except Exception as e:
-                print(f"    ⚠️ LLM query failed: {e}")
+                print(f"    # LLM query failed: {e}")
                 instructions = self._create_fallback_instructions(system_analysis, threat_analysis, scenario)
         else:
-            print("    ⚠️ LLM not available, using fallback instructions")
+            print("    # LLM not available, using fallback instructions")
             instructions = self._create_fallback_instructions(system_analysis, threat_analysis, scenario)
         
         # Store instruction history
@@ -775,7 +775,7 @@ class EnhancedLLMRLCoordinator:
             'threat_context': threat_analysis
         })
         
-        print(f"  ✅ Strategic instructions generated: {len(instructions.recommended_attacks)} attack recommendations")
+        print(f"  # Strategic instructions generated: {len(instructions.recommended_attacks)} attack recommendations")
         return instructions
     
     def _create_comprehensive_llm_prompt(self, system_analysis: SystemAnalysisData, 
@@ -922,7 +922,7 @@ Provide specific, actionable guidance that RL agents can execute.
                 confidence=0.8
             )
         except Exception as e:
-            print(f"    ⚠️ LLM instruction parsing failed: {e}")
+            print(f"    # LLM instruction parsing failed: {e}")
             return self._create_fallback_instructions(system_analysis, threat_analysis, None)
 
     def _create_fallback_instructions(self, system_analysis: SystemAnalysisData, threat_analysis: Dict, scenario) -> LLMInstructions:
@@ -964,7 +964,7 @@ Provide specific, actionable guidance that RL agents can execute.
                 confidence=0.5
             )
         except Exception as e:
-            print(f"    ⚠️ Fallback instruction creation failed: {e}")
+            print(f"    # Fallback instruction creation failed: {e}")
             # Return minimal instructions
             return LLMInstructions(
                 strategy='coordinated_attack',
@@ -989,7 +989,7 @@ Provide specific, actionable guidance that RL agents can execute.
         print("  🤖 Coordinating RL agents with LLM instructions...")
         
         if not self.rl_coordinator:
-            print("    ⚠️ No RL coordinator available")
+            print("    # No RL coordinator available")
             return {'status': 'failed', 'reason': 'no_rl_coordinator'}
         
         # Convert LLM instructions to RL-compatible format
@@ -1004,10 +1004,10 @@ Provide specific, actionable guidance that RL agents can execute.
                 result = self._execute_rl_action_with_instructions(action, instructions)
                 execution_results.append(result)
                 
-                print(f"    ✅ Executed {action['attack_type']} on system {action['target_system']}: {result.get('success', False)}")
+                print(f"    # Executed {action['attack_type']} on system {action['target_system']}: {result.get('success', False)}")
                 
             except Exception as e:
-                print(f"    ❌ RL action failed: {e}")
+                print(f"    # RL action failed: {e}")
                 execution_results.append({'success': False, 'error': str(e)})
         
         # Calculate coordination metrics
@@ -1022,7 +1022,7 @@ Provide specific, actionable guidance that RL agents can execute.
             'detection_events': [r for r in execution_results if r.get('detected', False)]
         }
         
-        print(f"  ✅ RL coordination complete: {rl_results['success_rate']:.1%} success rate")
+        print(f"  # RL coordination complete: {rl_results['success_rate']:.1%} success rate")
         return rl_results
     
     def _coordinate_attack_specific_agents(self, system_analysis,
@@ -1030,15 +1030,8 @@ Provide specific, actionable guidance that RL agents can execute.
                                           mitre_tactics: Dict) -> Dict:
         """
         NEW: Coordinate attack-specific agents using Gemini deployment prompts.
-
-        During the *inference* phase the SAC policy is frozen, so calling Gemini
-        for a deployment plan on every LangGraph iteration within the same episode
-        produces identical results and wastes API quota.  We cache the Gemini
-        deployment response the first time it is obtained for this episode and
-        reuse it on subsequent iterations, only asking Gemini again when the
-        episode number changes.
         """
-        print("  🎯 Coordinating Attack-Specific Agents (NEW ARCHITECTURE)...")
+        print("  # Coordinating Attack-Specific Agents (NEW ARCHITECTURE)...")
         
         # Convert SystemAnalysisData dataclass to dict if needed
         from dataclasses import asdict
@@ -1054,7 +1047,7 @@ Provide specific, actionable guidance that RL agents can execute.
         
         # Check if attack-specific coordinator is available
         if not self.attack_specific_coordinator:
-            print("    ⚠️ Attack-specific coordinator not available, falling back to old coordination")
+            print("    # Attack-specific coordinator not available, falling back to old coordination")
             # Create dummy instructions for fallback
             dummy_instructions = LLMInstructions(
                 recommended_attacks=[],
@@ -1066,7 +1059,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return self._coordinate_rl_agents(dummy_instructions, system_analysis)
         
         if not ATTACK_DEPLOYMENT_AVAILABLE:
-            print("    ⚠️ Attack deployment functions not available")
+            print("    # Attack deployment functions not available")
             return {'status': 'failed', 'reason': 'no_attack_deployment'}
         
         # ── Episode-level deployment cache ───────────────────────────────
@@ -1077,13 +1070,12 @@ Provide specific, actionable guidance that RL agents can execute.
         _cur_ep    = getattr(self, '_current_episode_num', None)
 
         if _cache_dep is not None and _cache_ep == _cur_ep:
-            print("    ♻️  Reusing cached Gemini deployment plan "
                   f"(episode {_cur_ep}, {len(_cache_dep)} deployments)")
             deployments = _cache_dep
             llm_response = getattr(self, '_deployment_cache_response', None)
         else:
             # Step 1: Create Gemini deployment prompt (NEW)
-            print("    📝 Creating Gemini deployment prompt for attack specialists...")
+            print("    Creating Gemini deployment prompt for attack specialists...")
             deployment_prompt = create_gemini_deployment_prompt(
                 system_analysis=system_analysis_dict,
                 stride_threats=stride_threats,
@@ -1091,7 +1083,7 @@ Provide specific, actionable guidance that RL agents can execute.
             )
 
             # Step 2: Get Gemini's deployment strategy
-            print("    🧠 Asking Gemini to deploy attack specialists...")
+            print("    # Asking Gemini to deploy attack specialists...")
             try:
                 gemini_input = {
                     'system_analysis': system_analysis_dict,
@@ -1100,20 +1092,20 @@ Provide specific, actionable guidance that RL agents can execute.
                     'deployment_prompt': deployment_prompt
                 }
                 llm_response = self.llm_analyzer.analyze_threats(gemini_input)
-                print(f"    ✅ Gemini response received ({len(str(llm_response))} chars)")
+                print(f"    # Gemini response received ({len(str(llm_response))} chars)")
             except Exception as e:
-                print(f"    ❌ Gemini analysis failed: {e}")
+                print(f"    # Gemini analysis failed: {e}")
                 llm_response = None
 
             # Step 3: Parse Gemini's deployment response
-            print("    🔍 Parsing Gemini's deployment strategy...")
+            print("    # Parsing Gemini's deployment strategy...")
             if isinstance(llm_response, dict) and 'llm_response' in llm_response:
                 llm_response_text = llm_response['llm_response']
             else:
                 llm_response_text = llm_response
 
             deployments = parse_gemini_deployment_response(llm_response_text)
-            print(f"    ✅ Parsed {len(deployments)} attack deployments")
+            print(f"    # Parsed {len(deployments)} attack deployments")
 
             # Store in cache for subsequent iterations of the same episode
             self._deployment_cache_episode    = _cur_ep
@@ -1124,7 +1116,7 @@ Provide specific, actionable guidance that RL agents can execute.
             print(f"       {i}. {dep.attack_type} → systems {dep.target_systems}")
         
         # Step 4: Execute deployments using attack-specific coordinator
-        print("    🚀 Executing attack deployments...")
+        print("    # Executing attack deployments...")
         all_results = []
         
         for deployment in deployments:
@@ -1133,10 +1125,10 @@ Provide specific, actionable guidance that RL agents can execute.
                 all_results.extend(results)
                 
                 success_count = sum(1 for r in results if r['result']['success'])
-                print(f"       ✅ {deployment.attack_type}: {success_count}/{len(results)} successful")
+                print(f"       # {deployment.attack_type}: {success_count}/{len(results)} successful")
                 
             except Exception as e:
-                print(f"       ❌ Deployment failed for {deployment.attack_type}: {e}")
+                print(f"       # Deployment failed for {deployment.attack_type}: {e}")
         
         # Step 5: Calculate metrics
         total_attacks = len(all_results)
@@ -1155,7 +1147,7 @@ Provide specific, actionable guidance that RL agents can execute.
             'gemini_strategy': llm_response
         }
         
-        print(f"  ✅ Attack-specific coordination complete:")
+        print(f"  # Attack-specific coordination complete:")
         print(f"     Success rate: {coordination_results['success_rate']:.1%}")
         print(f"     Total impact: {total_impact:.2f}")
         print(f"     Avg detection risk: {avg_detection:.2%}")
@@ -1211,7 +1203,7 @@ Provide specific, actionable guidance that RL agents can execute.
             }
             
         except Exception as e:
-            print(f"⚠️ Error calculating episode success metrics: {e}")
+            print(f"# Error calculating episode success metrics: {e}")
             return {
                 'success_rate': 0.0,
                 'total_impact': 0.0,
@@ -1294,7 +1286,7 @@ Provide specific, actionable guidance that RL agents can execute.
     
     def _analyze_rl_feedback(self, rl_results: Dict, instructions: LLMInstructions) -> RLFeedback:
         """Analyze RL execution results and create feedback for LLM"""
-        print("  🔄 Analyzing RL feedback...")
+        print("  # Analyzing RL feedback...")
         
         # Extract execution data
         executed_actions = rl_results.get('executed_actions', [])
@@ -1346,15 +1338,15 @@ Provide specific, actionable guidance that RL agents can execute.
             'results': rl_results
         })
         
-        print(f"  ✅ Feedback analysis complete: {len(detection_events)} detections, {len(success_status)} systems affected")
+        print(f"  # Feedback analysis complete: {len(detection_events)} detections, {len(success_status)} systems affected")
         return feedback
     
     def _perform_llm_adaptation(self, feedback: RLFeedback, system_analysis: SystemAnalysisData) -> Dict:
         """Perform LLM-based adaptation based on RL feedback"""
-        print("  🎯 Performing LLM adaptation...")
+        print("  # Performing LLM adaptation...")
         
         if not self.llm_analyzer or not self.llm_analyzer.is_available:
-            print("    ⚠️ LLM not available for adaptation")
+            print("    # LLM not available for adaptation")
             return {'status': 'skipped', 'reason': 'no_llm'}
         
         # Create adaptation prompt
@@ -1371,11 +1363,11 @@ Provide specific, actionable guidance that RL agents can execute.
             # Parse adaptation recommendations
             adaptation_results = self._parse_adaptation_response(adaptation_response, feedback)
             
-            print(f"  ✅ LLM adaptation complete: {len(adaptation_results.get('recommendations', []))} recommendations")
+            print(f"  # LLM adaptation complete: {len(adaptation_results.get('recommendations', []))} recommendations")
             return adaptation_results
             
         except Exception as e:
-            print(f"    ❌ LLM adaptation failed: {e}")
+            print(f"    # LLM adaptation failed: {e}")
             return {'status': 'failed', 'error': str(e)}
     
     def _create_adaptation_prompt(self, feedback: RLFeedback, system_analysis: SystemAnalysisData) -> str:
@@ -1465,26 +1457,26 @@ Provide specific, actionable guidance that RL agents can execute.
         
         # Debug: Check hierarchical simulation
         if not self.hierarchical_sim:
-            print("    🔍 DEBUG: No hierarchical simulation available")
+            print("    # DEBUG: No hierarchical simulation available")
             return evcs_states
         
         if not hasattr(self.hierarchical_sim, 'distribution_systems'):
-            print("    🔍 DEBUG: No distribution_systems attribute in hierarchical simulation")
+            print("    # DEBUG: No distribution_systems attribute in hierarchical simulation")
             return evcs_states
         
-        print(f"    🔍 DEBUG: Found {len(self.hierarchical_sim.distribution_systems)} distribution systems")
+        print(f"    # DEBUG: Found {len(self.hierarchical_sim.distribution_systems)} distribution systems")
         
         for sys_id, dist_info in self.hierarchical_sim.distribution_systems.items():
-            print(f"    🔍 DEBUG: Checking system {sys_id}")
+            print(f"    # DEBUG: Checking system {sys_id}")
             
             # FIXED: Access the actual system object from the dictionary
             dist_sys = dist_info['system']
             
             if not hasattr(dist_sys, 'ev_stations'):
-                print(f"    🔍 DEBUG: System {sys_id} has no ev_stations attribute")
+                print(f"    # DEBUG: System {sys_id} has no ev_stations attribute")
                 continue
             
-            print(f"    🔍 DEBUG: System {sys_id} has {len(dist_sys.ev_stations)} EVCS stations")
+            print(f"    # DEBUG: System {sys_id} has {len(dist_sys.ev_stations)} EVCS stations")
             
             for station in dist_sys.ev_stations:
                 evcs_states[station.evcs_id] = {
@@ -1494,7 +1486,7 @@ Provide specific, actionable guidance that RL agents can execute.
                     'system_id': sys_id
                 }
         
-        print(f"    🔍 DEBUG: Total EVCS states collected: {len(evcs_states)}")
+        print(f"    # DEBUG: Total EVCS states collected: {len(evcs_states)}")
         return evcs_states
     
     def _get_pinn_model_states(self) -> Dict:
@@ -1562,7 +1554,7 @@ Provide specific, actionable guidance that RL agents can execute.
             }
             
         except Exception as e:
-            print(f"⚠️ Failed to get anomaly detection status: {e}")
+            print(f"# Failed to get anomaly detection status: {e}")
             return {
                 'status': 'error',
                 'error': str(e),
@@ -1596,7 +1588,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return current_threats
             
         except Exception as e:
-            print(f"⚠️ Failed to get current threats: {e}")
+            print(f"# Failed to get current threats: {e}")
             return {
                 'active_attacks': [],
                 'potential_vulnerabilities': [],
@@ -1692,7 +1684,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return results
             
         except Exception as e:
-            print(f"⚠️ Failed to extract workflow results: {e}")
+            print(f"# Failed to extract workflow results: {e}")
             return {
                 'workflow_status': 'error',
                 'error': str(e),
@@ -1749,7 +1741,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return security_metrics
             
         except Exception as e:
-            print(f"⚠️ Failed to calculate security metrics: {e}")
+            print(f"# Failed to calculate security metrics: {e}")
             return {
                 'vulnerability_score': 0.5,
                 'attack_surface': 0.5,
@@ -1793,7 +1785,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return topology
             
         except Exception as e:
-            print(f"⚠️ Failed to get network topology: {e}")
+            print(f"# Failed to get network topology: {e}")
             return {
                 'total_nodes': 6,
                 'total_connections': 0,
@@ -1836,7 +1828,7 @@ Provide specific, actionable guidance that RL agents can execute.
             return load_conditions
             
         except Exception as e:
-            print(f"⚠️ Failed to get load conditions: {e}")
+            print(f"# Failed to get load conditions: {e}")
             return {
                 'base_load': 259.0,
                 'current_load': 288.8,
@@ -1850,7 +1842,7 @@ Provide specific, actionable guidance that RL agents can execute.
     def _system_analysis_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Analyze system state and vulnerabilities"""
         try:
-            print("🔍 LangGraph Node: System Analysis")
+            print("# LangGraph Node: System Analysis")
             
             # Gather system analysis data
             system_analysis = self._gather_system_analysis_data()
@@ -1863,21 +1855,21 @@ Provide specific, actionable guidance that RL agents can execute.
             return state
             
         except Exception as e:
-            print(f"❌ System analysis node failed: {e}")
+            print(f"# System analysis node failed: {e}")
             state['debug_info'].append(f"System analysis failed: {e}")
             return state
     
     def _stride_mitre_analysis_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Perform STRIDE and MITRE threat analysis"""
         try:
-            print("🛡️ LangGraph Node: STRIDE/MITRE Analysis")
+            print("# LangGraph Node: STRIDE/MITRE Analysis")
             
             system_analysis = state.get('enhanced_system_analysis', {})
             
             # Perform STRIDE analysis with error handling
             try:
                 stride_result = self.stride_analyzer.analyze_threats(system_analysis)
-                print(f"    🔍 STRIDE analyzer returned: {type(stride_result)} - {str(stride_result)[:100]}...")
+                print(f"    # STRIDE analyzer returned: {type(stride_result)} - {str(stride_result)[:100]}...")
                 
                 # Ensure stride_threats is a proper dict/list structure
                 if isinstance(stride_result, (dict, list)):
@@ -1888,13 +1880,13 @@ Provide specific, actionable guidance that RL agents can execute.
                 else:
                     stride_threats = {'threats': [{'type': 'spoofing', 'component': 'evcs_cms', 'severity': 0.7}]}
             except Exception as e:
-                print(f"    ⚠️ STRIDE analysis failed: {e}")
+                print(f"    # STRIDE analysis failed: {e}")
                 stride_threats = {'threats': [{'type': 'spoofing', 'component': 'evcs_cms', 'severity': 0.7}]}
             
             # Perform MITRE analysis with error handling
             try:
                 mitre_result = self.mitre_analyzer.analyze_tactics(system_analysis)
-                print(f"    🔍 MITRE analyzer returned: {type(mitre_result)} - {str(mitre_result)[:100]}...")
+                print(f"    # MITRE analyzer returned: {type(mitre_result)} - {str(mitre_result)[:100]}...")
                 
                 # Ensure mitre_tactics is a proper dict/list structure
                 if isinstance(mitre_result, (dict, list)):
@@ -1905,7 +1897,7 @@ Provide specific, actionable guidance that RL agents can execute.
                 else:
                     mitre_tactics = {'tactics': [{'technique': 'T1021', 'component': 'evcs_cms', 'likelihood': 0.6}]}
             except Exception as e:
-                print(f"    ⚠️ MITRE analysis failed: {e}")
+                print(f"    # MITRE analysis failed: {e}")
                 mitre_tactics = {'tactics': [{'technique': 'T1021', 'component': 'evcs_cms', 'likelihood': 0.6}]}
             
             # Update state with serializable values
@@ -1956,14 +1948,14 @@ Provide specific, actionable guidance that RL agents can execute.
             return state
             
         except Exception as e:
-            print(f"❌ STRIDE/MITRE analysis node failed: {e}")
+            print(f"# STRIDE/MITRE analysis node failed: {e}")
             state['debug_info'].append(f"Threat analysis failed: {e}")
             return state
     
     def _llm_strategic_planning_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Generate LLM strategic instructions"""
         try:
-            print("🧠 LangGraph Node: LLM Strategic Planning")
+            print("# LangGraph Node: LLM Strategic Planning")
             
             # Create LLM prompt for strategic planning
             llm_prompt = self._create_langgraph_llm_prompt(state)
@@ -1971,15 +1963,15 @@ Provide specific, actionable guidance that RL agents can execute.
             # Get LLM response with proper error handling
             try:
                 # Get ACTUAL RL agent actions instead of looking for files
-                print("    📡 Getting RL agent actions directly...")
+                print("    # Getting RL agent actions directly...")
                 actual_rl_attacks = self._get_rl_agent_actions()
                 
                 if actual_rl_attacks and len(actual_rl_attacks) > 0:
-                    print(f"    ✅ Using {len(actual_rl_attacks)} RL agent actions for Gemini optimization")
+                    print(f"    # Using {len(actual_rl_attacks)} RL agent actions for Gemini optimization")
                     # Use actual RL agent data for Gemini strategic combination
                     llm_response = self._gemini_strategic_attack_combination(actual_rl_attacks, 3600.0, 6)
                 else:
-                    print("    ⚠️ No RL agents available, using fallback mock data")
+                    print("    # No RL agents available, using fallback mock data")
                     # Fallback to mock data only if no actual data is available
                     mock_agent_attacks = [
                         {
@@ -2000,9 +1992,9 @@ Provide specific, actionable guidance that RL agents can execute.
                         }
                     ]
                     llm_response = self._gemini_strategic_attack_combination(mock_agent_attacks, 3600.0, 6)
-                print(f"    🔍 Gemini strategic planning returned: {type(llm_response)} - {str(llm_response)[:100]}...")
+                print(f"    # Gemini strategic planning returned: {type(llm_response)} - {str(llm_response)[:100]}...")
             except Exception as e:
-                print(f"    ⚠️ Gemini strategic planning failed: {e}")
+                print(f"    # Gemini strategic planning failed: {e}")
                 llm_response = "Fallback strategic planning due to LLM error"
             
             # Parse LLM instructions with error handling
@@ -2020,7 +2012,7 @@ Provide specific, actionable guidance that RL agents can execute.
                         'gemini_analysis': True,
                         'scenarios': llm_response
                     }
-                    print(f"    ✅ Using Gemini strategic scenarios: {len(llm_response)} scenarios")
+                    print(f"    # Using Gemini strategic scenarios: {len(llm_response)} scenarios")
                 else:
                     # Handle non-list responses (strings, dicts, etc.)
                     # Ensure llm_response is a dict (handle string responses)
@@ -2031,7 +2023,7 @@ Provide specific, actionable guidance that RL agents can execute.
                     
                     llm_instructions = self._parse_langgraph_llm_instructions(llm_response)
             except Exception as e:
-                print(f"    ⚠️ LLM instruction parsing failed: {e}")
+                print(f"    # LLM instruction parsing failed: {e}")
                 llm_instructions = self._create_langgraph_fallback_instructions()
             
             # Ensure llm_instructions is a dict
@@ -2047,16 +2039,16 @@ Provide specific, actionable guidance that RL agents can execute.
             
             # Check if we're using real Gemini analysis or fallback
             if llm_instructions.get('gemini_analysis', False):
-                state['debug_info'].append(f"✅ Strategic planning completed with REAL Gemini analysis: {state['attack_strategy']}")
-                print(f"    ✅ Using REAL Gemini strategic guidance: {state['attack_strategy']}")
+                state['debug_info'].append(f"# Strategic planning completed with REAL Gemini analysis: {state['attack_strategy']}")
+                print(f"    # Using REAL Gemini strategic guidance: {state['attack_strategy']}")
             else:
-                state['debug_info'].append(f"⚠️ Strategic planning completed with FALLBACK instructions: {state['attack_strategy']}")
-                print(f"    ⚠️ Using FALLBACK instructions (Gemini parsing failed): {state['attack_strategy']}")
+                state['debug_info'].append(f"# Strategic planning completed with FALLBACK instructions: {state['attack_strategy']}")
+                print(f"    # Using FALLBACK instructions (Gemini parsing failed): {state['attack_strategy']}")
             
             return state
             
         except Exception as e:
-            print(f"❌ LLM strategic planning node failed: {e}")
+            print(f"# LLM strategic planning node failed: {e}")
             # Create fallback instructions
             fallback_instructions = self._create_langgraph_fallback_instructions()
             state['llm_instructions'] = fallback_instructions
@@ -2136,7 +2128,7 @@ Provide specific, actionable guidance that RL agents can execute.
                 'success_criteria': 'maximize_impact'
             }
         except Exception as e:
-            print(f"    ⚠️ LLM instruction parsing failed: {e}")
+            print(f"    # LLM instruction parsing failed: {e}")
             return self._create_langgraph_fallback_instructions()
     
     def _extract_strategy_from_vulnerabilities(self, gemini_response: Dict) -> Dict:
@@ -2144,21 +2136,21 @@ Provide specific, actionable guidance that RL agents can execute.
         try:
             vulnerabilities = gemini_response.get('vulnerabilities', [])
             
-            print(f"    🔍 Processing {len(vulnerabilities)} vulnerabilities from Gemini")
+            print(f"    # Processing {len(vulnerabilities)} vulnerabilities from Gemini")
             
             if not vulnerabilities:
-                print("    ⚠️ No vulnerabilities found in Gemini response")
+                print("    # No vulnerabilities found in Gemini response")
                 return self._create_langgraph_fallback_instructions()
             
             # Debug: Print vulnerability structure
             for i, vuln in enumerate(vulnerabilities[:3]):  # Show first 3
-                print(f"    🔍 Vuln {i+1}: {vuln}")
+                print(f"    # Vuln {i+1}: {vuln}")
             
             # Analyze vulnerabilities to determine strategy
             high_severity_vulns = [v for v in vulnerabilities if v.get('severity', 0) > 0.7]
             medium_severity_vulns = [v for v in vulnerabilities if 0.4 <= v.get('severity', 0) <= 0.7]
             
-            print(f"    📊 High severity: {len(high_severity_vulns)}, Medium severity: {len(medium_severity_vulns)}")
+            print(f"    # High severity: {len(high_severity_vulns)}, Medium severity: {len(medium_severity_vulns)}")
             
             # Determine strategy based on vulnerability analysis
             if high_severity_vulns:
@@ -2191,7 +2183,7 @@ Provide specific, actionable guidance that RL agents can execute.
                     success_criteria = 'system_manipulation'
                     break
             
-            print(f"    🧠 Extracted Gemini strategy: {strategy} (targets: {target_priority}, stealth: {stealth_requirement})")
+            print(f"    # Extracted Gemini strategy: {strategy} (targets: {target_priority}, stealth: {stealth_requirement})")
             
             return {
                 'strategy': strategy,
@@ -2203,7 +2195,7 @@ Provide specific, actionable guidance that RL agents can execute.
             }
             
         except Exception as e:
-            print(f"    ⚠️ Vulnerability analysis parsing failed: {e}")
+            print(f"    # Vulnerability analysis parsing failed: {e}")
             import traceback
             traceback.print_exc()
             return self._create_langgraph_fallback_instructions()
@@ -2239,10 +2231,10 @@ Return ONLY a JSON array with this format:
 Return ONLY the JSON array, no other text."""
 
             # Query Gemini
-            print("    📡 Sending strategic planning request to Gemini...")
+            print("    # Sending strategic planning request to Gemini...")
             
             if not hasattr(self.llm_analyzer, 'is_available') or not self.llm_analyzer.is_available:
-                print("    ⚠️ Warning: Gemini LLM is not available!")
+                print("    # Warning: Gemini LLM is not available!")
                 return None
             
             # Use direct model call like the main system (bypass the problematic analyze_threat_scenario)
@@ -2262,7 +2254,7 @@ Return ONLY the JSON array, no other text."""
             return scenarios
             
         except Exception as e:
-            print(f"    ❌ Gemini strategic planning failed: {str(e)}")
+            print(f"    # Gemini strategic planning failed: {str(e)}")
             return None
 
     def _parse_gemini_strategic_response_robust(self, gemini_response) -> List[Dict]:
@@ -2304,7 +2296,7 @@ Return ONLY the JSON array, no other text."""
                     print("    🔧 Debug: Extracted content from generic code block")
             
             # Debug: Print first 300 characters of response
-            print("    🔍 Debug: Gemini response preview (first 300 chars):")
+            print("    # Debug: Gemini response preview (first 300 chars):")
             print("    " + repr(response_text[:300]))
 
             # Try multiple approaches to extract JSON from Gemini response
@@ -2315,11 +2307,11 @@ Return ONLY the JSON array, no other text."""
                 try:
                     strategic_scenarios = json.loads(response_text)
                     if isinstance(strategic_scenarios, list):
-                        print("    ✅ Method 0: Direct JSON parsing successful with " + str(len(strategic_scenarios)) + " scenarios")
+                        print("    # Method 0: Direct JSON parsing successful with " + str(len(strategic_scenarios)) + " scenarios")
                     else:
                         strategic_scenarios = None
                 except (json.JSONDecodeError, ValueError) as e:
-                    print("    ⚠️ Method 0 failed: " + str(e))
+                    print("    # Method 0 failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 0b: Handle "Extra data" error by finding complete JSON boundaries
@@ -2344,11 +2336,11 @@ Return ONLY the JSON array, no other text."""
                             json_str = response_text[start_idx:end_idx+1]
                             strategic_scenarios = json.loads(json_str)
                             if isinstance(strategic_scenarios, list):
-                                print("    ✅ Method 0b: Found complete JSON array with " + str(len(strategic_scenarios)) + " scenarios")
+                                print("    # Method 0b: Found complete JSON array with " + str(len(strategic_scenarios)) + " scenarios")
                             else:
                                 strategic_scenarios = None
                 except (json.JSONDecodeError, ValueError) as e:
-                    print("    ⚠️ Method 0b failed: " + str(e))
+                    print("    # Method 0b failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 1: Look for JSON array with improved regex
@@ -2360,16 +2352,16 @@ Return ONLY the JSON array, no other text."""
                         json_str = json_str.strip()
                         strategic_scenarios = json.loads(json_str)
                         if isinstance(strategic_scenarios, list):
-                            print("    ✅ Method 1: Found JSON array with " + str(len(strategic_scenarios)) + " scenarios")
+                            print("    # Method 1: Found JSON array with " + str(len(strategic_scenarios)) + " scenarios")
                         else:
                             strategic_scenarios = None
                 except json.JSONDecodeError as e:
-                    print("    ⚠️ Method 1 failed: " + str(e))
+                    print("    # Method 1 failed: " + str(e))
                     strategic_scenarios = None
             
             # Method 2: Fallback - create simple scenario from text analysis
             if not strategic_scenarios:
-                print("    ⚠️ All JSON parsing methods failed, creating fallback scenario")
+                print("    # All JSON parsing methods failed, creating fallback scenario")
                 strategic_scenarios = [{
                     "scenario_name": "LangGraph Strategic Plan",
                     "target_systems": [1, 2, 3],
@@ -2382,11 +2374,11 @@ Return ONLY the JSON array, no other text."""
                     "success_rate": 0.85
                 }]
 
-            print("    ✅ Gemini generated " + str(len(strategic_scenarios)) + " strategic attack scenarios")
+            print("    # Gemini generated " + str(len(strategic_scenarios)) + " strategic attack scenarios")
             return strategic_scenarios
 
         except Exception as e:
-            print(f"    ❌ Robust parsing failed: {str(e)}")
+            print(f"    # Robust parsing failed: {str(e)}")
             # Return a simple fallback scenario
             return [{
                 "scenario_name": "Fallback Strategic Plan",
@@ -2417,7 +2409,7 @@ Return ONLY the JSON array, no other text."""
             
             # NEW: Check if attack-specific coordinator is available
             if self.attack_specific_coordinator and ATTACK_DEPLOYMENT_AVAILABLE:
-                print("   🎯 Using Attack-Specific Coordination (NEW ARCHITECTURE)")
+                print("   # Using Attack-Specific Coordination (NEW ARCHITECTURE)")
                 
                 # Extract analysis data from state
                 system_analysis = state.get('system_analysis', {})
@@ -2448,7 +2440,7 @@ Return ONLY the JSON array, no other text."""
             
             # OLD: Fallback to system-specific coordination
             else:
-                print("   ⚠️ Using System-Specific Coordination (OLD ARCHITECTURE)")
+                print("   # Using System-Specific Coordination (OLD ARCHITECTURE)")
                 
                 llm_instructions = state.get('llm_instructions', {})
                 
@@ -2485,14 +2477,14 @@ Return ONLY the JSON array, no other text."""
                 return state
             
         except Exception as e:
-            print(f"❌ RL coordination node failed: {e}")
+            print(f"# RL coordination node failed: {e}")
             state['debug_info'].append(f"RL coordination failed: {e}")
             return state
     
     def _execution_monitoring_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Monitor attack execution"""
         try:
-            print("📊 LangGraph Node: Execution Monitoring")
+            print("# LangGraph Node: Execution Monitoring")
             
             execution_results = state.get('execution_results', [])
             
@@ -2524,14 +2516,14 @@ Return ONLY the JSON array, no other text."""
             return state
             
         except Exception as e:
-            print(f"❌ Execution monitoring node failed: {e}")
+            print(f"# Execution monitoring node failed: {e}")
             state['debug_info'].append(f"Execution monitoring failed: {e}")
             return state
     
     def _feedback_analysis_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Analyze RL feedback"""
         try:
-            print("🔄 LangGraph Node: Feedback Analysis")
+            print("# LangGraph Node: Feedback Analysis")
             
             execution_results = state.get('execution_results', [])
             success_metrics = state.get('success_metrics', {})
@@ -2554,7 +2546,7 @@ Return ONLY the JSON array, no other text."""
             return state
             
         except Exception as e:
-            print(f"❌ Feedback analysis node failed: {e}")
+            print(f"# Feedback analysis node failed: {e}")
             state['debug_info'].append(f"Feedback analysis failed: {e}")
             return state
     
@@ -2572,7 +2564,7 @@ Return ONLY the JSON array, no other text."""
         In that case we reuse the previous adaptation result and move on.
         """
         try:
-            print("🔄 LangGraph Node: LLM Adaptation")
+            print("# LangGraph Node: LLM Adaptation")
 
             rl_feedback    = state.get('rl_feedback', {})
             success_rate   = rl_feedback.get('performance_score', 0.0)
@@ -2625,14 +2617,14 @@ Return ONLY the JSON array, no other text."""
             return state
 
         except Exception as e:
-            print(f"❌ LLM adaptation node failed: {e}")
+            print(f"# LLM adaptation node failed: {e}")
             state['debug_info'].append(f"LLM adaptation failed: {e}")
             return state
     
     def _workflow_completion_node(self, state: EnhancedAttackState) -> EnhancedAttackState:
         """LangGraph node: Complete workflow and prepare results"""
         try:
-            print("✅ LangGraph Node: Workflow Completion")
+            print("# LangGraph Node: Workflow Completion")
             
             # Compile final results
             final_results = {
@@ -2663,7 +2655,7 @@ Return ONLY the JSON array, no other text."""
             return state
             
         except Exception as e:
-            print(f"❌ Workflow completion node failed: {e}")
+            print(f"# Workflow completion node failed: {e}")
             state['debug_info'].append(f"Workflow completion failed: {e}")
             return state
     
@@ -2809,7 +2801,7 @@ Return ONLY the JSON array, no other text."""
             return instructions
             
         except Exception as e:
-            print(f"⚠️ Failed to parse LLM instructions: {e}")
+            print(f"# Failed to parse LLM instructions: {e}")
             return self._create_langgraph_fallback_instructions()
     
     def _create_langgraph_fallback_instructions(self) -> Dict:
@@ -2923,11 +2915,11 @@ Return ONLY the JSON array, no other text."""
                     return result
 
             # Fallback to simulation if agents not available
-            print(f"    ⚠️ Trained agents not available for system {system_id}, using fallback simulation")
+            print(f"    # Trained agents not available for system {system_id}, using fallback simulation")
             return self._simulate_attack_fallback(action, stealth_req)
 
         except Exception as e:
-            print(f"⚠️ RL action execution failed: {e}")
+            print(f"# RL action execution failed: {e}")
             import traceback
             traceback.print_exc()
             return {
@@ -3047,7 +3039,7 @@ Return ONLY the JSON array, no other text."""
             return adaptation
             
         except Exception as e:
-            print(f"⚠️ Failed to parse adaptation response: {e}")
+            print(f"# Failed to parse adaptation response: {e}")
             return {'continue_strategy': True, 'recommended_changes': []}
     
     def _generate_feedback_recommendations(self, execution_results: List[Dict]) -> List[str]:
@@ -3184,7 +3176,7 @@ Return ONLY the JSON array, no other text."""
             return obs
 
         except Exception as e:
-            print(f"    ⚠️ Failed to extract observation for system {system_id}: {e}")
+            print(f"    # Failed to extract observation for system {system_id}: {e}")
             # Return zero observation as fallback
             return np.zeros(25, dtype=np.float32)
 
@@ -3239,7 +3231,7 @@ Return ONLY the JSON array, no other text."""
             }
 
         except Exception as e:
-            print(f"    ⚠️ PINN attack execution failed: {e}")
+            print(f"    # PINN attack execution failed: {e}")
             return {
                 'success': False,
                 'impact': 0.0,
@@ -3310,20 +3302,20 @@ Return ONLY the JSON array, no other text."""
                             }
                             rl_attacks.append(attack_data)
                         
-                        print(f"    ✅ Generated {len(rl_attacks)} RL agent actions")
+                        print(f"    # Generated {len(rl_attacks)} RL agent actions")
                         return rl_attacks
                     else:
-                        print("    ⚠️ No system states available for RL agents")
+                        print("    # No system states available for RL agents")
                         return []
                 else:
-                    print("    ⚠️ No DQN/SAC coordinator available")
+                    print("    # No DQN/SAC coordinator available")
                     return []
             else:
-                print("    ⚠️ No enhanced system reference available")
+                print("    # No enhanced system reference available")
                 return []
                 
         except Exception as e:
-            print(f"    ❌ Error getting RL agent actions: {e}")
+            print(f"    # Error getting RL agent actions: {e}")
             return []
 
     def _load_latest_rl_feedback_data(self) -> List[Dict]:
@@ -3336,13 +3328,13 @@ Return ONLY the JSON array, no other text."""
             # Find the latest RL feedback file
             log_dir = "attack_scenarios_logs"
             if not os.path.exists(log_dir):
-                print(f"    ⚠️ RL feedback log directory not found: {log_dir}")
+                print(f"    # RL feedback log directory not found: {log_dir}")
                 return []
             
             # Find all RL feedback files
             feedback_files = glob.glob(os.path.join(log_dir, "rl_feedback_to_gemini_*.txt"))
             if not feedback_files:
-                print(f"    ⚠️ No RL feedback files found in {log_dir}")
+                print(f"    # No RL feedback files found in {log_dir}")
                 return []
             
             # Get the latest file by timestamp
@@ -3381,14 +3373,14 @@ Return ONLY the JSON array, no other text."""
                             rl_attacks.append(attack_data)
                             
                     except Exception as e:
-                        print(f"    ⚠️ Failed to parse attack block: {e}")
+                        print(f"    # Failed to parse attack block: {e}")
                         continue
             
-            print(f"    ✅ Loaded {len(rl_attacks)} RL attack suggestions from feedback file")
+            print(f"    # Loaded {len(rl_attacks)} RL attack suggestions from feedback file")
             return rl_attacks[:20]  # Limit to first 20 attacks to avoid overwhelming Gemini
             
         except Exception as e:
-            print(f"    ❌ Failed to load RL feedback data: {e}")
+            print(f"    # Failed to load RL feedback data: {e}")
             return []
 
 class STRIDEThreatAnalyzer:
@@ -3623,7 +3615,7 @@ class MITREThreatAnalyzer:
             return tactics_analysis
             
         except Exception as e:
-            print(f"⚠️ Failed to analyze MITRE tactics: {e}")
+            print(f"# Failed to analyze MITRE tactics: {e}")
             return {
                 'tactics_identified': [],
                 'techniques_count': 0,

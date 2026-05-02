@@ -472,13 +472,13 @@ class EnhancedMetrics:
         non_rag_q = comparison['non_rag_quality']
         
         # Overall Quality
-        report.append(f"\n📊 OVERALL QUALITY SCORE:")
+        report.append(f"\n# OVERALL QUALITY SCORE:")
         report.append(f"   RAG: {rag_q['overall_quality_score']:.1f}/100")
         report.append(f"   Non-RAG: {non_rag_q['overall_quality_score']:.1f}/100")
         report.append(f"   Improvement: {comparison['quality_improvement']:+.1f} ({comparison['quality_improvement_percentage']:+.1f}%)")
         
         # Context Usage
-        report.append(f"\n🎯 CONTEXT USAGE:")
+        report.append(f"\n# CONTEXT USAGE:")
         cu = rag_q['context_usage']
         report.append(f"   Documents Referenced: {cu['documents_referenced']}/{cu['total_documents']}")
         report.append(f"   Unique Facts Used: {cu['unique_facts_used']}")
@@ -515,7 +515,7 @@ class EnhancedMetrics:
         
         # Ground Truth Accuracy
         if rag_q['has_ground_truth']:
-            report.append(f"\n✅ GROUND TRUTH ACCURACY:")
+            report.append(f"\n# GROUND TRUTH ACCURACY:")
             report.append(f"   RAG Accuracy: {rag_q['accuracy_score']:.1f}%")
             report.append(f"   Non-RAG Accuracy: {non_rag_q['accuracy_score']:.1f}%")
         

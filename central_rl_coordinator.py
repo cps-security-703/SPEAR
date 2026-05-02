@@ -2,37 +2,6 @@
 """
 Central RL Coordinator — Two-Level Training Architecture
 
-Architecture:
-  OUTER LOOP (15 guidance circles):
-    Two modes of operation:
-    
-    A) GEMINI-GUIDED (15 circles):
-       - Gemini strategically assigns attack_type → system each circle
-       - Gemini evaluates results after each circle and reassigns
-       - Gemini decides rotation/reassignment — no forced schedule
-       - Falls back to autonomous rotation if Gemini fails
-    
-    B) AUTONOMOUS (15 circles with SYSTEMATIC ROTATION):
-       - Each outer circle rotates all 6 attacks to different systems
-       - Circles 1-6:   Each attack visits every system once (full coverage)
-       - Circles 7-12:  Second pass — refine training on all systems
-       - Circles 13-15: Third pass — final tuning on first 3 systems
-       - Agent weights & replay buffers persist across circles (cumulative training)
-       - After all circles, every attack is trained on every system
-    
-  INNER LOOP (50 RL episodes per agent pair per circle):
-    - Each of 6 attack-specialist pairs (DQN+SAC) trains against assigned system
-    - Agents converge on optimal attack parameters for their assignment
-    - Per-agent episode rewards tracked for convergence plots
-    
-  FINAL PHASE:
-    - Pick best-performing system for each attack based on all circles
-    - Deploy trained agents into hierarchical co-simulation with trained CMS
-    - Any attack can be deployed on any system (fully trained)
-
-Two Scenarios:
-  1. Gemini-guided: Gemini decides all assignments strategically
-  2. Autonomous: Systematic rotation ensures full coverage
 """
 
 import numpy as np
@@ -95,14 +64,6 @@ class OuterEpisodeResult:
 class CentralRLCoordinator:
     """
     Central coordinator that manages the two-level training loop.
-    
-    Level 1 (Outer): Gemini guidance episodes (15-20)
-      - Gemini assigns attack_type → system mappings
-      - Evaluates results and reassigns as needed
-      
-    Level 2 (Inner): RL training episodes per agent pair (50-100)
-      - Each DQN+SAC pair trains against their assigned system
-      - Convergence tracked per agent
     """
     
     def __init__(self, 
@@ -112,15 +73,7 @@ class CentralRLCoordinator:
                  num_systems: int = 6,
                  outer_episodes: int = 15,
                  inner_episodes: int = 50):
-        """
-        Args:
-            attack_coordinator: AttackSpecificCoordinator with 12 agents (6 DQN + 6 SAC)
-            llm_analyzer: Gemini LLM analyzer (None = autonomous mode)
-            system_analyzer: Function to get system analysis data
-            num_systems: Number of EVCS systems
-            outer_episodes: Gemini guidance episodes (15-20)
-            inner_episodes: RL training episodes per agent per outer episode (50-100)
-        """
+    
         self.attack_coordinator = attack_coordinator
         self.llm_analyzer = llm_analyzer
         self.system_analyzer = system_analyzer
@@ -134,12 +87,7 @@ class CentralRLCoordinator:
         self.mode = "gemini_guided" if self.gemini_available else "autonomous"
         
         # ===== ROTATION SCHEDULE =====
-        # Pre-compute which system each attack trains on in each outer circle.
-        # With 6 attacks and 6 systems, attack_i in circle_c trains on:
-        #   system = ((i + c) % num_systems) + 1   (1-indexed)
-        # This guarantees every attack visits every system in 6 circles.
-        # Circles 7-12 repeat the same rotation (second pass / refinement).
-        # Circles 13-15 repeat again (third pass / final tuning).
+
         self.rotation_schedule = {}  # {outer_ep: {attack_type: system_id}}
         for c in range(self.outer_episodes):
             self.rotation_schedule[c] = {}
@@ -153,11 +101,9 @@ class CentralRLCoordinator:
         self.outer_episode_results = []
         
         # Inner loop: per-agent convergence rewards
-        # Structure: {attack_type: {outer_ep: {dqn_rewards: [...], sac_rewards: [...]}}}
         self.inner_episode_rewards = {at: {} for at in self.attack_types}
         
         # Per-attack per-system performance tracking (for best-system selection)
-        # Structure: {attack_type: {system_id: [mean_reward_circle_1, ...]}}
         self.attack_system_performance = {
             at: {s: [] for s in range(1, self.num_systems + 1)}
             for at in self.attack_types
@@ -192,14 +138,6 @@ class CentralRLCoordinator:
                                 mitre_tactics: Dict = None) -> Dict:
         """
         Run the complete two-level training loop.
-        
-        STRIDE/MITRE mappings are pre-established via agentic RAG
-        (see knowledgebase_mapping.md). Gemini's role during training
-        is to evaluate RL feedback and reassign attack→system mappings.
-        stride_threats and mitre_tactics params kept for backward compat but unused.
-        
-        Returns:
-            Dict with outer_rewards, inner_rewards, final_deployment, etc.
         """
         print(f"\n{'#'*70}")
         print(f"# TWO-LEVEL TRAINING: {self.mode.upper()} MODE")
@@ -225,8 +163,7 @@ class CentralRLCoordinator:
             print(f"{'='*60}")
             
             # ----- STEP 1: Get attack assignments (Gemini feedback-based or rotation) -----
-            # Reset per-circle call-id list so update_rl_impact() only back-fills
-            # calls that belong to THIS outer episode.
+
             if self.llm_analyzer is not None:
                 self.llm_analyzer._episode_call_ids = []
 
@@ -257,8 +194,7 @@ class CentralRLCoordinator:
             print(f"     Avg Detection Risk:  {outer_result.aggregate_detection_risk:.2%}")
 
             # ----- STEP 4: Back-fill RL-impact columns in LLM metrics -----
-            # Now that the outer-episode reward is known, annotate every LLM
-            # call made during STEP 1 with reward_before / reward_after / delta.
+
             try:
                 from llm_metrics_logger import LLMMetricsLogger
                 _logger = LLMMetricsLogger.instance()
@@ -307,9 +243,8 @@ class CentralRLCoordinator:
         
         return results
     
-    # =========================================================================
     # STEP 1: GET ATTACK ASSIGNMENTS (Gemini or Autonomous)
-    # =========================================================================
+
     
     def _get_attack_assignments(self, outer_ep=0, previous_assignments=None,
                                  previous_results=None) -> List[AttackAssignment]:
@@ -404,8 +339,6 @@ class CentralRLCoordinator:
             deployments = parse_gemini_deployment_response(llm_text)
             
             # ── Detect static fallback (Gemini didn't actually respond) ──
-            # The fallback always produces EXACTLY 6 deployments with
-            # attack_i → system_(i+1) in order.  Only flag as static if
             # ALL 6 match that exact pattern.
             is_static_fallback = (len(deployments) == len(self.attack_types))
             if is_static_fallback:
@@ -442,7 +375,7 @@ class CentralRLCoordinator:
             return assignments
             
         except Exception as e:
-            print(f"  ❌ Gemini assignment failed: {e}")
+            print(f"  # Gemini assignment failed: {e}")
             print(f"  ## Falling back to rotation schedule for circle {outer_ep + 1}")
             self._last_assignment_source = 'autonomous'
             return self._get_autonomous_assignments(outer_ep)
@@ -451,12 +384,6 @@ class CentralRLCoordinator:
         """
         Systematic rotation: attack_i in circle_c trains on system ((i+c) % 6) + 1.
         
-        This guarantees:
-          - Circles 1-6:   Every attack visits every system once (full coverage)
-          - Circles 7-12:  Second pass (refinement with accumulated weights)
-          - Circles 13-15: Third pass (final tuning)
-          - Agent weights & replay buffers persist → cumulative training
-          - After all circles, any attack can be deployed on any system
         """
         schedule = self.rotation_schedule[outer_ep]
         
@@ -524,22 +451,8 @@ class CentralRLCoordinator:
                                   assignments: List[AttackAssignment]) -> Dict[str, Dict]:
         """
         For each attack assignment, run actual SB3 .learn() training.
-        
-        This calls agent.learn(total_timesteps=N) which performs real gradient
-        updates via replay buffer, unlike the old manual reset()/step() loop
-        that only ran inference without updating weights.
-        
-        The environment's forced_target_system is set so all training steps
-        target the assigned system for this rotation circle.
-        
-        Returns:
-            Dict[attack_type → {dqn_rewards, sac_rewards, best_reward, best_impact, ...}]
+    
         """
-        # Convert inner_episodes to timesteps for SB3
-        # Each "episode" in the env is max_steps=1000 timesteps.
-        # inner_episodes=50 means 50 episodes worth of training.
-        # We use inner_episodes * 1000 timesteps = 50,000 per agent per circle.
-        # This ensures 50+ episodes complete and are captured by the callback.
         timesteps_per_agent = self.inner_episodes * 1000
         
         print(f"\n  ## Inner Training Loop: {timesteps_per_agent} timesteps per agent "
@@ -574,14 +487,7 @@ class CentralRLCoordinator:
             # ===== LOCK environment to the assigned system =====
             # This forces all training steps to target sys_id
             sac_env.forced_target_system = sys_id
-            
-            # ===== SET GUIDANCE HINTS from coordinator assignment =====
-            # Gemini mode: magnitude/duration/stealth come from Gemini's
-            #   strategic analysis (e.g., lower magnitude for stealth attacks,
-            #   longer duration for persistence).
-            # Autonomous mode: uses defaults (0.7/30.0/0.7).
-            # The guidance hints add a reward bonus for staying close to
-            # these values, creating differentiated training dynamics.
+
             sac_env.guidance_hints = {
                 'magnitude': assignment.magnitude,
                 'duration': assignment.duration,
@@ -675,9 +581,7 @@ class CentralRLCoordinator:
             sac_env.forced_target_system = None  # Unlock after eval
             
             # ===== UPDATE CROSS-CIRCLE MEMORY =====
-            # Persist this circle's detection/success/impact stats into the
-            # environment's cross_circle_stats so the NEXT circle's SAC agent
-            # starts with knowledge of what happened on this system historically.
+
             circle_detection_rate = total_detection_risk / num_eval  # avg detection risk as proxy
             circle_success_rate = total_successes / num_eval
             circle_avg_impact = best_impact  # best impact this circle
@@ -725,9 +629,7 @@ class CentralRLCoordinator:
         
         return inner_results
     
-    # =========================================================================
     # STEP 3: AGGREGATE RESULTS
-    # =========================================================================
     
     def _aggregate_inner_results(self, outer_ep: int, 
                                   assignments: List[AttackAssignment],
@@ -777,20 +679,12 @@ class CentralRLCoordinator:
             aggregate_detection_risk=avg_detection
         )
     
-    # =========================================================================
     # FINAL PHASE: PRODUCE DEPLOYMENT PLAN
-    # =========================================================================
     
     def _produce_final_deployment_plan(self) -> Dict:
         """
         After all outer episodes, produce the final deployment plan.
         
-        Two stages:
-          1. RL-based: Pick the best system for each attack from performance data.
-          2. RAG-enhanced: Query the ARES RAG vector DB for real-world threat
-             intelligence (CVEs, MITRE techniques, mitigations) and ask Gemini
-             to produce a research-quality rationale grounding RL results in
-             real-world evidence.  Falls back to pure-RL plan if RAG unavailable.
         """
         print("  ## Analyzing per-attack per-system performance across all circles...")
         
@@ -863,9 +757,7 @@ class CentralRLCoordinator:
         best_outer = max(self.outer_episode_results, key=lambda r: r.aggregate_reward)
         
         # ── Stage 2: Gemini timing refinement (if available) ──
-        # Agents suggest magnitude/duration/stealth; Gemini suggests optimal
-        # attack ORDERING for strategic coordination (e.g., spoofing before
-        # data injection, simultaneous vs sequential).
+
         if self.gemini_available and self.llm_analyzer:
             final_deployments = self._gemini_refine_timing(final_deployments)
         
@@ -896,19 +788,10 @@ class CentralRLCoordinator:
         
         return plan
     
-    # =========================================================================
     # GEMINI TIMING REFINEMENT
-    # =========================================================================
     
     def _gemini_refine_timing(self, deployments: List[Dict]) -> List[Dict]:
         """Ask Gemini to suggest optimal attack ordering and timing coordination.
-        
-        HYBRID APPROACH: Gemini can override RL's target_system choice with justification.
-        - RL provides data-driven defaults (best system per attack based on training)
-        - Gemini can override for strategic reasons (e.g., diversionary attacks)
-        - Gemini must justify any override (why strategic benefit > performance loss)
-        
-        Returns reordered (and optionally target/duration-adjusted) deployments list.
         """
         try:
             # Build performance data summary for Gemini
@@ -1048,9 +931,7 @@ Return ONLY this JSON (no markdown, no explanation):
             print(f"  ##Gemini timing refinement failed: {e}")
             return deployments
     
-    # =========================================================================
     # RAG-ENHANCED FINAL ANALYSIS
-    # =========================================================================
     
     # Pre-established STRIDE mapping from knowledgebase_mapping.md
     ATTACK_STRIDE_MAP = {
@@ -1096,11 +977,6 @@ Return ONLY this JSON (no markdown, no explanation):
                                      best_system_map: Dict) -> Optional[Dict]:
         """
         Query ARES RAG vector DB for each attack type, then ask Gemini to
-        produce a research-quality analysis grounding RL results in real-world
-        threat intelligence (CVEs, MITRE ATT&CK, mitigations).
-        
-        Returns dict with per-attack RAG context + Gemini analysis, or None
-        if RAG infrastructure is unavailable.
         """
         # ── Try to import RAG infrastructure ──
         ares_rag_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ares_rag')
@@ -1112,7 +988,7 @@ Return ONLY this JSON (no markdown, no explanation):
             db_manager = ChromaDBManager()
             embedder = DocumentEmbedder()
             doc_count = db_manager.collection.count()
-            print(f"\n  🔍 RAG: Connected to ARES vector DB ({doc_count} documents)")
+            print(f"\n  # RAG: Connected to ARES vector DB ({doc_count} documents)")
         except Exception as e:
             print(f"\n  ##RAG unavailable ({e}) — using pure RL deployment plan")
             return None
@@ -1201,7 +1077,6 @@ Return ONLY this JSON (no markdown, no explanation):
                                     rag_context: Dict) -> Optional[str]:
         """
         Send a single Gemini prompt combining RL training results with RAG
-        context to produce a research-quality final deployment analysis.
         """
         if not self.llm_analyzer:
             print("  ##No Gemini analyzer — skipping RAG-enhanced analysis")
@@ -1389,9 +1264,7 @@ Return ONLY a JSON object with this structure:
         except Exception as e:
             print(f"  ##Failed to save RAG deployment plan: {e}")
     
-    # =========================================================================
     # PER-SYSTEM REWARD EXTRACTION (for plotting)
-    # =========================================================================
     
     def get_per_system_episode_rewards(self) -> Dict[int, Dict[str, list]]:
         """Extract per-system DQN and SAC episode rewards across ALL outer circles.
@@ -1445,9 +1318,7 @@ Return ONLY a JSON object with this structure:
         
         return per_system
     
-    # =========================================================================
     # BUILD RESULTS & SAVE
-    # =========================================================================
     
     def _build_training_results(self) -> Dict:
         """Build comprehensive training results dict."""
@@ -1536,9 +1407,7 @@ Return ONLY a JSON object with this structure:
             import traceback
             traceback.print_exc()
     
-    # =========================================================================
     # HELPERS
-    # =========================================================================
     
     def _to_dict(self, obj):
         """Convert dataclass or other object to dict."""

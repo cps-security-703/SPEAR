@@ -2,34 +2,7 @@
 """
 ================================================================================
 compare_ids_models.py
-================================================================================
-Standalone script — benchmarks the LSTM-based IDS against classical and modern
-ML classifiers using the same ACN-Data-derived 20-D feature space.
 
-Models compared
----------------
-  LSTM-IDS         — our bidirectional LSTM (lstm_anomaly_detector.py)
-  Random Forest    — sklearn ensemble
-  XGBoost          — gradient boosted trees (xgboost package)
-  SVM-RBF          — kernel SVM (sklearn)
-  MLP              — fully-connected neural net (sklearn)
-  Isolation Forest — unsupervised anomaly detector (sklearn, no FDI labels needed)
-
-Dataset
--------
-Built on-the-fly from real ACN-Data CSVs using acn_sim_interface.build_ids_sequences()
-+ FDI injection (from train_lstm_ids_acn.py's inject_fdi_on_abstract_features).
-
-Metrics plotted (saved to plots/ids_comparison/)
-------------------------------------------------
-  IDS-01  ROC curves + AUC
-  IDS-02  PR curves + Average Precision
-  IDS-03  Confusion matrices (grid)
-  IDS-04  Precision / Recall / F1 bar chart
-  IDS-05  Per-attack-type detection rate
-  IDS-06  Inference latency vs F1 (scatter)
-  IDS-07  Summary metrics table
-================================================================================
 """
 
 import os, sys, time, warnings, math, pickle, json
@@ -89,31 +62,17 @@ from ids_neural_models import (          # noqa: E402
 )
 
 # ── IDS-specific selection policy ─────────────────────────────────────────────
-# Research hypothesis: temporal models (LSTM-IDS+Attention) should outperform
-# classical ML because EVCS attacks are sequential (FDI injected progressively
-# across timesteps). The composite score must reflect:
-#   (a) Recall/DR          — safety-critical: missing an attack is catastrophic
-#   (b) ROC-AUC            — threshold-independent discrimination; rewards models
-#                            with genuinely better temporal feature separation
-#   (c) Specificity 1-FPR  — operational cost of false alarms
-#   (d) F1                 — overall harmonic balance
-#
-# Composite = α·Recall + β·AUC + γ·(1-FPR) + δ·F1
-# Weights reflect IDS priority: high DR first, then discrimination quality,
-# then false-alarm control, then overall balance.
+
 IDS_ALPHA       = 0.35   # Recall / Detection Rate (highest)
 IDS_BETA        = 0.25   # ROC-AUC (threshold-independent; rewards temporal models)
 IDS_GAMMA       = 0.25   # Specificity (1 - FPR)
 IDS_DELTA       = 0.15   # F1-Score (overall balance)
-# Threshold: Youden-J — maximises (TPR - FPR) per model at its natural operating
-# point. Attack signatures are made sufficiently strong so Recall naturally
-# reaches 0.90+ without forcing a low threshold that inflates FPR.
-TARGET_RECALL   = 0.87   # used only for the ⚠ warning in terminal output
+
+TARGET_RECALL   = 0.87   # used only for the # warning in terminal output
 
 
 # ── Attack type code → readable name ─────────────────────────────────────────
-# Canonical 6-type taxonomy — identical to attack_specific_rl_agents.ATTACK_TYPES
-# so IDS benchmark trains/evaluates on the same attacks the simulation injects.
+
 ATK_TYPE_NAMES = {
     -1: "benign",
     0:  "voltage_manipulation",
@@ -182,24 +141,10 @@ def _evcs_features_14d(sess_row: dict, system_id: int = 1,
 def _inject_fdi_14d(feat: np.ndarray, attack_type: int,
                      step_frac: float = 1.0) -> np.ndarray:
     """FDI attacks on the 14-D feature space.
-
-    Mirrors the physical perturbations applied by _apply_input_attacks() in
-    hierarchical_cosimulation.py so the IDS benchmark trains on what the
-    simulation actually injects.
-
-    Feature indices:
-      0 soc  1 voltage  2 current  3 power  4 temp  5 demand_factor
-      6 load_factor  7 grid_voltage_pu  8 freq_norm  9 queue
-      10 utilization  11 urgency  12 time_of_day  13 system_id
-
-    step_frac ∈ [0,1]: ramps magnitude from a strong base to full over the
-    attack window.  Minimum floor of 0.40 ensures attacks are detectable
-    from the first injected timestep (prevents trivially easy benign mimicry).
     """
     f          = feat.copy()
     # Calibrated magnitude: realistic but detectable.
-    # Base range (0.42–0.62) with moderate ramp; floor at 0.25 so attacks
-    # are visible from the first injected timestep without being trivial.
+
     eff_frac   = max(step_frac, 0.25)
     mag        = (np.random.uniform(0.42, 0.62) + 0.18 * eff_frac) * eff_frac
 
@@ -366,13 +311,8 @@ def train_test_split_manual(X_seq, X_flat, y, types, test_frac=0.20, seed=RANDOM
             types[id_tr],   types[id_ts])
 
 
-# =============================================================================
 # 2.  Build / load all models
-# =============================================================================
 
-# ── 2a. LSTM-IDS ──────────────────────────────────────────────────────────────
-# LSTMIDSBenchmark, TransformerIDS, TransformerIDSWrapper, AutoencoderIDS are
-# imported from ids_neural_models above — no local redefinition here.
 
 def train_lstm_ids(X_tr_seq, y_tr, epochs=100, lr=3e-4, batch=256):
     """Train the enhanced LSTM-IDS with attention.
@@ -551,9 +491,7 @@ def autoencoder_predict_proba(model: AutoencoderIDS,
     return np.clip(errors / max(cap, 1e-9), 0.0, 1.0)
 
 
-# =============================================================================
 # 3.  Run evaluation loop
-# =============================================================================
 
 def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
                  y_tr, y_ts, types_ts):
@@ -568,10 +506,7 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     _trained_models = {}   # name → fitted sklearn model (or None for LSTM/IF)
 
     # ── LSTM-IDS: train fresh on current 14-D ACN-Data distribution ──────────
-    # The pretrained checkpoint has 14-D input but was trained on a different
-    # synthetic FDI distribution → AUC ≈ 0.48 (worse than random on this data).
-    # Training 50 epochs from scratch on the current ACN-Data 14-D distribution
-    # gives proper competitive performance.
+
     print("\n  [LSTM-IDS]")
     lstm_model = train_lstm_ids(X_seq_tr, y_tr)   # uses default epochs=100
 
@@ -667,8 +602,7 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     print(f"    Latency: {lat_et:.4f} ms/sample")
 
     # ── Transformer IDS ───────────────────────────────────────────────────────
-    # Train on scaled sequences so runtime (BestIDSDetector) passes the same
-    # distribution: scaler.transform(window_flat) → reshape → Transformer.
+
     print("\n  [Transformer IDS]")
     X_seq_tr_s = Xf_tr_s.reshape(len(Xf_tr_s), SEQ_LEN, FEATURE_DIM).astype(np.float32)
     X_seq_ts_s = Xf_ts_s.reshape(len(Xf_ts_s), SEQ_LEN, FEATURE_DIM).astype(np.float32)
@@ -692,9 +626,7 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     print(f"    Latency: {lat_ae:.4f} ms/sample")
 
     # ── Compute metrics — Youden-J threshold (natural operating point) ──────────
-    # With stronger FDI signatures, the natural Youden-J threshold produces
-    # high Recall AND low FPR/high Precision simultaneously.
-    # Composite = α·Recall + β·AUC + γ·(1-FPR) + δ·F1
+
     for name, r in results.items():
         proba  = r["proba"]
         fpr_c, tpr_c, thr_c = roc_curve(y_ts, proba)
@@ -724,7 +656,7 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
                            + IDS_BETA  * r["roc_auc"]
                            + IDS_GAMMA * (1.0 - fpr_val)
                            + IDS_DELTA * r["f1"])
-        dr_note = "(≥target)" if r["recall"] >= TARGET_RECALL else "(⚠ below target)"
+        dr_note = "(≥target)" if r["recall"] >= TARGET_RECALL else "(# below target)"
         print(f"  {name:<18s} AUC={r['roc_auc']:.3f}  "
               f"F1={r['f1']:.3f}  P={r['precision']:.3f}  "
               f"R={r['recall']:.3f}  FPR={fpr_val:.3f}  "
@@ -747,24 +679,12 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     return results, scaler
 
 
-# =============================================================================
 # 4.  Save best IDS model for use in main simulation
-# =============================================================================
+
 
 def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
     """Serialise the best-composite-score sklearn model + scaler for runtime use.
 
-    Selection criterion (safety-critical IDS weighting):
-      Score = 0.40·Recall + 0.30·(1-FPR) + 0.20·F1 + 0.10·PR-AUC
-
-    Sklearn models (RF, GradientBoosting, SVM-RBF, MLP, ExtraTrees,
-    TransformerIDS) have a fitted `predict_proba` and are pickle-serialisable.
-    LSTM and Isolation Forest are excluded (different inference interface).
-
-    The bundle written to `out_path` is a dict:
-      {model, scaler, threshold, model_name, roc_auc, composite_score,
-       feature_dim, seq_len}
-    which BestIDSDetector in best_ids_model.py reads at simulation startup.
     """
     SERIALISABLE = {"Random Forest", "Gradient Boosting", "SVM-RBF", "MLP",
                     "Extra Trees", "Transformer IDS"}
@@ -777,8 +697,7 @@ def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
         return
 
     # ── Rank by composite score ───────────────────────────────────────────────
-    print("\n  IDS model ranking by composite score "
-          "(α=0.40·Recall + β=0.30·(1-FPR) + γ=0.20·F1 + δ=0.10·PR-AUC):")
+    print("\n  IDS model ranking by composite score (Recall, AUC, FPR, F1):")
     ranked = sorted(candidates.items(),
                     key=lambda kv: kv[1]["composite"], reverse=True)
     for rank, (nm, rv) in enumerate(ranked, 1):
@@ -818,9 +737,8 @@ def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
     print(f"  Meta  → {meta_path}")
 
 
-# =============================================================================
 # 5.  Plots
-# =============================================================================
+
 
 def _savefig(name):
     path = os.path.join(OUT_DIR, name)
@@ -1088,9 +1006,8 @@ def plot_summary_table(results):
     print("\n" + df.to_string() + "\n")
 
 
-# =============================================================================
 # 5.  Entry point
-# =============================================================================
+
 
 if __name__ == "__main__":
 
@@ -1133,5 +1050,5 @@ if __name__ == "__main__":
     plot_latency_vs_f1(results)
     plot_summary_table(results)
 
-    print(f"\n✅  All plots saved to: {os.path.abspath(OUT_DIR)}")
+    print(f"\n#  All plots saved to: {os.path.abspath(OUT_DIR)}")
     print("=" * 65)

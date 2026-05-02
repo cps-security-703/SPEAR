@@ -1047,7 +1047,7 @@ class EnhancedDQNSACCoordinator:
     
     def train_coordinated_agents(self, total_timesteps: int = 100000):
         """Train DQN and SAC agents with PINN interaction"""
-        print("🚀 Starting Enhanced DQN/SAC Training with PINN Integration")
+        print("# Starting Enhanced DQN/SAC Training with PINN Integration")
         
         # Phase 1: Individual agent training with PINN interaction
         print("\n📚 Phase 1: Individual Agent Training with PINN Models")
@@ -1135,10 +1135,7 @@ class EnhancedDQNSACCoordinator:
                 step += 1
             
             # Store per-system rewards for plotting — append raw rewards.
-            # The old scaling (phase1_mean / 50) created a compounding feedback
-            # loop that inflated rewards to 1e7-1e8.  Different phases naturally
-            # have different reward scales; the outer-circle boundary lines on
-            # the plot visually separate them.
+
             for i in range(self.num_systems):
                 agent_key = f'agent_{i}'
                 sys_id = i + 1
@@ -1416,7 +1413,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         self.simulation_results = {}
         self.attack_history = []
         
-        print("🚀 Initializing Enhanced Integrated EVCS LLM-RL System...")
+        print("# Initializing Enhanced Integrated EVCS LLM-RL System...")
         self._initialize_system()
     
     def _deep_merge_config(self, default: Dict, override: Dict) -> Dict:
@@ -1592,7 +1589,6 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         print(" ## Federated PINN Manager initialized with 6 distribution systems")
         
         # Load best IDS model into each AnomalyDetector (Layer 3).
-        # Priority order: sklearn RF (.pkl, AUC≈0.90) > robust DNN (.pth) > original LSTM > balanced LSTM
         import os as _os
         _ids_paths = [
             'models/best_ids_model.pkl',               # best sklearn RF from compare_ids_models.py
@@ -1665,7 +1661,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             from dqn_sac_security_evasion import create_dqn_sac_evasion_system
             dqn_sac_trainer = create_dqn_sac_evasion_system(cms)
-            print(" 🚀 Training DQN/SAC agents (this may take a few minutes)...")
+            print(" # Training DQN/SAC agents (this may take a few minutes)...")
             dqn_sac_trainer.train_agents(sac_timesteps=100000, dqn_timesteps=100000)
             
             dqn_sac_trainer.save_agents()
@@ -1695,14 +1691,13 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             # If no models exist, train them
             if not self.federated_manager:
-                print("    🚀 No pre-trained models found, training new models...")
+                print("    # No pre-trained models found, training new models...")
                 self.federated_manager, self.pinn_optimizer, _, _ = self._run_training_phase()
                 if not self.federated_manager:
                     print("    ##?? Training failed, continuing without federated models")
                     return
             
             # Multi-Layer ADM Integration — load best available IDS model
-            # Priority: sklearn RF (.pkl) > robust DNN (.pth) > original LSTM > balanced LSTM
             _ids_candidate_paths = [
                 ("models/best_ids_model.pkl",             "sklearn RF (best_ids_model.pkl, AUC≈0.90)"),
                 ("models/robust_ids/best_ids_model.pth",  "DNN-Classifier (robust)"),
@@ -1947,7 +1942,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     attack_types=ATTACK_TYPES
                 )
                 print("   ## Attack-Specific RL Coordinator initialized (NEW ARCHITECTURE)")
-                print("   📝 This is the RECOMMENDED architecture for better specialization")
+                print("   # This is the RECOMMENDED architecture for better specialization")
             else:
                 self.attack_specific_coordinator = None
                 print("   ##?? Attack-specific coordinator not available")
@@ -1971,21 +1966,21 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     enhanced_system=self  # Pass reference to enhanced system
                 )
                 print("   ## Enhanced LLM-RL coordinator initialized (includes LangGraph + STRIDE/MITRE)")
-                print("   📝 This is the ONLY coordinator with proper Gemini-RL communication")
+                print("   # This is the ONLY coordinator with proper Gemini-RL communication")
                 
                 # No need for separate LangGraph coordinator - Enhanced includes it
                 self.langgraph_coordinator = None
                 
             else:
                 print("   ##?? Enhanced LLM-RL coordinator not available")
-                print("   📝 Note: This means NO proper Gemini-RL coordination (LangGraph is integrated in Enhanced)")
+                print("   # Note: This means NO proper Gemini-RL coordination (LangGraph is integrated in Enhanced)")
                 print("   ## System will use direct RL coordination without LLM guidance")
                 self.enhanced_coordinator = None
                 self.langgraph_coordinator = None
                     
         except Exception as e:
             print(f"   ##XX Failed to initialize Enhanced coordinator: {e}")
-            print("   📝 No Gemini-RL coordination available - continuing with direct RL only")
+            print("   # No Gemini-RL coordination available - continuing with direct RL only")
             self.langgraph_coordinator = None
             self.enhanced_coordinator = None
     
@@ -2073,7 +2068,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     
     def train_enhanced_system(self, total_timesteps: int = 100000):
         """Train the enhanced system with real PINN integration"""
-        print("\n🚀 Starting Enhanced System Training Pipeline")
+        print("\n# Starting Enhanced System Training Pipeline")
         print("=" * 80)
         
         training_results = {
@@ -2507,7 +2502,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             with open(filename, 'w') as f:
                 json.dump(reward_history, f, indent=2)
             
-            print(f"  💾 Saved reward history to {filename}")
+            print(f"  # Saved reward history to {filename}")
             
             # Try to create comparison plot if both files exist
             self._plot_reward_convergence_comparison()
@@ -2637,7 +2632,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         if not scenario:
             raise ValueError(f"Scenario {scenario_id} not found")
         
-        print(f"\n🚀 Running Enhanced Coordinated Simulation")
+        print(f"\n# Running Enhanced Coordinated Simulation")
         print(f"Scenario: {scenario.name}")
         print(f"Coordination: {scenario.coordination_type}")
         print(f"Target Systems: {scenario.target_systems}")
@@ -2755,7 +2750,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
 
             print(f"    ## Attack Impact Factor: {total_impact:.3f}")
             print(f"    ## Attack Success Rate: {success_rate:.1%}")
-            print(f"    ⏱️ Simulation Duration: {sim_config['duration_hours']} hours ({duration_seconds} seconds)")
+            print(f"    # Simulation Duration: {sim_config['duration_hours']} hours ({duration_seconds} seconds)")
 
             # Extract LLM-RL coordinated attack actions for hierarchical simulation
             num_systems = self.config.get('hierarchical', {}).get('num_distribution_systems', 6)
@@ -2953,7 +2948,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             if attack_coord_to_use is None and ATTACK_SPECIFIC_AVAILABLE:
                 import os
                 if os.path.isdir("trained_rl_agents"):
-                    print("  📂 No in-memory agents, attempting to load from trained_rl_agents/...")
+                    print("  # No in-memory agents, attempting to load from trained_rl_agents/...")
                     try:
                         disk_coord = AttackSpecificCoordinator(
                             self.federated_manager,
@@ -3048,13 +3043,13 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 enhanced_result = self._process_enhanced_coordinator_result(episode_result, scenario, episode)
             except Exception as e:
                 print(f"Enhanced coordinator failed: {e}")
-                print(f"  📝 No other LLM coordination available - Enhanced is the only one with Agent-RL")
+                print(f"  # No other LLM coordination available - Enhanced is the only one with Agent-RL")
                 print(f"  ## Falling back to direct DQN/SAC coordination (no LLM guidance)...")
                 enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
         else:
             # No LLM coordination available - Enhanced is the only one with proper Agent-RL
-            print(f"  📝 No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
+            print(f"  # No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
             print(f"  ## Running with direct DQN/SAC coordination (no LLM guidance)...")
             enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
@@ -3605,9 +3600,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 anomaly_detector = self.federated_manager.anomaly_detectors[sys_id]
                 
                 # Build EVCS feature dict from the PINN attack response — this is
-                # the REAL traffic the IDS would observe on the attacked system.
-                # ALL 14 features are derived from actual attack/system state so
-                # the LSTM sees the same data structure it was trained on.
+
                 attacked_resp = attack_result.get('sac_result', attack_result.get('dqn_result', {}))
                 attacked_pinn = attacked_resp.get('attacked_response', attacked_resp) if isinstance(attacked_resp, dict) else {}
                 
@@ -3648,9 +3641,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 }
                 
                 # Warm up LSTM sequence buffer with benign baseline samples
-                # so the LSTM can produce meaningful scores on the first call.
-                # Without this, the LSTM returns score=0.0 ("Insufficient
-                # sequence data") because it needs sequence_length samples.
+ 
                 anomaly_detector.reset_state()
                 seq_len = getattr(anomaly_detector, 'sequence_length', 10)
                 for _w in range(seq_len):
@@ -3869,9 +3860,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             print(f"      #??# REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
             
             # Create baseline station data matching the CMS input schema used in
-            # hierarchical_cosimulation.py _apply_input_attacks() (Path A).
-            # Keys: soc, grid_voltage (pu), grid_frequency (Hz), demand_factor,
-            #        voltage_priority, urgency_factor, current_time
+
             baseline_station_data = {
                 'soc': 0.5,
                 'grid_voltage': 1.0,        # per-unit (nominal)
@@ -3896,8 +3885,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Apply attack perturbations to station data
-            # These perturbations MIRROR _apply_input_attacks() in hierarchical_cosimulation.py
-            # so that RL training uses the same variables and directions as the simulation.
+
             attacked_station_data = baseline_station_data.copy()
             
             if attack_type == 'voltage_manipulation':
@@ -5042,7 +5030,7 @@ Return ONLY the JSON array, no other text."""
                 f.write(f"\nTotal scenarios saved: {len(attack_scenarios)}\n")
                 f.write(f"File generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             
-            print(f"    💾 Attack scenarios saved to: {filename}")
+            print(f"    # Attack scenarios saved to: {filename}")
             return filename
             
         except Exception as e:
@@ -5806,7 +5794,7 @@ def main(run_mode='rl_coordinated'):
     Args:
         run_mode: 'rl_coordinated' (default) or 'baseline_random' or 'both'
     """
-    print("🚀 Enhanced Integrated EVCS LLM-RL System with Real SAC and PINN Integration")
+    print("# Enhanced Integrated EVCS LLM-RL System with Real SAC and PINN Integration")
     print("=" * 90)
     print(f"#??# Run Mode: {run_mode}")
     print("=" * 90)
@@ -5892,8 +5880,8 @@ def main(run_mode='rl_coordinated'):
         # Setup EVCS stations
         baseline_cosim.setup_ev_charging_stations()
 
-        print(f"  ⏱️  Simulation duration: {baseline_cosim.total_duration}s")
-        print("  🚀 Running baseline simulation (NO attacks)...")
+        print(f"  #  Simulation duration: {baseline_cosim.total_duration}s")
+        print("  # Running baseline simulation (NO attacks)...")
 
         baseline_results = baseline_cosim.run_hierarchical_simulation(attack_scenarios=[])  # Empty = no attacks
 
@@ -5950,10 +5938,6 @@ def main(run_mode='rl_coordinated'):
             }
             
             # Add individual attack detection details.
-            # Evaluate each attack through the SAME IDS used in production
-            # (hierarchical_cosimulation.py uses BestIDSDetector per station).
-            # Protocol: reset → warm-up with SEQ_LEN//2 benign steps → feed
-            # SEQ_LEN//2 attack steps.  This mirrors the training-data construction
             # in compare_ids_models.py (inject_at = SEQ_LEN//2 … SEQ_LEN).
             _SEQ_HALF = 5   # SEQ_LEN // 2 = 10 // 2
             for attack_result in episode_result.get('attack_results', episode_result.get('execution_results', [])):
@@ -6066,10 +6050,7 @@ def main(run_mode='rl_coordinated'):
                     total_fn += 1
             
             # Evaluate IDS on benign (normal) traffic samples for this episode.
-            # For a fair IDS evaluation we need both attack AND benign samples.
-            # Pass REAL benign EVCS traffic through the SAME multi-layer IDS.
-            # Reset detector state first so attack history doesn't contaminate,
-            # then warm up the LSTM buffer with benign data before counting.
+
             num_attacks_this_ep = len(episode_data['attacks_detected'])
             for b in range(num_attacks_this_ep):
                 benign_sys_id = (b % 6) + 1

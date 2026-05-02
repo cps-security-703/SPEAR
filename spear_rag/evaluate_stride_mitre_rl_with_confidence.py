@@ -25,15 +25,6 @@ class ConfidenceBasedRLActionSelector:
     def calculate_confidence_score(self, response: str, mapping: Dict, context_docs: List[Dict] = None) -> Dict:
         """
         Calculate confidence score for the mapping based on multiple indicators
-        
-        Confidence Indicators:
-        1. CVE citations - VERIFIED against context docs (0-25)
-        2. MITRE technique count (0-20)
-        3. Specificity of RL action (0-15)
-        4. Protocol-specific details (0-10)
-        5. Context document usage / groundedness (0-20)
-        6. Structured format (0-5)
-        7. Hallucination penalty (0 to -15)
         """
         
         score_components = {}
@@ -82,10 +73,7 @@ class ConfidenceBasedRLActionSelector:
     def _validate_cves(self, cves: List[str], context_docs: List[Dict] = None) -> Tuple[Set[str], Set[str]]:
         """
         Validate CVEs against context documents from the knowledge base.
-        CVEs not found in context are considered unverified (potentially hallucinated).
-        
-        Returns:
-            Tuple of (verified_cves, unverified_cves)
+
         """
         if not cves:
             return set(), set()
@@ -114,10 +102,6 @@ class ConfidenceBasedRLActionSelector:
     def _score_rl_action_specificity(self, rl_actions: List[str]) -> float:
         """
         Score RL action specificity based on detail level
-        
-        High specificity: "Communication spoofing - inject false OCPP StartTransaction messages"
-        Medium specificity: "Communication spoofing"
-        Low specificity: "Spoofing attack"
         """
         # Filter out garbage/markdown artifacts before scoring
         clean_actions = self._clean_rl_actions(rl_actions)
@@ -182,7 +166,6 @@ class ConfidenceBasedRLActionSelector:
     def _score_context_usage(self, response: str, context_docs: List[Dict]) -> float:
         """
         Score how well the response uses context documents (0-20 points).
-        This is RAG's key differentiator - grounded responses score higher.
         """
         if not context_docs:
             return 0

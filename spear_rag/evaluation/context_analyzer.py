@@ -177,14 +177,14 @@ class ContextAnalyzer:
         report.append("=" * 80)
         
         # Summary
-        report.append(f"\n📊 SUMMARY:")
+        report.append(f"\n# SUMMARY:")
         report.append(f"   Total Documents Retrieved: {analysis['total_documents']}")
         report.append(f"   Documents Actually Used: {analysis['documents_used']}")
         report.append(f"   Utilization Rate: {analysis['utilization_rate']*100:.1f}%")
         report.append(f"   Weighted Utilization Score: {analysis['utilization_score']:.1f}/100")
         
         # Top documents usage
-        report.append(f"\n🎯 TOP DOCUMENTS USAGE:")
+        report.append(f"\n# TOP DOCUMENTS USAGE:")
         report.append(f"   Top 3 Documents Used: {analysis['top_3_used']}/3")
         report.append(f"   Top 5 Documents Used: {analysis['top_5_used']}/5")
         
@@ -203,7 +203,7 @@ class ContextAnalyzer:
         
         # Missed opportunities
         if analysis['unused_relevant_docs'] > 0:
-            report.append(f"\n⚠️  MISSED OPPORTUNITIES:")
+            report.append(f"\n#  MISSED OPPORTUNITIES:")
             report.append(f"   {analysis['unused_relevant_docs']} highly relevant documents were NOT used")
             for doc in analysis['unused_relevant_details']:
                 report.append(f"   - {doc['doc_id']}: {doc['title']}")

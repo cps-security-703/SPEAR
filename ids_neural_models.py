@@ -2,11 +2,6 @@
 ids_neural_models.py
 ====================
 Standalone module containing all neural-network IDS class definitions.
-
-Keeping them here (rather than in compare_ids_models*.py) means pickle stores
-a stable reference like  ids_neural_models.TransformerIDSWrapper  instead of
-__main__.TransformerIDSWrapper.  Any script that imports this module can then
-deserialise the pkl without a namespace mismatch.
 """
 
 import numpy as np

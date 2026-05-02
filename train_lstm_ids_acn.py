@@ -327,17 +327,17 @@ def main():
 
     # ── 1. Load ACN data via the PINN's loader ─────────────────────────────
     if not os.path.isdir(args.acn_data_dir):
-        print(f"❌ ACN data dir not found: {args.acn_data_dir}")
+        print(f"# ACN data dir not found: {args.acn_data_dir}")
         sys.exit(1)
 
     loader = ACNDataLoader(args.acn_data_dir)
     site_dirs = [(os.path.join(args.acn_data_dir, s), args.max_files_per_site)
                  for s in args.sites]
     n_loaded = loader.load_from_dirs(site_dirs)
-    print(f"✅ Loaded {n_loaded} ACN sessions across {len(args.sites)} sites")
+    print(f"# Loaded {n_loaded} ACN sessions across {len(args.sites)} sites")
 
     if n_loaded == 0:
-        print("❌ No ACN sessions loaded — check --acn-data-dir / --sites")
+        print("# No ACN sessions loaded — check --acn-data-dir / --sites")
         sys.exit(1)
 
     # Build clean IDS sequences (20-D): (N, seq_len, 20)
@@ -346,15 +346,15 @@ def main():
     clean_tensor = loader.build_ids_sequences(
         seq_len=args.seq_len, n_samples=args.n_samples)
     if clean_tensor is None:
-        print("❌ build_ids_sequences returned None — check ACN data format")
+        print("# build_ids_sequences returned None — check ACN data format")
         sys.exit(1)
     clean_seq = clean_tensor.numpy().astype(np.float32)
-    print(f"✅ Built clean 20-D sequences of shape {clean_seq.shape}")
+    print(f"# Built clean 20-D sequences of shape {clean_seq.shape}")
 
     # ── 2. Inject FDI attacks (50 % of sequences) ─────────────────────────
     attacked_seq, labels, atk_types = inject_fdi_on_abstract_features(
         clean_seq, attack_ratio=args.attack_ratio)
-    print(f"✅ Injected FDI attacks: "
+    print(f"# Injected FDI attacks: "
           f"{labels.sum()} / {len(labels)} sequences "
           f"(types: {[(t, int((atk_types == i).sum())) for i, t in enumerate(FDI_TYPES)]})")
 
@@ -382,7 +382,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimiser, T_max=args.epochs)
 
-    print(f"✅ Model: LSTMIDSModel({IDS_FEATURE_DIM}-dim input, 128-hidden, 2-layer)")
+    print(f"# Model: LSTMIDSModel({IDS_FEATURE_DIM}-dim input, 128-hidden, 2-layer)")
 
     # ── 5. Training loop ──────────────────────────────────────────────────
     hist = {"train_loss": [], "val_loss": [],
@@ -430,14 +430,14 @@ def main():
             }, best_path)
 
     elapsed = time.time() - t0
-    print(f"\n✅ Training complete in {elapsed:.1f}s   "
+    print(f"\n# Training complete in {elapsed:.1f}s   "
           f"best val_acc={best_val_acc:.3f}")
 
     # Also write drop-in replacement for the hierarchical sim's eager loader
     drop_in = os.path.join(args.output_dir, "lstm_ids_pretrained.pth")
     import shutil
     shutil.copyfile(best_path, drop_in)
-    print(f"✅ Saved drop-in checkpoint → {drop_in}")
+    print(f"# Saved drop-in checkpoint → {drop_in}")
 
     # ── 6. Quick per-attack-type evaluation on val set ───────────────────
     model.eval()
@@ -489,9 +489,9 @@ def main():
         plt.savefig("lstm_ids_acn_training_history.png", dpi=120,
                     bbox_inches="tight")
         plt.close()
-        print("✅ Saved lstm_ids_acn_training_history.png")
+        print("# Saved lstm_ids_acn_training_history.png")
     except Exception as e:
-        print(f"⚠️  Plot skipped: {e}")
+        print(f"#  Plot skipped: {e}")
 
 
 if __name__ == "__main__":

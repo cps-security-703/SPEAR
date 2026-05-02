@@ -1135,7 +1135,7 @@ def setup_ieee34_with_evcs_qsts():
         if abs(test_power - (-25.0)) < 1.0:  # Negative because it's consuming power
             print("✓ EVCS control test passed")
         else:
-            print("⚠ EVCS control test failed - values may not update properly")
+            print("# EVCS control test failed - values may not update properly")
         
         # Reset to idle
         dss.Command(f"Storage.{test_evcs}.State=Idling")
@@ -1143,7 +1143,7 @@ def setup_ieee34_with_evcs_qsts():
         
     else:
         print("✗ Initial power flow did not converge")
-        print("⚠ Simulation may have issues")
+        print("# Simulation may have issues")
     
     return evcs_data, time_points
 

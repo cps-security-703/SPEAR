@@ -3,12 +3,6 @@
 LLM Threat Analyzer for EVCS Attack Analytics
 Supports both Google Gemini (native SDK) and OpenRouter (multi-model API).
 
-Provider selection is controlled by the USE_GEMINI flag below.
-All API keys are read from the .env file (or environment variables).
-
-.env file format:
-    GEMINI_API_KEY=<your-google-api-key>
-    OPENROUTER_API_KEY=<your-openrouter-api-key>
 """
 
 from llm_metrics_logger import llm_call_metrics, LLMMetricsLogger
@@ -39,7 +33,6 @@ GEMINI_MODEL_NAME: str = "models/gemini-2.5-flash"
 OPENROUTER_MODEL_NAME: str = "google/gemini-3.1-flash-lite-preview"
 
 # OpenRouter models that reliably support response_format={"type":"json_object"}
-# NOTE: Free model availability rotates — check https://openrouter.ai/models
 JSON_CAPABLE_OPENROUTER_MODELS = {
     # --- Paid (strong JSON mode) ---
     "openai/gpt-4o",
@@ -165,9 +158,9 @@ class OpenRouterClient:
         return _OpenRouterResponse(text=content, raw=resp)
 
 
-# ============================================================================
+
 # Helper: load API keys from environment (populated by .env via load_dotenv)
-# ============================================================================
+
 def _load_key_from_env(env_var: str, fallback_file: str = None) -> str:
     """
     Try os.environ first; if absent and fallback_file given, read that file.
@@ -236,8 +229,7 @@ class GeminiLLMThreatAnalyzer:
         # Detect Gemini-format names ("models/gemini-*") vs OpenRouter-format
         # ("provider/model-name").  If the caller passes a Gemini name but
         # USE_GEMINI=False (or vice versa), override silently with the correct
-        # module-level constant.  This makes all legacy call sites like
-        #   GeminiLLMThreatAnalyzer(model_name='models/gemini-2.5-flash')
+
         # work transparently after a provider switch.
         _is_gemini_fmt = (model_name is not None and
                           (model_name.startswith("models/gemini") or
@@ -289,10 +281,8 @@ class GeminiLLMThreatAnalyzer:
             self._init_gemini(api_key, model_name)
         else:
             # Legacy call sites (e.g. enhanced_integrated_evcs_system.py) read
-            # gemini_key.txt and pass the Google API key (starts with "AIza").
-            # That key is invalid for OpenRouter and causes a 401.
-            # When routing to OpenRouter, always discard Gemini-format keys so
-            # _init_openrouter reads OPENROUTER_API_KEY from .env instead.
+            # gemini_key.txt and pass the Google API key (starts with "").
+
             _is_google_key = bool(api_key and str(api_key).startswith("AIza"))
             if _is_google_key:
                 print("##  Discarding Gemini API key for OpenRouter; "
@@ -364,9 +354,7 @@ class GeminiLLMThreatAnalyzer:
         self._throttle_requests()
         self._last_prompt_length = len(prompt)
         response = self.model.generate_content(prompt)
-        # Store the full response object (not response.raw) so the
-        # llm_call_metrics decorator can find .raw on _OpenRouterResponse
-        # and extract token counts via usage.prompt_tokens / completion_tokens.
+ 
         self._last_raw_response = response
         return response
 
@@ -531,13 +519,11 @@ class GeminiLLMThreatAnalyzer:
         
         try:
             # If a deployment_prompt is provided (from CentralRLCoordinator),
-            # use it directly — it already contains the full context and asks
-            # for a structured JSON deployment response.
+
             if 'deployment_prompt' in system_data and system_data['deployment_prompt']:
                 analysis_prompt = system_data['deployment_prompt']
             # If an adaptation_prompt is provided (from LangGraph _llm_adaptation_node),
-            # use it directly — it already contains RL feedback and asks for
-            # strategy adaptation, not generic vulnerability analysis.
+
             elif 'adaptation_prompt' in system_data and system_data['adaptation_prompt']:
                 analysis_prompt = system_data['adaptation_prompt']
             else:

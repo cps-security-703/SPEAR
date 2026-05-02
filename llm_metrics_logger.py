@@ -1,47 +1,6 @@
 #!/usr/bin/env python3
 """
 LLM Metrics Logger — Decorator-pattern instrumentation for multi-model benchmarking.
-
-Usage (automatic via decorator — no manual calls needed in most code):
-    from llm_metrics_logger import llm_call_metrics, LLMMetricsLogger
-
-    class MyAnalyzer:
-        @llm_call_metrics()
-        def analyze_threats(self, system_data):
-            ...
-
-RL-impact update (call from coordinator after episode reward is known):
-    LLMMetricsLogger.instance().update_rl_impact(
-        call_id   = self.llm_analyzer._last_call_id,
-        reward_before = prev_reward,
-        reward_after  = current_reward,
-        task_success  = True,
-        rl_plan_accepted = True,
-    )
-
-Output files (written to ./llm_metrics/ by default):
-    llm_calls_<timestamp>_<run_id>.csv   — append-only per-call rows
-    llm_calls_<timestamp>_<run_id>.jsonl — full records (rewritten on RL updates)
-
-Comparative analysis (offline, in pandas / notebook):
-    import pandas as pd
-    df = pd.read_csv("llm_metrics/llm_calls_*.csv")
-
-    # Efficiency Score
-    df["efficiency"] = df["quality_score_rule"] / (df["cost_usd"].clip(lower=1e-9) * df["total_time_s"])
-
-    # Robustness Index  (per model)
-    g = df.groupby("model_name")["quality_score_rule"]
-    df_rob = (g.mean() * (1 - g.std())).rename("robustness_index")
-
-    # RL Integration Gain
-    df["rl_reward_delta"].groupby(df["model_name"]).mean()
-
-    # Latency-Quality Correlation
-    df[["ttft_s","quality_score_rule"]].dropna().corr(method="pearson")
-
-    # Pareto Frontier (3D: cost, quality, latency)
-    # plot df[["cost_usd","quality_score_rule","total_time_s"]] coloured by model_name
 """
 
 import csv
@@ -244,7 +203,7 @@ class LLMMetricsLogger:
         self._records:         Dict[str, LLMCallRecord] = {}
         self._csv_initialized: bool = False
 
-        print(f"📊 LLMMetricsLogger  →  {self.csv_path.name}")
+        print(f"# LLMMetricsLogger  →  {self.csv_path.name}")
 
     # ── Singleton access ──────────────────────────────────────────────────────
 

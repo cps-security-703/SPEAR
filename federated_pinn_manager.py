@@ -110,10 +110,6 @@ class AnomalyDetector:
             inputs[key] = float(np.clip(raw, lo, hi))
 
         # Bounds reflect realistic EVCS operating tolerances:
-        #   grid_voltage: ±20 % of nominal (ANSI C84.1 service-voltage range B extended)
-        #   grid_frequency: ±0.5 Hz (NERC alert threshold; tighter than ±1 Hz)
-        # Wider bounds give the RL red-team agents a feasible evasion space while
-        # still catching clearly anomalous perturbations (>20 % voltage deviation,
         # >0.5 Hz frequency excursion).
         _check_and_sanitize('soc', 0.5, 0.0, 1.0, 'SOC')
         _check_and_sanitize('grid_voltage', 1.0, 0.80, 1.20, 'Grid voltage')
@@ -226,12 +222,9 @@ class AnomalyDetector:
             self.lstm_detector.load_model(model_path)
 
             # Try to read the Youden-J optimal threshold saved by compare_ids_models.py
-            # into models/best_ids_model_meta.json.  If available, use it so the runtime
-            # threshold matches the threshold at which the model was evaluated.
-            # Fall back to 0.5 if the file is missing or unreadable.
+
             import json as _json, os as _os
             # meta file is always at <project_root>/models/best_ids_model_meta.json
-            # regardless of where the .pth lives (root vs models/ sub-dir).
             _this_dir  = _os.path.dirname(_os.path.abspath(__file__))
             _meta_path = _os.path.join(_this_dir, 'models', 'best_ids_model_meta.json')
             _loaded_thr = 0.5
@@ -337,18 +330,6 @@ class AnomalyDetector:
     def multi_layer_detection(self, inputs: Dict, system_id: int) -> Tuple[bool, Dict]:
         """Run all detection layers and return comprehensive results
         
-        All three layers are ALWAYS evaluated so that the LSTM anomaly score
-        is available for reporting even when an earlier layer triggers.
-        The 'detection_layer' field records which layer triggered FIRST.
-        
-        Detection layers:
-        1. Physical constraints (rule-based, catches obvious violations)
-        2. Pattern detection (heuristic, catches known attack patterns)
-        3. LSTM ML detection (machine learning, catches subtle/novel attacks)
-        
-        Returns:
-            is_detected: True if any layer detected an attack
-            results: Detailed results from all layers
         """
         results = {
             'layer1_physical': {'detected': False, 'violations': {}},
@@ -381,9 +362,7 @@ class AnomalyDetector:
         is_lstm_anomaly, lstm_score, lstm_msg = self.detect_lstm_anomaly(inputs)
         results['layer3_lstm'] = {'detected': is_lstm_anomaly, 'score': lstm_score, 'message': lstm_msg}
         
-        # LSTM detection now triggers on its own when the classifier is
-        # confident (score > threshold, default 0.5).  Previous gating
-        # (requiring corroboration or score > 0.95) effectively disabled
+
         # the ML layer and caused 100% evasion in evaluation.
         if is_lstm_anomaly:
             if first_detection_layer is None:
@@ -457,29 +436,6 @@ class GradualAttackController:
 
 class PINNCMSScheduler:
     """LLF + PINN Hybrid Fleet Scheduler (mirrors PINNCMSController in comparison script).
-
-    Takes a trained LSTMPINNChargingOptimizer and a list of per-EV state dicts,
-    then allocates pilot signals using the same 5-step procedure as the
-    standalone benchmark:
-      1. Compute physics-based urgency per EV
-      2. Query PINN for I_ref confidence weight
-      3. Hybrid priority = 0.65 × urgency + 0.35 × PINN weight
-      4. Phase-A: give mandatory minimum pilot to critical EVs
-      5. Phase-B: distribute remaining budget proportional to priority × SOC gap
-
-    fleet_state items must have keys (all numeric, SI-compatible units):
-      ev_id          : unique int identifier
-      soc            : current SOC ∈ [0, 1]
-      target_soc     : desired departure SOC (typically 0.80)
-      remaining_kwh  : energy still needed (kWh)
-      departure_periods : periods remaining until departure (int)
-      max_pilot_A    : maximum pilot signal allowed for this EVSE (A)
-      battery_kwh    : battery capacity (kWh)
-
-    Optional keys used for richer PINN features:
-      urgency        : pre-computed float (overrides internal calculation)
-      n_active       : fleet size hint (for load factor feature)
-      time_of_day    : hour ∈ [0, 24]
     """
 
     # Constants (aligned with compare_pinn_cms_vs_acn_controllers.py defaults)
@@ -705,7 +661,7 @@ class FederatedPINNManager:
         if isinstance(local_data, tuple) and len(local_data) == 2:
             # Enhanced data: (sequences, targets) from PhysicsDataGenerator / ACN-Data
             sequences, targets = local_data
-            print(f"  📊 Using ENHANCED training data: {len(sequences)} sequences with {sequences.shape[-1]} features")
+            print(f"  # Using ENHANCED training data: {len(sequences)} sequences with {sequences.shape[-1]} features")
             print(f"  ## Target ranges: V={targets[:, 0].min():.1f}-{targets[:, 0].max():.1f}, "
                   f"I={targets[:, 1].min():.1f}-{targets[:, 1].max():.1f}, "
                   f"P={targets[:, 2].min():.2f}-{targets[:, 2].max():.2f}")
@@ -721,7 +677,7 @@ class FederatedPINNManager:
             training_metrics = local_model.train_model(n_samples=len(sequences))
         else:
             # Simplified data: use regular training
-            print(f"  📊 Using simplified training data: {local_data.shape}")
+            print(f"  # Using simplified training data: {local_data.shape}")
             training_metrics = local_model.train_model(n_samples=n_samples)
         
         # Store training history
@@ -959,7 +915,7 @@ class FederatedPINNManager:
     
     def load_federated_models(self, base_path: str = 'federated_models'):
         """Load all federated models"""
-        print(f"📂 Loading federated models from {base_path}/...")
+        print(f"# Loading federated models from {base_path}/...")
         
         try:
             # Load global model

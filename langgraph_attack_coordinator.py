@@ -572,26 +572,4 @@ class LangGraphAttackCoordinator:
         
         return """
         LangGraph Attack Coordination Workflow:
-        
-        [START] → Strategic Planning (LLM)
-                      ↓
-                 Tactical Preparation (RL State Processing)
-                      ↓
-                 RL Execution (Attack Actions)
-                      ↓
-                 Stealth Assessment
-                      ↓
-                 ┌─ Continue? ─┐
-                 │             │
-            [Abort]       [Continue/Adapt]
-                 │             │
-               [END]      Impact Evaluation
-                              ↓
-                         ┌─ Adapt? ─┐
-                         │          │
-                    [Complete]  Strategy Adaptation
-                         │          │
-                       [END]        ↓
-                              Tactical Preparation
-                                   (Loop)
         """

@@ -1,37 +1,8 @@
 #!/usr/bin/env python3
 """
-================================================================================
 compare_pinn_cms_vs_acn_controllers.py
-================================================================================
-Standalone script — compares the PINN-based CMS controller against ACN-Sim's
-built-in baseline controllers using real ACN-Data session CSV files.
 
-Does NOT touch enhanced_integrated_evcs_system.py.
 
-Controllers compared
---------------------
-  Uncontrolled     — charges at max rate immediately on plug-in
-  EDF              — Earliest Deadline First (serves EVs leaving soonest)
-  MaxRate          — allocates available kW ensuring none exceed max pilot
-  SortedStayFirst  — sorts by total energy demand (largest first)
-  SortedDeptFirst  — sorts by departure time (Sorted Scheduling with EDF key)
-  PINN-CMS         — our LSTM-PINN controller (acn_sim_interface.PINNCMSAlgorithm)
-
-Data source
------------
-Uses real ACN-Data time-series CSVs from:
-  evcs_data/ACN-Data-Static-main/time series data/
-
-Outputs (saved to plots/cms_comparison/)
------------------------------------------
-  CMS-01  Aggregate power time-series (all controllers)
-  CMS-02  Energy delivery rate (SOC progression)
-  CMS-03  Peak demand & capacity utilisation bar chart
-  CMS-04  Throughput: % EVs fully charged (radar/bar)
-  CMS-05  Queue depth (# EVs waiting)
-  CMS-06  Pilot signal distribution (violin)
-  CMS-07  Summary metrics table
-================================================================================
 """
 
 import os, sys, warnings, gzip, glob, csv, math
@@ -144,9 +115,7 @@ def load_sessions(sites=SITES_TO_USE, min_rows: int = 8):
     return sessions
 
 
-# =============================================================================
 # 2.  Build EV events (simplified slot-based schedule)
-# =============================================================================
 
 class EVEvent:
     """Represents one EV charging session."""
@@ -206,9 +175,8 @@ class EVEvent:
         return power_kw
 
 
-# =============================================================================
+# 
 # 3.  Controllers
-# =============================================================================
 
 class BaseController:
     """Schedules pilot signals for active EVs given a budget (kW)."""
@@ -302,14 +270,6 @@ class PINNCMSController(BaseController):
 
     def _build_model(self):
         """Load or train the PINN model, then fine-tune on ACN-Data.
-
-        Strategy:
-        1. Try to load a pre-trained checkpoint (federated_pinn_system_1.pth).
-        2. Always run a fine-tuning pass on ACN-Data sequences (n_samples=3000,
-           300 epochs) — the checkpoint was trained on generic synthetic data,
-           not on the congested busy-day scenario used in this comparison.
-           Fine-tuning adapts I_ref outputs to actual ACN charging patterns.
-        3. If no checkpoint at all: do a full cold-start training instead.
         """
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -358,9 +318,9 @@ class PINNCMSController(BaseController):
                 print("  PINN-CMS: no ACN data found and no checkpoint — using untrained model")
 
             self._trained = True
-            print("  ✅ PINN-CMS: model ready")
+            print("  # PINN-CMS: model ready")
         except Exception as exc:
-            print(f"  ⚠️  PINN-CMS model init failed: {exc}")
+            print(f"  #  PINN-CMS model init failed: {exc}")
             print("       Falling back to LLF scheduling.")
             self._pinn_opt = None
             self._trained  = False
@@ -390,7 +350,7 @@ class PINNCMSController(BaseController):
         budget_A   = cap_kw * 1000.0 / EVSE_VOLTAGE   # total amps available
 
         # ── Step 1: compute physics-based urgency for every EV ────────────────
-        # urgency_raw ∈ [0, ∞): 0 = fully slack, →∞ = must charge NOW
+
         ev_info = {}
         for ev in active_evs:
             rem_periods   = max(ev.departure - current_period, 1)
@@ -435,15 +395,14 @@ class PINNCMSController(BaseController):
                     ev_info[eid]["pinn_w"] = pinn_w
 
         # ── Step 3: hybrid priority = 0.65 × urgency + 0.35 × pinn_weight ────
-        # Higher priority → allocated first and given more of the budget.
-        # The PINN weight nudges allocation beyond pure rule-based LLF.
+
         ALPHA = 0.65    # weight on physics urgency
         BETA  = 0.35    # weight on PINN prediction
         for info in ev_info.values():
             info["priority"] = ALPHA * info["urgency"] + BETA * info["pinn_w"]
 
         # ── Step 4: sorted allocation — most urgent get full pilot first ───────
-        # Phase A: guarantee minimum feasibility pilots to critical EVs
+
         result   = {ev.ev_id: 0.0 for ev in active_evs}
         rem_A    = budget_A
 
@@ -485,12 +444,11 @@ class PINNCMSController(BaseController):
         return result
 
 
-# =============================================================================
 # 4.  Realistic congested simulation engine
-# =============================================================================
+
 
 # Time-of-use arrival distribution: two rush peaks
-# Morning (7-9 h) and evening (17-19 h)  — in simulation periods
+
 RUSH_PROFILES = [
     # (center_period, spread_periods, n_evs, mean_duration_periods, mean_batt_kwh, mean_soc)
     (int(7.5 * 60 / PERIOD_MIN),  int(1.5 * 60 / PERIOD_MIN), 30, 60,  40.0, 0.35),  # morning rush
@@ -688,9 +646,8 @@ def simulate(ev_events: list, controller: BaseController,
     }
 
 
-# =============================================================================
 # 5.  Run all controllers
-# =============================================================================
+
 
 def run_all(ev_events, cap_kw, n_evses):
     controllers = {
@@ -718,11 +675,9 @@ def run_all(ev_events, cap_kw, n_evses):
     return results
 
 
-# =============================================================================
-# 6.  Plots
-# =============================================================================
 
-# ── shared helpers ─────────────────────────────────────────────────────────────
+# 6.  Plots
+
 
 def _savefig(name):
     path = os.path.join(OUT_DIR, name)
@@ -946,9 +901,8 @@ def plot_summary_table(results, cap_kw):
     print("\n" + df.to_string() + "\n")
 
 
-# =============================================================================
 # 7.  Entry point
-# =============================================================================
+
 
 if __name__ == "__main__":
     print("=" * 65)
@@ -958,7 +912,7 @@ if __name__ == "__main__":
     print("\n[1/3] Loading ACN-Data sessions ...")
     sessions = load_sessions(SITES_TO_USE)
     if not sessions:
-        print("❌  No ACN sessions found. Check ACN_DATA_ROOT path.")
+        print("#  No ACN sessions found. Check ACN_DATA_ROOT path.")
         sys.exit(1)
     print(f"     Loaded {len(sessions)} real ACN sessions")
 
@@ -987,6 +941,6 @@ if __name__ == "__main__":
     plot_pilot_violin(results)
     plot_summary_table(results, cap_kw)
 
-    print(f"\n✅  All plots saved to: {os.path.abspath(OUT_DIR)}")
+    print(f"\n#  All plots saved to: {os.path.abspath(OUT_DIR)}")
     print("=" * 65)
 

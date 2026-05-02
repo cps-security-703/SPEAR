@@ -254,15 +254,6 @@ class VulnerabilityDBPipeline:
         """
         Run the full pipeline to create the vulnerability vector database
         
-        Args:
-            nvd_start_date: Start date for NVD CVE collection
-            nvd_max_results: Maximum number of CVEs to collect
-            cicevse_dataset_path: Path to CICEVSE2024 dataset
-            skip_nvd: Skip NVD collection
-            skip_mitre: Skip MITRE collection
-            skip_stride: Skip STRIDE pattern creation
-            skip_mitre_stride: Skip MITRE-STRIDE mapping
-            skip_cicevse: Skip CICEVSE2024 processing
         """
         logger.info("=" * 80)
         logger.info("STARTING VULNERABILITY VECTOR DATABASE CREATION PIPELINE")

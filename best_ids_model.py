@@ -1,25 +1,7 @@
 """
 best_ids_model.py
 =================
-Runtime IDS wrapper used by hierarchical_cosimulation.py and
-enhanced_llm_rl_coordinator.py.
 
-After running compare_ids_models.py the best-performing sklearn model (by AUC)
-is serialised to  models/best_ids_model.pkl.  BestIDSDetector loads that bundle
-at startup and exposes a single  detect(feature_14d)  method that the simulation
-calls once per timestep per station.
-
-If the pickle does not exist yet (i.e. the benchmark hasn't been run) the
-detector silently falls back to returning (False, 0.0) so the simulation can
-still run without ML-IDS active.
-
-Interface expected by the simulation
--------------------------------------
-  detector.enabled      → bool   (read by enhanced_llm_rl_coordinator.py)
-  detector.anomaly_count → int   (read by enhanced_llm_rl_coordinator.py)
-  detector.model_name   → str    (informational)
-  detector.detect(feat) → (bool, float)  is_attack, confidence ∈ [0,1]
-  detector.reset()      → None   clear window + counter
 """
 
 import os
@@ -30,10 +12,7 @@ import numpy as np
 ROOT       = os.path.dirname(os.path.abspath(__file__))
 _MODEL_PKL = os.path.join(ROOT, "models", "best_ids_model.pkl")
 
-# Pre-register neural model classes into __main__ so that pickle can resolve
-# references like '__main__.TransformerIDSWrapper' produced when a training
-# script was run directly (i.e. __name__ == '__main__').  Future pkls will
-# reference 'ids_neural_models.TransformerIDSWrapper' directly.
+
 try:
     from ids_neural_models import (
         TransformerIDS, TransformerIDSWrapper,
@@ -54,10 +33,6 @@ _FEATURE_DIM = 14   # must match compare_ids_models.FEATURE_DIM
 
 class BestIDSDetector:
     """Sliding-window IDS detector backed by the best trained sklearn model.
-
-    The detector maintains a per-station rolling buffer of the last _SEQ_LEN
-    feature vectors.  Once the buffer is full it flattens the window, applies
-    the stored StandardScaler, and queries the sklearn model's predict_proba.
     """
 
     def __init__(self, model_path: str = _MODEL_PKL):
@@ -100,8 +75,6 @@ class BestIDSDetector:
     def detect(self, feature_14d) -> tuple:
         """Feed one 14-D timestep and return (is_attack: bool, confidence: float).
 
-        Returns (False, 0.0) until the internal window has accumulated
-        _SEQ_LEN steps, or if no model is loaded.
         """
         feat = np.asarray(feature_14d, dtype=np.float32).flatten()
 

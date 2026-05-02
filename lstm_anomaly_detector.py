@@ -24,18 +24,7 @@ import os
 class LSTMIDSModel(nn.Module):
     """
     LSTM-based Intrusion Detection System Model
-    
-    Architecture:
-    - Input: [batch_size, sequence_length, input_size]
-    - LSTM layers: 2 layers with 128 hidden units
-    - Classification head: Binary classification (normal/attack)
-    - Anomaly score head: Continuous anomaly score [0, 1]
-    
-    Args:
-        input_size: Number of features per timestep (default: 14)
-        hidden_size: LSTM hidden state size (default: 128)
-        num_layers: Number of LSTM layers (default: 2)
-        dropout: Dropout rate (default: 0.2)
+
     """
     
     def __init__(self, input_size: int = 14, hidden_size: int = 128, 
@@ -101,20 +90,7 @@ class LSTMIDSModel(nn.Module):
 class LSTMIDSDetector:
     """
     LSTM IDS Detector Wrapper
-    
-    Provides high-level interface for:
-    - Model inference
-    - Model loading/saving
-    - Feature extraction from EVCS data
-    - Anomaly detection with configurable threshold
-    
-    Args:
-        input_size: Number of input features (default: 14)
-        hidden_size: LSTM hidden size (default: 128)
-        num_layers: Number of LSTM layers (default: 2)
-        sequence_length: Length of temporal sequences (default: 10)
-        anomaly_threshold: Threshold for anomaly detection (default: 0.7)
-        device: Device for inference ('cuda' or 'cpu')
+
     """
     
     def __init__(self, input_size: int = 14, hidden_size: int = 128,
@@ -142,32 +118,13 @@ class LSTMIDSDetector:
         
         self.model.eval()  # Set to evaluation mode by default
         
-        print(f"✅ LSTM IDS Detector initialized on {self.device}")
+        print(f"# LSTM IDS Detector initialized on {self.device}")
         print(f"   Input size: {input_size}, Hidden size: {hidden_size}")
         print(f"   Sequence length: {sequence_length}, Anomaly threshold: {anomaly_threshold}")
     
     def extract_features(self, evcs_data: Dict) -> np.ndarray:
         """
         Extract 20-dimensional feature vector from EVCS + grid data.
-
-        EVCS features (0-13) — same as before for backward compatibility:
-          0  SOC                       1  Voltage (normalised)
-          2  Current (normalised)      3  Power   (normalised)
-          4  Temperature (normalised)  5  Demand factor
-          6  Load factor               7  Grid voltage (pu)
-          8  Grid frequency (norm)     9  Queue length (norm)
-         10  Utilization              11  Urgency factor
-         12  Time of day (norm)       13  System ID (norm)
-
-        Grid-level features (14-19) — signals RL agents can manipulate:
-         14  grid_frequency_dev   = (f − 60.0) / 0.5  Hz deviation normalised
-         15  agg_active_power_pu  = total DS active power / DS rated MW
-         16  agg_reactive_power_pu = similarly normalised
-         17  bus_voltage_min_pu   = min bus v/p.u. across DS  (neutral = 1.0)
-         18  bus_voltage_max_pu   = max bus v/p.u. across DS  (neutral = 1.0)
-         19  attack_active        = 0/1 flag (used during IDS training only)
-
-        Missing grid keys default to neutral values so legacy callers are safe.
         """
         freq = evcs_data.get('grid_frequency', 60.0)
 
@@ -250,7 +207,7 @@ class LSTMIDSDetector:
         }
         
         torch.save(checkpoint, filepath)
-        print(f"💾 Model saved to: {filepath}")
+        print(f"# Model saved to: {filepath}")
     
     def load_model(self, filepath: str):
         """Load model from file"""
@@ -261,7 +218,7 @@ class LSTMIDSDetector:
         
         # Verify configuration matches
         if checkpoint['input_size'] != self.input_size:
-            print(f"⚠️  Warning: Loaded model input_size ({checkpoint['input_size']}) != current ({self.input_size})")
+            print(f"#  Warning: Loaded model input_size ({checkpoint['input_size']}) != current ({self.input_size})")
         
         # Load model state
         self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -271,7 +228,7 @@ class LSTMIDSDetector:
         self.sequence_length = checkpoint.get('sequence_length', self.sequence_length)
         self.anomaly_threshold = checkpoint.get('anomaly_threshold', self.anomaly_threshold)
         
-        print(f"📂 Model loaded from: {filepath}")
+        print(f"# Model loaded from: {filepath}")
         print(f"   Sequence length: {self.sequence_length}")
         print(f"   Anomaly threshold: {self.anomaly_threshold}")
 

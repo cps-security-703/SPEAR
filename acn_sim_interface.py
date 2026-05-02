@@ -1,21 +1,5 @@
 """acn_sim_interface.py
----------------------
 ACN-Sim integration for the EVCS hierarchical co-simulation.
-
-Architecture  (Pattern A — ACN_SIM_OPENDSS_CMS_INTEGRATION_GUIDELINE.md)
-=========================================================================
-- 6 independent ACN-Sim Simulator instances, one per distribution system (DS).
-- Each zone: 10 EVSEs controlled by one PINN-based CMS via PINNCMSAlgorithm.
-- CMS internal state: (V_ref, I_ref, P_ref).  Only I_ref (pilot A) is sent to
-  ACN-Sim, as specified in §7 of the guideline.
-- ACN-Sim actual charging rates → OpenDSS EV loads → TS power flow.
-- Cyber-attack perturbations are injected into CMS *inputs* (unchanged from
-  existing attack pipeline); ACN-Sim is downstream truth for physical energy.
-
-SOC derivation (no native SOC column in ACN CSVs)
--------------------------------------------------
-  SOC(t) = clip(energy_delivered(t) / (BATTERY_KWH * TARGET_SOC), 0, 1)
-Where BATTERY_KWH = 60 kWh and TARGET_SOC = 0.80 (Idaho NL EV Project defaults).
 """
 
 import os
@@ -65,45 +49,12 @@ PINN_FEATURE_DIM = 14   # 14-D feature space used by PINN training
 IDS_FEATURE_DIM  = 20   # 20-D feature space used by IDS (14 EVCS + 6 grid)
 
 
-# =============================================================================
 # ACNDataLoader — loads real ACN-Data CSVs for PINN and IDS training
-# =============================================================================
 
 class ACNDataLoader:
     """
     Loads ACN-Data time-series CSVs (.csv and .csv.gz) and builds training
     sequences for the PINN controller and LSTM IDS.
-
-    CSV columns (per-session, ~4-second intervals):
-        timestamp | Charging Current (A) | Actual Pilot (A) | Voltage (V) |
-        Charging State | Energy Delivered (kWh) | Power (kW)
-
-    SOC is DERIVED from Energy Delivered (kWh) because the raw CSVs do not
-    contain an explicit SOC column.
-
-    PINN features (14-D):
-      0  soc                  – energy-derived SOC [0,1]
-      1  voltage_pu           – measured voltage / V_nominal
-      2  grid_frequency       – constant 0.5 (normalised 60 Hz)
-      3  demand_factor        – P(t) / P_max
-      4  voltage_priority     – max(0, 1 - v_pu)
-      5  urgency_factor       – 1 - soc
-      6  time_of_day_norm     – hours-into-session / session_duration, [0,1]
-      7  bus_distance_norm    – 0.5 (constant, no bus data in ACN CSVs)
-      8  load_factor          – I(t) / I_max
-      9  prev_power_norm      – P(t-1) / P_max
-     10  ac_power_in_norm     – P(t) / P_max  (same as demand_factor)
-     11  efficiency           – 0.95 (constant)
-     12  power_balance_err    – 0.0 (constant)
-     13  dc_link_dev          – 0.0 (constant)
-
-    IDS features (20-D) = PINN features + 6 grid-level signals:
-     14  grid_frequency_dev   – (f − 60.0) / 0.5  (Hz deviation, normalised)
-     15  agg_active_power_pu  – total DS active load / DS rated MW   (0=benign)
-     16  agg_reactive_power_pu – similarly normalised                 (0=benign)
-     17  bus_voltage_min_pu   – minimum bus v across DS              (1=nominal)
-     18  bus_voltage_max_pu   – maximum bus v across DS              (1=nominal)
-     19  attack_active        – 0/1 flag (0 for all ACN benign data)
     """
 
     # --- PINN target names ---
@@ -377,9 +328,7 @@ class ACNDataLoader:
         return torch.FloatTensor(X_all)
 
 
-# =============================================================================
 # PINNCMSAlgorithm — ACN-Sim scheduling algorithm wrapping the PINN CMS
-# =============================================================================
 
 class PINNCMSAlgorithm(BaseAlgorithm):
     """
@@ -471,9 +420,7 @@ class PINNCMSAlgorithm(BaseAlgorithm):
             return int(digits[-2:]) if len(digits) >= 2 else 0
 
 
-# =============================================================================
 # ACNSimZone — one distribution system's ACN-Sim instance
-# =============================================================================
 
 class ACNSimZone:
     """Manages one ACN-Sim Simulator instance (one DS, 10 EVSEs)."""
@@ -514,7 +461,7 @@ class ACNSimZone:
 
     def initialize(self, cms) -> None:
         if not ACN_SIM_AVAILABLE:
-            print(f"⚠️  ACNSimZone DS{self.ds_id}: acnportal unavailable — fallback mode")
+            print(f"#  ACNSimZone DS{self.ds_id}: acnportal unavailable — fallback mode")
             return
         self.network   = self._build_network()
         events         = self._build_event_queue()
@@ -526,7 +473,7 @@ class ACNSimZone:
             store_schedule_history=False)
         self.current_period = -1
         self._build_initial_cache()
-        print(f"✅ ACNSimZone DS{self.ds_id}: {self.n_evses} EVSEs "
+        print(f"# ACNSimZone DS{self.ds_id}: {self.n_evses} EVSEs "
               f"@ {self.evse_voltage}V, period={self.period_min} min, "
               f"total_periods={self.total_periods}")
 
@@ -737,9 +684,7 @@ class ACNSimZone:
         return self._cached_metrics
 
 
-# =============================================================================
 # ACNSimFleet — manages all 6 zone instances
-# =============================================================================
 
 class ACNSimFleet:
     """Manages 6 ACNSimZone instances (Pattern A — one per DS)."""
@@ -759,7 +704,7 @@ class ACNSimFleet:
 
     def initialize_zones(self, cms_list: List) -> None:
         if not ACN_SIM_AVAILABLE:
-            print("⚠️  ACNSimFleet: acnportal not installed — all zones in fallback mode.")
+            print("#  ACNSimFleet: acnportal not installed — all zones in fallback mode.")
         for i in range(self.n_zones):
             ds_id = i + 1
             cms   = cms_list[i] if i < len(cms_list) else None
@@ -773,7 +718,7 @@ class ACNSimFleet:
                 zone.initialize(cms=None)   # fallback heuristic inside algorithm
             self._zones[ds_id] = zone
         self._initialized = True
-        print(f"✅ ACNSimFleet: {self.n_zones} zones × {self.n_evses} EVSEs initialized "
+        print(f"# ACNSimFleet: {self.n_zones} zones × {self.n_evses} EVSEs initialized "
               f"(period={self.period_min} min, V={self.evse_voltage} V)")
 
     def step_all(self, current_time_s: float,
