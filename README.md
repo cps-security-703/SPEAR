@@ -38,7 +38,7 @@ A research framework for adversarial security analysis of **Electric Vehicle Cha
 │                               │                                          │
 │                               ▼                                          │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │                3-Layer Intrusion Detection System                  │   │
+│  │                Robust Intrusion Detection System                  │   │
 │  │   L1: Physical Constraints → L2: Pattern Detection →              │   │
 │  │   L3: LSTM-IDS (Bi-LSTM + Attention, 14-D features)               │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
