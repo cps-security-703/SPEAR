@@ -1047,7 +1047,7 @@ class EnhancedDQNSACCoordinator:
     
     def train_coordinated_agents(self, total_timesteps: int = 100000):
         """Train DQN and SAC agents with PINN interaction"""
-        print("# Starting Enhanced DQN/SAC Training with PINN Integration")
+        print("🚀 Starting Enhanced DQN/SAC Training with PINN Integration")
         
         # Phase 1: Individual agent training with PINN interaction
         print("\n📚 Phase 1: Individual Agent Training with PINN Models")
@@ -1135,7 +1135,10 @@ class EnhancedDQNSACCoordinator:
                 step += 1
             
             # Store per-system rewards for plotting — append raw rewards.
-
+            # The old scaling (phase1_mean / 50) created a compounding feedback
+            # loop that inflated rewards to 1e7-1e8.  Different phases naturally
+            # have different reward scales; the outer-circle boundary lines on
+            # the plot visually separate them.
             for i in range(self.num_systems):
                 agent_key = f'agent_{i}'
                 sys_id = i + 1
@@ -1413,7 +1416,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         self.simulation_results = {}
         self.attack_history = []
         
-        print("# Initializing Enhanced Integrated EVCS LLM-RL System...")
+        print("🚀 Initializing Enhanced Integrated EVCS LLM-RL System...")
         self._initialize_system()
     
     def _deep_merge_config(self, default: Dict, override: Dict) -> Dict:
@@ -1589,6 +1592,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         print(" ## Federated PINN Manager initialized with 6 distribution systems")
         
         # Load best IDS model into each AnomalyDetector (Layer 3).
+        # Priority order: sklearn RF (.pkl, AUC≈0.90) > robust DNN (.pth) > original LSTM > balanced LSTM
         import os as _os
         _ids_paths = [
             'models/best_ids_model.pkl',               # best sklearn RF from compare_ids_models.py
@@ -1661,7 +1665,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             from dqn_sac_security_evasion import create_dqn_sac_evasion_system
             dqn_sac_trainer = create_dqn_sac_evasion_system(cms)
-            print(" # Training DQN/SAC agents (this may take a few minutes)...")
+            print(" 🚀 Training DQN/SAC agents (this may take a few minutes)...")
             dqn_sac_trainer.train_agents(sac_timesteps=100000, dqn_timesteps=100000)
             
             dqn_sac_trainer.save_agents()
@@ -1691,13 +1695,14 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             
             # If no models exist, train them
             if not self.federated_manager:
-                print("    # No pre-trained models found, training new models...")
+                print("    🚀 No pre-trained models found, training new models...")
                 self.federated_manager, self.pinn_optimizer, _, _ = self._run_training_phase()
                 if not self.federated_manager:
                     print("    ##?? Training failed, continuing without federated models")
                     return
             
             # Multi-Layer ADM Integration — load best available IDS model
+            # Priority: sklearn RF (.pkl) > robust DNN (.pth) > original LSTM > balanced LSTM
             _ids_candidate_paths = [
                 ("models/best_ids_model.pkl",             "sklearn RF (best_ids_model.pkl, AUC≈0.90)"),
                 ("models/robust_ids/best_ids_model.pth",  "DNN-Classifier (robust)"),
@@ -1942,7 +1947,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     attack_types=ATTACK_TYPES
                 )
                 print("   ## Attack-Specific RL Coordinator initialized (NEW ARCHITECTURE)")
-                print("   # This is the RECOMMENDED architecture for better specialization")
+                print("   📝 This is the RECOMMENDED architecture for better specialization")
             else:
                 self.attack_specific_coordinator = None
                 print("   ##?? Attack-specific coordinator not available")
@@ -1966,21 +1971,21 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                     enhanced_system=self  # Pass reference to enhanced system
                 )
                 print("   ## Enhanced LLM-RL coordinator initialized (includes LangGraph + STRIDE/MITRE)")
-                print("   # This is the ONLY coordinator with proper Gemini-RL communication")
+                print("   📝 This is the ONLY coordinator with proper Gemini-RL communication")
                 
                 # No need for separate LangGraph coordinator - Enhanced includes it
                 self.langgraph_coordinator = None
                 
             else:
                 print("   ##?? Enhanced LLM-RL coordinator not available")
-                print("   # Note: This means NO proper Gemini-RL coordination (LangGraph is integrated in Enhanced)")
+                print("   📝 Note: This means NO proper Gemini-RL coordination (LangGraph is integrated in Enhanced)")
                 print("   ## System will use direct RL coordination without LLM guidance")
                 self.enhanced_coordinator = None
                 self.langgraph_coordinator = None
                     
         except Exception as e:
             print(f"   ##XX Failed to initialize Enhanced coordinator: {e}")
-            print("   # No Gemini-RL coordination available - continuing with direct RL only")
+            print("   📝 No Gemini-RL coordination available - continuing with direct RL only")
             self.langgraph_coordinator = None
             self.enhanced_coordinator = None
     
@@ -2068,7 +2073,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
     
     def train_enhanced_system(self, total_timesteps: int = 100000):
         """Train the enhanced system with real PINN integration"""
-        print("\n# Starting Enhanced System Training Pipeline")
+        print("\n🚀 Starting Enhanced System Training Pipeline")
         print("=" * 80)
         
         training_results = {
@@ -2502,7 +2507,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             with open(filename, 'w') as f:
                 json.dump(reward_history, f, indent=2)
             
-            print(f"  # Saved reward history to {filename}")
+            print(f"  💾 Saved reward history to {filename}")
             
             # Try to create comparison plot if both files exist
             self._plot_reward_convergence_comparison()
@@ -2632,7 +2637,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
         if not scenario:
             raise ValueError(f"Scenario {scenario_id} not found")
         
-        print(f"\n# Running Enhanced Coordinated Simulation")
+        print(f"\n🚀 Running Enhanced Coordinated Simulation")
         print(f"Scenario: {scenario.name}")
         print(f"Coordination: {scenario.coordination_type}")
         print(f"Target Systems: {scenario.target_systems}")
@@ -2750,7 +2755,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
 
             print(f"    ## Attack Impact Factor: {total_impact:.3f}")
             print(f"    ## Attack Success Rate: {success_rate:.1%}")
-            print(f"    # Simulation Duration: {sim_config['duration_hours']} hours ({duration_seconds} seconds)")
+            print(f"    ⏱️ Simulation Duration: {sim_config['duration_hours']} hours ({duration_seconds} seconds)")
 
             # Extract LLM-RL coordinated attack actions for hierarchical simulation
             num_systems = self.config.get('hierarchical', {}).get('num_distribution_systems', 6)
@@ -2948,7 +2953,7 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             if attack_coord_to_use is None and ATTACK_SPECIFIC_AVAILABLE:
                 import os
                 if os.path.isdir("trained_rl_agents"):
-                    print("  # No in-memory agents, attempting to load from trained_rl_agents/...")
+                    print("  📂 No in-memory agents, attempting to load from trained_rl_agents/...")
                     try:
                         disk_coord = AttackSpecificCoordinator(
                             self.federated_manager,
@@ -3043,13 +3048,13 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 enhanced_result = self._process_enhanced_coordinator_result(episode_result, scenario, episode)
             except Exception as e:
                 print(f"Enhanced coordinator failed: {e}")
-                print(f"  # No other LLM coordination available - Enhanced is the only one with Agent-RL")
+                print(f"  📝 No other LLM coordination available - Enhanced is the only one with Agent-RL")
                 print(f"  ## Falling back to direct DQN/SAC coordination (no LLM guidance)...")
                 enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
         else:
             # No LLM coordination available - Enhanced is the only one with proper Agent-RL
-            print(f"  # No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
+            print(f"  📝 No Enhanced coordinator available (this is the only one with Agent-RL coordination)")
             print(f"  ## Running with direct DQN/SAC coordination (no LLM guidance)...")
             enhanced_result = self._run_direct_coordinated_episode(scenario, episode)
         
@@ -3600,7 +3605,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 anomaly_detector = self.federated_manager.anomaly_detectors[sys_id]
                 
                 # Build EVCS feature dict from the PINN attack response — this is
-
+                # the REAL traffic the IDS would observe on the attacked system.
+                # ALL 14 features are derived from actual attack/system state so
+                # the LSTM sees the same data structure it was trained on.
                 attacked_resp = attack_result.get('sac_result', attack_result.get('dqn_result', {}))
                 attacked_pinn = attacked_resp.get('attacked_response', attacked_resp) if isinstance(attacked_resp, dict) else {}
                 
@@ -3641,7 +3648,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 }
                 
                 # Warm up LSTM sequence buffer with benign baseline samples
- 
+                # so the LSTM can produce meaningful scores on the first call.
+                # Without this, the LSTM returns score=0.0 ("Insufficient
+                # sequence data") because it needs sequence_length samples.
                 anomaly_detector.reset_state()
                 seq_len = getattr(anomaly_detector, 'sequence_length', 10)
                 for _w in range(seq_len):
@@ -3860,7 +3869,9 @@ class EnhancedIntegratedEVCSLLMRLSystem:
             print(f"      #??# REAL PINN CMS Attack: {attack_type} (mag={magnitude:.2f}, stealth={stealth_factor:.2f})")
             
             # Create baseline station data matching the CMS input schema used in
-
+            # hierarchical_cosimulation.py _apply_input_attacks() (Path A).
+            # Keys: soc, grid_voltage (pu), grid_frequency (Hz), demand_factor,
+            #        voltage_priority, urgency_factor, current_time
             baseline_station_data = {
                 'soc': 0.5,
                 'grid_voltage': 1.0,        # per-unit (nominal)
@@ -3885,7 +3896,8 @@ class EnhancedIntegratedEVCSLLMRLSystem:
                 return self._fallback_pinn_attack_simulation(pinn_model, attack_params)
             
             # Apply attack perturbations to station data
-
+            # These perturbations MIRROR _apply_input_attacks() in hierarchical_cosimulation.py
+            # so that RL training uses the same variables and directions as the simulation.
             attacked_station_data = baseline_station_data.copy()
             
             if attack_type == 'voltage_manipulation':
@@ -5030,7 +5042,7 @@ Return ONLY the JSON array, no other text."""
                 f.write(f"\nTotal scenarios saved: {len(attack_scenarios)}\n")
                 f.write(f"File generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             
-            print(f"    # Attack scenarios saved to: {filename}")
+            print(f"    💾 Attack scenarios saved to: {filename}")
             return filename
             
         except Exception as e:
@@ -5794,7 +5806,7 @@ def main(run_mode='rl_coordinated'):
     Args:
         run_mode: 'rl_coordinated' (default) or 'baseline_random' or 'both'
     """
-    print("# Enhanced Integrated EVCS LLM-RL System with Real SAC and PINN Integration")
+    print("🚀 Enhanced Integrated EVCS LLM-RL System with Real SAC and PINN Integration")
     print("=" * 90)
     print(f"#??# Run Mode: {run_mode}")
     print("=" * 90)
@@ -5880,8 +5892,8 @@ def main(run_mode='rl_coordinated'):
         # Setup EVCS stations
         baseline_cosim.setup_ev_charging_stations()
 
-        print(f"  #  Simulation duration: {baseline_cosim.total_duration}s")
-        print("  # Running baseline simulation (NO attacks)...")
+        print(f"  ⏱️  Simulation duration: {baseline_cosim.total_duration}s")
+        print("  🚀 Running baseline simulation (NO attacks)...")
 
         baseline_results = baseline_cosim.run_hierarchical_simulation(attack_scenarios=[])  # Empty = no attacks
 
@@ -5938,6 +5950,10 @@ def main(run_mode='rl_coordinated'):
             }
             
             # Add individual attack detection details.
+            # Evaluate each attack through the SAME IDS used in production
+            # (hierarchical_cosimulation.py uses BestIDSDetector per station).
+            # Protocol: reset → warm-up with SEQ_LEN//2 benign steps → feed
+            # SEQ_LEN//2 attack steps.  This mirrors the training-data construction
             # in compare_ids_models.py (inject_at = SEQ_LEN//2 … SEQ_LEN).
             _SEQ_HALF = 5   # SEQ_LEN // 2 = 10 // 2
             for attack_result in episode_result.get('attack_results', episode_result.get('execution_results', [])):
@@ -5945,20 +5961,84 @@ def main(run_mode='rl_coordinated'):
                 sys_id = attack_result.get('system_id', 1)
                 attack_success_rl = bool(inner.get('success', False))
 
-                # ── Real IDS evaluation — reset + warm-up + attack sequence ─
+                # ── Real IDS evaluation — use RL training-time result if available ─
+                # Priority 1: RL agent already ran _execute_attack_on_pinn against the
+                # real 3-layer IDS using actual PINN outputs.  Reuse those results so
+                # the report faithfully shows RL evasion performance, not a re-scored
+                # heuristic reconstruction from attack_type + magnitude.
+                # Priority 2: if attacked_response (real PINN V/I/P) is present, build
+                # the feature vector from those measurements and re-evaluate.
+                # Priority 3: fall back to type+magnitude reconstruction (legacy path).
                 ids_detected = False
                 ids_anomaly = 0.0
-                if system.federated_manager and sys_id in system.federated_manager.anomaly_detectors:
+
+                _rl_ids_detected = inner.get('ids_detected', None)
+                _rl_ids_score    = inner.get('ids_lstm_score', inner.get('detection_risk', None))
+                _attacked_resp   = inner.get('attacked_response', {})
+
+                if _rl_ids_detected is not None and _rl_ids_score is not None:
+                    # ── Priority 1: use the RL agent's actual IDS outcome ──────────
+                    # _execute_attack_on_pinn ran the real multi-layer IDS with:
+                    #   • Youden-J threshold loaded from best_ids_model_meta.json
+                    #   • load_history cleared (no Layer-2 wall-clock pollution)
+                    #   • sequence buffer pre-filled with SEQ_LEN-1 baseline samples
+                    # These are the most faithful evasion results available.
+                    ids_detected = bool(_rl_ids_detected)
+                    ids_anomaly  = float(_rl_ids_score)
+
+                elif _attacked_resp and system.federated_manager and sys_id in system.federated_manager.anomaly_detectors:
+                    # ── Priority 2: re-evaluate using actual PINN measurements ─────
                     det = system.federated_manager.anomaly_detectors[sys_id]
-
-                    # Step 1: reset all state (clears window, load_history, buffers)
                     det.reset_state()
+                    det.load_history = []
 
-                    # Step 2: warm-up with SEQ_LEN//2 benign samples
+                    # Load Youden-J threshold (same as training)
+                    try:
+                        import json as _j
+                        _meta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                   "models", "best_ids_model_meta.json")
+                        with open(_meta_path) as _f:
+                            _eval_threshold = float(_j.load(_f).get("threshold", 0.465))
+                    except Exception:
+                        _eval_threshold = 0.465
+
+                    _lstm_det   = getattr(det, 'lstm_detector', None)
+                    _robust_det = getattr(det, '_robust_ids',   None)
+                    _orig_lt    = getattr(_lstm_det,   'anomaly_threshold', None)
+                    _orig_rt    = getattr(_robust_det, 'threshold',         None)
+                    if _lstm_det   is not None: _lstm_det.anomaly_threshold  = _eval_threshold
+                    if _robust_det is not None: _robust_det.threshold        = _eval_threshold
+
+                    # Build feature vector from real PINN outputs, not from type+magnitude
+                    _pinn_v = float(_attacked_resp.get('voltage', 240.0))
+                    _pinn_i = float(_attacked_resp.get('current', 16.0))
+                    _pinn_p = float(_attacked_resp.get('power',   3.84))
+                    _r_soc  = float(np.clip(inner.get('soc', 0.5), 0.0, 1.0))
+                    _r_temp = float(np.clip(25.0 + max(0, _pinn_p - 3.0) * 0.5, 20.0, 55.0))
+                    _r_lf   = float(np.clip(_pinn_p / 7.68, 0.2, 1.5))
+                    _r_util = float(np.clip(_pinn_p / 7.68, 0.1, 1.0))
+                    attack_input = {
+                        'soc':            _r_soc,
+                        'voltage':        _pinn_v,
+                        'current':        _pinn_i,
+                        'power':          _pinn_p,
+                        'temperature':    _r_temp,
+                        'demand_factor':  float(np.clip(_pinn_p / 7.68, 0.1, 1.5)),
+                        'load_factor':    _r_lf,
+                        'grid_voltage':   float(inner.get('grid_voltage', 1.0)),
+                        'grid_frequency': float(inner.get('grid_frequency', 60.0)),
+                        'queue_length':   int(inner.get('queue_length', 3)),
+                        'utilization':    _r_util,
+                        'urgency_factor': float(np.clip(1.0 + max(0, 1.0 - _r_soc) * 0.5, 0.5, 2.0)),
+                        'time_of_day':    float((time.time() / 3600.0) % 24.0),
+                        'system_id':      sys_id,
+                    }
+
+                    # Warm-up with benign baseline, then feed the real attacked sample
                     _b_soc = np.random.uniform(0.3, 0.7)
-                    _b_v   = np.random.uniform(220, 260)    # L2: 240V ±10%
-                    _b_i   = np.random.uniform(6, 32)       # L2: 6-32A (SAE J1772)
-                    _b_p   = np.random.uniform(1.0, 7.68)   # L2: 1.44-7.68 kW
+                    _b_v   = np.random.uniform(220, 260)
+                    _b_i   = np.random.uniform(6, 32)
+                    _b_p   = np.random.uniform(1.0, 7.68)
                     _b_temp = 25.0 + max(0, _b_p - 3.0) * 0.5
                     _b_lf   = float(np.clip(_b_p / 7.68, 0.2, 1.3))
                     _b_util = float(np.clip(_b_p / 7.68, 0.1, 1.0))
@@ -5981,44 +6061,77 @@ def main(run_mode='rl_coordinated'):
                             'time_of_day':    float(_b_tod  + np.random.uniform(-0.5, 0.5)),
                             'system_id':      sys_id,
                         }, sys_id)
+                    try:
+                        _last_det, _last_res = False, {}
+                        for _s in range(_SEQ_HALF):
+                            _last_det, _last_res = det.multi_layer_detection(attack_input, sys_id)
+                        ids_detected = _last_det
+                        ids_anomaly  = float(_last_res.get('layer3_lstm', {}).get('score', 0.0))
+                    except Exception:
+                        ids_anomaly  = float(_rl_ids_score or inner.get('detection_risk', 0.0))
+                        ids_detected = ids_anomaly >= _eval_threshold
 
-                    # Step 3: build attack features from type + magnitude
-                    # (same derivation as execute_attack_on_system() in
-                    #  run_baseline_attacks_actual_system.py)
-                    _mag  = float(np.clip(inner.get('magnitude', inner.get('attack_magnitude', 0.7)), 0.1, 2.0))
+                    # Restore thresholds
+                    if _lstm_det   is not None and _orig_lt is not None:
+                        _lstm_det.anomaly_threshold  = _orig_lt
+                    if _robust_det is not None and _orig_rt is not None:
+                        _robust_det.threshold        = _orig_rt
+
+                elif system.federated_manager and sys_id in system.federated_manager.anomaly_detectors:
+                    # ── Priority 3: legacy type+magnitude reconstruction (fallback) ─
+                    det = system.federated_manager.anomaly_detectors[sys_id]
+                    det.reset_state()
+                    _b_soc = np.random.uniform(0.3, 0.7)
+                    _b_v   = np.random.uniform(220, 260)
+                    _b_i   = np.random.uniform(6, 32)
+                    _b_p   = np.random.uniform(1.0, 7.68)
+                    _b_temp = 25.0 + max(0, _b_p - 3.0) * 0.5
+                    _b_lf   = float(np.clip(_b_p / 7.68, 0.2, 1.3))
+                    _b_util = float(np.clip(_b_p / 7.68, 0.1, 1.0))
+                    _b_urg  = 1.0 + max(0, 1.0 - _b_soc) * 0.5
+                    _b_tod  = (time.time() / 3600.0) % 24.0
+                    for _ in range(_SEQ_HALF):
+                        det.multi_layer_detection({
+                            'soc':            float(_b_soc + np.random.uniform(-0.03, 0.03)),
+                            'voltage':        float(_b_v   + np.random.uniform(-5.0, 5.0)),
+                            'current':        float(_b_i   + np.random.uniform(-3.0, 3.0)),
+                            'power':          float(_b_p   + np.random.uniform(-2.0, 2.0)),
+                            'temperature':    float(np.clip(_b_temp + np.random.uniform(-1.0, 1.0), 20.0, 45.0)),
+                            'demand_factor':  float(np.clip(0.65 + np.random.uniform(-0.05, 0.05), 0.3, 1.2)),
+                            'load_factor':    float(np.clip(_b_lf   + np.random.uniform(-0.05, 0.05), 0.2, 1.3)),
+                            'grid_voltage':   float(1.0 + np.random.uniform(-0.01, 0.01)),
+                            'grid_frequency': float(60.0 + np.random.uniform(-0.02, 0.02)),
+                            'queue_length':   int(np.clip(3 + np.random.randint(-1, 2), 0, 10)),
+                            'utilization':    float(np.clip(_b_util + np.random.uniform(-0.05, 0.05), 0.1, 1.0)),
+                            'urgency_factor': float(np.clip(_b_urg  + np.random.uniform(-0.05, 0.05), 0.5, 2.0)),
+                            'time_of_day':    float(_b_tod  + np.random.uniform(-0.5, 0.5)),
+                            'system_id':      sys_id,
+                        }, sys_id)
+                    _mag   = float(np.clip(inner.get('magnitude', inner.get('attack_magnitude', 0.7)), 0.1, 2.0))
                     _atype = str(attack_result.get('attack_type', 'unknown'))
-                    _vdev = _mag * 0.15 if 'voltage' in _atype else _mag * 0.05
-                    _idev = _mag * 0.20 if 'current' in _atype else _mag * 0.08
-                    _pdev = _mag * 0.25 if 'power'   in _atype else _mag * 0.10
-                    _atk_v    = float(240.0 * (1.0 - _vdev))
-                    _atk_i    = float(32.0  * (1.0 + _idev))
-                    _atk_p    = float(7.68  * (1.0 + _pdev))
-                    _atk_soc  = float(np.clip(0.5 - _mag * 0.2, 0.05, 0.95))
-                    _atk_temp = float(np.clip(25.0 + max(0, _atk_p - 3.0) * 0.5, 20.0, 55.0))
-                    _atk_lf   = float(np.clip(_atk_p / 7.68, 0.2, 1.5))
-                    _atk_gv   = float(np.clip(1.0 - _vdev, 0.85, 1.15))
-                    _atk_freq = float(np.clip(60.0 + (_mag * 2.0 if 'frequency' in _atype else 0.0), 59.0, 61.0))
-                    _atk_q    = int(np.clip(3 + _mag * 3, 0, 10))
-                    _atk_util = float(np.clip(_atk_p / 7.68, 0.1, 1.0))
-                    _atk_urg  = float(np.clip(1.0 + max(0, 1.0 - _atk_soc) * 0.5, 0.5, 2.0))
+                    _vdev  = _mag * 0.15 if 'voltage' in _atype else _mag * 0.05
+                    _idev  = _mag * 0.20 if 'current' in _atype else _mag * 0.08
+                    _pdev  = _mag * 0.25 if 'power'   in _atype else _mag * 0.10
+                    _atk_v   = float(240.0 * (1.0 - _vdev))
+                    _atk_i   = float(32.0  * (1.0 + _idev))
+                    _atk_p   = float(7.68  * (1.0 + _pdev))
+                    _atk_soc = float(np.clip(0.5 - _mag * 0.2, 0.05, 0.95))
                     attack_input = {
                         'soc':            _atk_soc,
                         'voltage':        _atk_v,
                         'current':        _atk_i,
                         'power':          _atk_p,
-                        'temperature':    _atk_temp,
+                        'temperature':    float(np.clip(25.0 + max(0, _atk_p - 3.0) * 0.5, 20.0, 55.0)),
                         'demand_factor':  float(np.clip(0.7 + _mag * 0.8, 0.1, 1.5)),
-                        'load_factor':    _atk_lf,
-                        'grid_voltage':   _atk_gv,
-                        'grid_frequency': _atk_freq,
-                        'queue_length':   _atk_q,
-                        'utilization':    _atk_util,
-                        'urgency_factor': _atk_urg,
+                        'load_factor':    float(np.clip(_atk_p / 7.68, 0.2, 1.5)),
+                        'grid_voltage':   float(np.clip(1.0 - _vdev, 0.85, 1.15)),
+                        'grid_frequency': float(np.clip(60.0 + (_mag * 2.0 if 'frequency' in _atype else 0.0), 59.0, 61.0)),
+                        'queue_length':   int(np.clip(3 + _mag * 3, 0, 10)),
+                        'utilization':    float(np.clip(_atk_p / 7.68, 0.1, 1.0)),
+                        'urgency_factor': float(np.clip(1.0 + max(0, 1.0 - _atk_soc) * 0.5, 0.5, 2.0)),
                         'time_of_day':    float((time.time() / 3600.0) % 24.0),
                         'system_id':      sys_id,
                     }
-
-                    # Step 4: feed SEQ_LEN//2 attack steps; detection on the last one
                     try:
                         _last_det, _last_res = False, {}
                         for _s in range(_SEQ_HALF):
@@ -6050,7 +6163,10 @@ def main(run_mode='rl_coordinated'):
                     total_fn += 1
             
             # Evaluate IDS on benign (normal) traffic samples for this episode.
-
+            # For a fair IDS evaluation we need both attack AND benign samples.
+            # Pass REAL benign EVCS traffic through the SAME multi-layer IDS.
+            # Reset detector state first so attack history doesn't contaminate,
+            # then warm up the LSTM buffer with benign data before counting.
             num_attacks_this_ep = len(episode_data['attacks_detected'])
             for b in range(num_attacks_this_ep):
                 benign_sys_id = (b % 6) + 1

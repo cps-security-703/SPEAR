@@ -594,7 +594,35 @@ class LSTMPINNOptimizer(nn.Module):
         return temporal_loss
 
     def ode_residual_loss(self, sequences: torch.Tensor) -> torch.Tensor:
-        """Enforce the actual differential equations from evcs_dynamics.py as PINN residuals."""
+        """Enforce the actual differential equations from evcs_dynamics.py as PINN residuals.
+
+        Applies the ODEs at EVERY timestep of the LSTM sequence using finite
+        differences, making the gradient signal from converter physics act across
+        the full temporal context — not just the last step.
+
+        ODE 1 — SOC dynamics  (evcs_dynamics.py line 197)
+        ────────────────────────────────────────────────
+          dsoc_dt = P_battery × η_charge / (capacity × 3600)
+          Finite-difference (Δt = 360 s, i.e. 6-min steps):
+            ΔSOC_raw = P[t] × η × Δt / (C_kWh × 3600)
+
+          The data generator samples SOC ∈ [0.2, 0.8], so MinMaxScaler maps
+          the raw SOC range (0.6 wide) to [0, 1].  Working in normalised space:
+            ΔSOC_norm = ΔSOC_raw / 0.6
+
+        ODE 2 — DC-link power balance at every timestep
+        ────────────────────────────────────────────────
+          At Δt = 6 min the converter is at quasi-static equilibrium, so the
+          capacitor ODE C·V·dV/dt = P_balance collapses to P = V·I / 1000.
+          Enforcing this at ALL T steps (not just the last) provides a stronger
+          temporal constraint than the single-step physics_loss term.
+
+        ODE 3 — Battery terminal voltage = f(SOC)  (evcs_dynamics.py line 191)
+        ────────────────────────────────────────────────────────────────────────
+          V_battery = SOC_raw × 200 + 300   →   V_battery = SOC_norm × 120 + 340
+          (derives from SOC_raw = SOC_norm × 0.6 + 0.2)
+          Enforced at every timestep across the sequence.
+        """
         B, T, _ = sequences.shape
         if T < 2:
             return torch.tensor(0.0, device=sequences.device)
@@ -974,18 +1002,19 @@ class PhysicsDataGenerator:
             print(f"Warning: OpenDSS setup failed: {e}")
             return False
     
-    def generate_realistic_evcs_scenarios(self, n_samples: int = 5000, train_model: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
+    def generate_realistic_evcs_scenarios(self, n_samples: int = 5000, train_model: bool = False, max_acn_sessions: int = 2000) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate realistic EVCS scenarios based on physics and system data.
 
         Priority: real ACN-Data CSVs → synthetic EVCSController dynamics.
+        Increase max_acn_sessions (up to 55000+) to use more real ACN-Data.
         """
         print("🔬 Loading ACN-Data for physics-based training")
 
         # ── Try ACN-Data first ────────────────────────────────────────────────
         acn_result = self._try_generate_acn_data_scenarios(
-            n_samples, self.config.sequence_length)
+            n_samples, self.config.sequence_length, max_sessions=max_acn_sessions)
         if acn_result is not None:
-            print("## ACN-Data is not loaded successfully")
+            print("## ACN-Data loaded successfully")
             return acn_result
         # ── Fall through to synthetic data ───────────────────────────────────
         
@@ -1155,7 +1184,7 @@ class PhysicsDataGenerator:
                 
                 # Safety check to prevent infinite loops
                 if iteration_count > max_iterations:
-                    print(f"#  Safety limit reached ({max_iterations} iterations), stopping data generation")
+                    print(f"⚠️  Safety limit reached ({max_iterations} iterations), stopping data generation")
                     break
                 
                 if sample_count % 20 == 0:  # Progress every 20 samples
@@ -1300,15 +1329,15 @@ class PhysicsDataGenerator:
                                 calculated_power = real_voltage * real_current / 1000.0
                                 power_error = abs(real_power - calculated_power)
                                 if power_error > 0.1:  # More than 100W error
-                                    print(f"    #  Physics Warning: P≠V×I, Error: {power_error:.3f}kW")
+                                    print(f"    ⚠️  Physics Warning: P≠V×I, Error: {power_error:.3f}kW")
                                 
                                 # Check efficiency bounds
                                 if system_efficiency < 0.4 or system_efficiency > 0.98:
-                                    print(f"    #  Efficiency Warning: {system_efficiency:.3f} outside [0.4, 0.98]")
+                                    print(f"    ⚠️  Efficiency Warning: {system_efficiency:.3f} outside [0.4, 0.98]")
                                 
                                 # Check power balance
                                 if power_balance_error > 5.0:  # More than 5kW error
-                                    print(f"    #  Power Balance Warning: {power_balance_error:.3f}kW error")
+                                    print(f"    ⚠️  Power Balance Warning: {power_balance_error:.3f}kW error")
                         
                     except Exception as e:
                         # Fallback to simplified targets if dynamics fail
@@ -1424,6 +1453,7 @@ class PhysicsDataGenerator:
         self,
         n_scenarios: int = 1000,
         seq_len: int = 8,
+        max_sessions: int = 2000,
     ):
         """
         Load real ACN-Data CSVs and return (X, y) tensors for PINN training.
@@ -1442,13 +1472,13 @@ class PhysicsDataGenerator:
             loader = ACNDataLoader(acn_data_dir)
             n_loaded = loader.load_all_csvs()
             if n_loaded == 0:
-                print("  #  ACN-Data: no valid sessions found — using synthetic data")
+                print("  ⚠️  ACN-Data: no valid sessions found — using synthetic data")
                 return None
 
             X, y = loader.build_training_sequences(
-                seq_len=seq_len, n_samples=n_scenarios, max_sessions=2000)
+                seq_len=seq_len, n_samples=n_scenarios, max_sessions=max_sessions)
             if X is None or len(X) < 100:
-                print("  #  ACN-Data: too few sequences — using synthetic data")
+                print("  ⚠️  ACN-Data: too few sequences — using synthetic data")
                 return None
 
             print(f"  ## ACN-Data: loaded {n_loaded} sessions → "
@@ -1456,7 +1486,7 @@ class PhysicsDataGenerator:
             return X, y
 
         except Exception as exc:
-            print(f"  #  ACN-Data loading failed: {exc} — using synthetic data")
+            print(f"  ⚠️  ACN-Data loading failed: {exc} — using synthetic data")
             return None
 
     def _normalize_sequences(self, sequences: np.ndarray) -> np.ndarray:
@@ -1564,10 +1594,10 @@ class LSTMPINNTrainer:
         
         # Check if we have enhanced training data from the main simulation
         if hasattr(self, '_enhanced_training_data'):
-            print(" # LSTM-PINN Training: Using ENHANCED training data with REAL EVCS dynamics!")
+            print(" 🚀 LSTM-PINN Training: Using ENHANCED training data with REAL EVCS dynamics!")
             sequences, targets = self._enhanced_training_data
-            print(f"  # Enhanced data: {len(sequences)} sequences with {sequences.shape[-1]} features")
-            print(f"  # Target ranges: V={targets[:, 0].min():.1f}-{targets[:, 0].max():.1f}, I={targets[:, 1].min():.1f}-{targets[:, 1].max():.1f}, P={targets[:, 2].min():.2f}-{targets[:, 2].max():.2f}")
+            print(f"  📊 Enhanced data: {len(sequences)} sequences with {sequences.shape[-1]} features")
+            print(f"  🎯 Target ranges: V={targets[:, 0].min():.1f}-{targets[:, 0].max():.1f}, I={targets[:, 1].min():.1f}-{targets[:, 1].max():.1f}, P={targets[:, 2].min():.2f}-{targets[:, 2].max():.2f}")
         else:
             print(" LSTM-PINN Training: Generating physics-based training data from EVCS dynamics... ## STOP the training ##")
             sequences, targets = self.generate_training_data(n_samples)
@@ -1842,7 +1872,7 @@ class LSTMPINNChargingOptimizer:
         
         # Check if we have enhanced training data
         if hasattr(self, '_enhanced_training_data'):
-            print(" # Using ENHANCED training data with REAL EVCS dynamics!")
+            print(" 🚀 Using ENHANCED training data with REAL EVCS dynamics!")
             # Pass enhanced data to trainer
             self.trainer._enhanced_training_data = self._enhanced_training_data
         
