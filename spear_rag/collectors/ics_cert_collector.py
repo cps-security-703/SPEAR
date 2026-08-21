@@ -9,47 +9,28 @@ from config import config
 from schemas import VulnerabilityDocument
 
 class ICSCERTCollector:
-    """
-    Collector for CISA ICS-CERT advisories
-    Focuses on Energy Sector and Critical Manufacturing advisories
-    """
-    
+
+
     def __init__(self):
         self.base_url = "https://www.cisa.gov/uscert/ics/advisories"
         logger.info("Initialized ICSCERTCollector")
-    
+
     def create_evse_ics_advisories(self) -> List[VulnerabilityDocument]:
-        """
-        Create ICS-CERT advisory documents for EVSE and power systems
-        
-        Note: This is a curated list of relevant advisories since web scraping
-        CISA's site requires handling JavaScript and complex navigation.
-        For production, consider using CISA's API or manual updates.
-        
-        Returns:
-            List of VulnerabilityDocument instances
-        """
+
         logger.info("Creating ICS-CERT advisory documents")
-        
+
         advisories = self._define_ics_advisories()
         documents = []
-        
+
         for advisory in advisories:
             doc = self._create_document_from_advisory(advisory)
             documents.append(doc)
-        
+
         logger.info(f"Created {len(documents)} ICS-CERT advisory documents")
         return documents
-    
+
     def _define_ics_advisories(self) -> List[Dict]:
-        """
-        Define curated ICS-CERT advisories relevant to EVSE and power systems
-        
-        These are real advisories from CISA ICS-CERT that relate to:
-        - Electric vehicle charging infrastructure
-        - Power distribution systems
-        - Industrial control systems in energy sector
-        """
+
         return [
             {
                 "advisory_id": "ICSA-23-166-01",
@@ -240,16 +221,16 @@ class ICSCERTCollector:
                 ]
             }
         ]
-    
+
     def _create_document_from_advisory(self, advisory: Dict) -> VulnerabilityDocument:
-        """Create VulnerabilityDocument from ICS-CERT advisory"""
+
         doc_id = advisory['advisory_id']
-        
+
         embedding_text = (
             f"{advisory['title']} {advisory['vendor']} {advisory['product']} "
             f"{advisory['description']} {' '.join(advisory['mitigations'])}"
         )
-        
+
         keywords = [
             advisory['vendor'].lower(),
             advisory['product'].lower(),
@@ -258,7 +239,7 @@ class ICSCERTCollector:
             "advisory"
         ]
         keywords.extend([cve.lower() for cve in advisory['cves']])
-        
+
         document = VulnerabilityDocument(
             doc_id=doc_id,
             type="ics_cert_advisory",
@@ -300,11 +281,11 @@ class ICSCERTCollector:
                 "evse" if "EVSE" in advisory['affected_systems'] else "power_systems"
             ]
         )
-        
+
         return document
-    
+
     def save_processed_documents(self, documents: List[VulnerabilityDocument], filename: str = "ics_cert_documents.json"):
-        """Save processed documents to file"""
+
         filepath = config.PROCESSED_DATA_DIR / filename
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump([doc.model_dump() for doc in documents], f, indent=2, ensure_ascii=False)

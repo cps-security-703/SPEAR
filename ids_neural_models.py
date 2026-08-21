@@ -1,8 +1,4 @@
-"""
-ids_neural_models.py
-====================
-Standalone module containing all neural-network IDS class definitions.
-"""
+
 
 import numpy as np
 import torch
@@ -13,10 +9,8 @@ FEATURE_DIM = 14
 DEVICE      = torch.device("cpu")
 
 
-# ── LSTM-IDS with temporal attention ─────────────────────────────────────────
-
 class LSTMIDSBenchmark(nn.Module):
-    """Enhanced LSTM IDS with temporal self-attention."""
+
 
     def __init__(self, input_size=FEATURE_DIM, hidden_size=256,
                  num_layers=3, dropout=0.3):
@@ -57,10 +51,8 @@ class LSTMIDSBenchmark(nn.Module):
         return torch.softmax(class_logits, dim=1)[:, 1]
 
 
-# ── Transformer IDS ───────────────────────────────────────────────────────────
-
 class TransformerIDS(nn.Module):
-    """Temporal Transformer for IDS — self-attention over the 10-step feature window."""
+
 
     def __init__(self, feature_dim: int = FEATURE_DIM, seq_len: int = SEQ_LEN,
                  d_model: int = 64, nhead: int = 4, num_layers: int = 2,
@@ -89,7 +81,7 @@ class TransformerIDS(nn.Module):
 
 
 class TransformerIDSWrapper:
-    """Sklearn-compatible, pickle-safe wrapper for TransformerIDS."""
+
 
     def __init__(self, model: nn.Module,
                  seq_len: int = SEQ_LEN, feature_dim: int = FEATURE_DIM):
@@ -105,13 +97,11 @@ class TransformerIDSWrapper:
         with torch.no_grad():
             logits = self._model(Xseq)
             probs  = torch.softmax(logits, dim=1).cpu().numpy()
-        return probs   # [N, 2]
+        return probs
 
-
-# ── Autoencoder IDS ───────────────────────────────────────────────────────────
 
 class AutoencoderIDS(nn.Module):
-    """Reconstruction-based anomaly detector (unsupervised, trained on benign only)."""
+
 
     def __init__(self, input_dim: int = SEQ_LEN * FEATURE_DIM, latent_dim: int = 32):
         super().__init__()

@@ -6,36 +6,28 @@ from config import config
 from schemas import VulnerabilityDocument
 
 class ProtocolVulnerabilityCollector:
-    """
-    Collector for protocol-specific vulnerabilities in EVSE and power systems
-    Covers OCPP, ISO 15118, Modbus, DNP3, IEC 61850, and other protocols
-    """
-    
+
+
     def __init__(self):
         logger.info("Initialized ProtocolVulnerabilityCollector")
-    
+
     def create_protocol_vulnerabilities(self) -> List[VulnerabilityDocument]:
-        """
-        Create protocol vulnerability documents
-        
-        Returns:
-            List of VulnerabilityDocument instances
-        """
+
         logger.info("Creating protocol vulnerability documents")
-        
+
         vulnerabilities = self._define_protocol_vulnerabilities()
         documents = []
-        
+
         for protocol, vulns in vulnerabilities.items():
             for idx, vuln in enumerate(vulns):
                 doc = self._create_document_from_vulnerability(protocol, idx, vuln)
                 documents.append(doc)
-        
+
         logger.info(f"Created {len(documents)} protocol vulnerability documents")
         return documents
-    
+
     def _define_protocol_vulnerabilities(self) -> Dict[str, List[Dict]]:
-        """Define protocol-specific vulnerabilities"""
+
         return {
             "OCPP": [
                 {
@@ -397,16 +389,16 @@ class ProtocolVulnerabilityCollector:
                 }
             ]
         }
-    
+
     def _create_document_from_vulnerability(self, protocol: str, idx: int, vuln: Dict) -> VulnerabilityDocument:
-        """Create VulnerabilityDocument from protocol vulnerability"""
+
         doc_id = f"PROTOCOL-{protocol.upper().replace('_', '-')}-{idx+1:03d}"
-        
+
         embedding_text = (
             f"{protocol} {vuln['vulnerability']} {vuln['description']} "
             f"{' '.join(vuln['mitigations'])}"
         )
-        
+
         keywords = [
             protocol.lower(),
             "protocol",
@@ -415,9 +407,9 @@ class ProtocolVulnerabilityCollector:
         ]
         if vuln.get('cve') and vuln['cve'] != "N/A":
             keywords.append(vuln['cve'].lower())
-        
+
         cve_ids = [vuln['cve']] if vuln.get('cve') and vuln['cve'] != "N/A" else []
-        
+
         document = VulnerabilityDocument(
             doc_id=doc_id,
             type="protocol_vulnerability",
@@ -453,11 +445,11 @@ class ProtocolVulnerabilityCollector:
                 "evse" if "EVSE" in vuln['affected_systems'] else "power_systems"
             ]
         )
-        
+
         return document
-    
+
     def save_processed_documents(self, documents: List[VulnerabilityDocument], filename: str = "protocol_documents.json"):
-        """Save processed documents to file"""
+
         filepath = config.PROCESSED_DATA_DIR / filename
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump([doc.model_dump() for doc in documents], f, indent=2, ensure_ascii=False)

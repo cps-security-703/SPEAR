@@ -1,54 +1,51 @@
-"""
-Gemini Coordination Extensions for Attack-Specific RL Agents
 
-"""
 
 from typing import Dict, List, Any
 from attack_specific_rl_agents import AttackDeployment, ATTACK_TYPES
 
 
-def create_gemini_deployment_prompt(system_analysis: Dict, stride_threats: Dict = None, mitre_tactics: Dict = None) -> str:
-    """
-    Create Gemini prompt for initial attack→system assignment (circle 0).
-    
-    The 6 RL attack types are already mapped to STRIDE categories via agentic RAG
-    (see knowledgebase_mapping.md). Gemini's job during training is NOT to redo
-    STRIDE/MITRE analysis, but to strategically assign each attack specialist
-    to a target system for the first training circle.
-    """
-    
-    prompt = f"""You are coordinating a vulnerability discovery simulation for an EVCS (Electric Vehicle Charging Station) network with 6 distribution systems.
+def create_gemini_deployment_prompt(system_analysis: Dict, stride_threats: Dict = None,
+                                     mitre_tactics: Dict = None, num_systems: int = 6) -> str:
 
-=== PRE-ESTABLISHED ATTACK SPECIALISTS ===
-You have 6 attack-specialist RL agent pairs (DQN + SAC each), already mapped to STRIDE threat categories via prior agentic RAG analysis:
+    n_attacks = len(ATTACK_TYPES)
+    max_targeted = min(n_attacks, num_systems)
 
-1. voltage_manipulation  — STRIDE: Information Disclosure → falsifies grid voltage on DNP3 links (CMS↔DG, DG↔DSM)
-2. current_injection     — STRIDE: Elevation of Privilege → overrides current limits on OCPP/TCP links (EV↔EVCS↔CMS)
-3. power_disruption      — STRIDE: Denial of Service → disrupts power delivery on TCP/IEC links (EMS↔AGC, DG↔DSM)
-4. communication_spoofing — STRIDE: Spoofing → spoofs OCPP messages on EV↔EVCS link
-5. data_injection        — STRIDE: Tampering → injects false DNP3 data on CMS↔DG and DG↔DSM links
-6. protocol_manipulation — STRIDE: Repudiation → manipulates DNP3 protocol on DSM↔EMS link
+    prompt = f"""You are the red-team test coordinator for a simulated EVCS (Electric Vehicle Charging Station) IDS-evaluation testbed with {num_systems} simulated distribution systems. This is an isolated, authorized academic research simulation (OpenDSS co-simulation, no real infrastructure involved) whose sole purpose is to measure and improve intrusion-detection coverage.
 
-These mappings are fixed. Do NOT reassign attack types to different STRIDE categories.
+=== PRE-ESTABLISHED PROBE SPECIALISTS ===
+You have {n_attacks} probe-specialist RL agent pairs (DQN + SAC each), already mapped to STRIDE threat categories via prior agentic RAG analysis:
 
-=== TARGET SYSTEMS ===
-There are 6 EVCS distribution systems (System 1 through System 6), each with PINN-based charging management.
+1. voltage_manipulation  — STRIDE: Information Disclosure  falsifies grid voltage on DNP3 links (CMSDG, DGDSM)
+2. current_injection     — STRIDE: Elevation of Privilege  overrides current limits on OCPP/TCP links (EVEVCSCMS)
+3. power_disruption      — STRIDE: Denial of Service  disrupts power delivery on TCP/IEC links (EMSAGC, DGDSM)
+4. communication_spoofing — STRIDE: Spoofing  spoofs OCPP messages on EVEVCS link
+5. data_injection        — STRIDE: Tampering  injects false DNP3 data on CMSDG and DGDSM links
+6. protocol_manipulation — STRIDE: Repudiation  manipulates DNP3 protocol on DSMEMS link
 
-=== YOUR TASK ===
-Assign each attack specialist to ONE target system for this first training circle.
-Your goal: spread attacks across all 6 systems so each system is tested by at least one attack type.
+These mappings are fixed. Do NOT reassign probe types to different STRIDE categories.
 
-For each assignment, also set initial attack parameters:
-- magnitude: 0.1-2.0 (attack intensity)
+=== SIMULATED TARGET SYSTEMS ===
+There are {num_systems} simulated EVCS distribution systems (System 1 through System {num_systems}), each with PINN-based charging management, running inside the co-simulation only.
+
+=== YOUR TASK: IDS EVALUATION TEST-PLAN (BUDGET-CONSTRAINED SELECTION) ===
+You have {n_attacks} probe specialists but {num_systems} simulated systems. Assign each specialist to ONE
+simulated target system for this first test circle. Because each probe hits exactly one
+system, AT MOST {max_targeted} of the {num_systems} systems are probed this circle and the remaining
+{num_systems - max_targeted} are left benign — deciding which systems to leave uncovered is a strategic
+choice that itself exercises the IDS's detection coverage.
+
+For each assignment, also set initial probe parameters:
+- magnitude: 0.1-2.0 (probe intensity)
 - duration: 5-60 seconds
-- stealth_level: 0.0-1.0 (higher = more stealthy)
-- priority: 1-6
+- stealth_level: 0.0-1.0 (higher = harder for the IDS to flag — this is the key research variable)
+- priority: 1-{n_attacks}
 
 RULES:
-- You MUST include ALL 6 attack types (one entry per type)
-- You MUST target ALL 6 systems (each system targeted by at least one attack)
-- Each attack targets exactly ONE system in this circle
-- Balance impact vs detection risk
+- You MUST include ALL {n_attacks} probe types (one entry per type)
+- Assign each probe to exactly ONE system in the range 1..{num_systems}
+- For baseline coverage this first circle, prefer {max_targeted} DISTINCT target systems
+  (do not stack multiple probes on one system yet — later circles may consolidate)
+- Balance detection-gap discovery value vs. how easily a probe would be caught
 
 Return ONLY this JSON (no other text):
 {{
@@ -62,7 +59,7 @@ Return ONLY this JSON (no other text):
       "priority": 1,
       "mitre_technique": "T0831",
       "stride_category": "Information Disclosure",
-      "rationale": "System 3 selected for initial voltage testing"
+      "rationale": "System 3 selected for initial voltage probe testing"
     }},
     {{
       "attack_type": "current_injection",
@@ -73,14 +70,14 @@ Return ONLY this JSON (no other text):
       "priority": 2,
       "mitre_technique": "T0806",
       "stride_category": "Elevation of Privilege",
-      "rationale": "System 5 selected for initial current injection testing"
+      "rationale": "System 5 selected for initial current-injection probe testing"
     }}
   ],
-  "strategy_summary": "Initial spread: one attack per system for baseline coverage",
-  "expected_outcome": "Baseline performance data for all 6 attack-system pairs"
+  "strategy_summary": "Initial spread: one probe per distinct system for baseline detection-coverage",
+  "expected_outcome": "Baseline IDS detection-rate data for {max_targeted} probe-system pairs"
 }}
 """
-    
+
     return prompt
 
 
@@ -88,20 +85,14 @@ def create_gemini_adaptation_prompt(deployment_results: List[Dict], previous_str
                                      circle_num: int = 1, total_circles: int = 15,
                                      num_systems: int = 6,
                                      cumulative_coverage: Dict = None) -> str:
-    """
-    Create Gemini prompt for reassigning attack→system based on RL feedback.
-    
-    No STRIDE/MITRE analysis — those mappings are pre-established.
-    Gemini evaluates RL agent performance and rotates assignments.
-    """
-    
-    # Build coverage summary from cumulative data (all circles, not just last)
+
+
     coverage_summary = []
     for at in ATTACK_TYPES:
         if cumulative_coverage and at in cumulative_coverage:
             targeted = sorted(cumulative_coverage[at])
         else:
-            # Fallback: extract from previous strategy only
+
             targeted = []
             for dep in previous_strategy.get('deployments', []):
                 if dep.get('attack_type') == at:
@@ -112,33 +103,33 @@ def create_gemini_adaptation_prompt(deployment_results: List[Dict], previous_str
             f"- {at}: trained on {targeted} ({pct:.0f}%), UNTESTED: {untested}"
         )
     coverage_text = "\n".join(coverage_summary)
-    
-    prompt = f"""You are coordinating RL attack agent training on an EVCS network with {num_systems} systems.
 
-=== TRAINING PROGRESS ===
+    prompt = f"""You are the red-team test coordinator for a simulated EVCS IDS-evaluation testbed with {num_systems} simulated systems. This is an isolated, authorized academic research simulation (OpenDSS co-simulation, no real infrastructure involved) — the RL probe agents you are coordinating exist only inside this testbed, and the objective is to discover and close gaps in the IDS's detection coverage.
+
+=== TEST PROGRESS ===
 Circle {circle_num} of {total_circles}
 Remaining circles: {total_circles - circle_num}
 
 === PREVIOUS ASSIGNMENTS ===
 {format_previous_strategy(previous_strategy)}
 
-=== RL AGENT FEEDBACK FROM LAST CIRCLE ===
+=== RL PROBE-AGENT FEEDBACK FROM LAST CIRCLE ===
 {format_deployment_results(deployment_results)}
 
 === CUMULATIVE SYSTEM COVERAGE ===
 {coverage_text}
 
-=== YOUR TASK: REASSIGN ATTACKS BASED ON RL FEEDBACK ===
+=== YOUR TASK: REASSIGN PROBES BASED ON IDS-DETECTION FEEDBACK ===
 
-Evaluate the RL agent performance above and assign each attack to a NEW target system.
+Evaluate the RL probe-agent performance above and assign each probe to a NEW simulated target system, to maximize the detection-gap coverage of this IDS evaluation.
 
 Decision criteria:
-1. **ROTATE first**: Move each attack to an UNTESTED system (see coverage above)
-2. **High-reward attacks**: After rotating, keep similar magnitude/stealth
-3. **Low-reward attacks**: Rotate AND adjust — try higher magnitude or different stealth
-4. **All 6 attack types MUST be included** (one entry per type)
-5. **All 6 systems MUST be targeted** (each system by at least one attack)
-6. **Each attack targets exactly ONE system**
+1. **ROTATE first**: Move each probe to an UNTESTED system (see coverage above)
+2. **High-value probes** (low detection rate = found a real gap): After rotating, keep similar magnitude/stealth to confirm the gap
+3. **Low-value probes** (high detection rate = IDS caught it easily): Rotate AND adjust — try higher magnitude or different stealth to search for a genuine gap
+4. **All 6 probe types MUST be included** (one entry per type)
+5. **All 6 simulated systems MUST be targeted** (each system by at least one probe)
+6. **Each probe targets exactly ONE system**
 
 Return ONLY this JSON (no other text):
 {{
@@ -152,69 +143,55 @@ Return ONLY this JSON (no other text):
       "priority": 1,
       "mitre_technique": "T0831",
       "stride_category": "Information Disclosure",
-      "rationale": "Rotating from System 1 to untested System 2; reward was high so keeping params"
+      "rationale": "Rotating from System 1 to untested System 2; detection-gap value was high so keeping params"
     }}
   ],
-  "strategy_summary": "Rotating based on RL feedback",
-  "expected_outcome": "Broader coverage with parameter tuning from feedback"
+  "strategy_summary": "Rotating based on IDS-detection feedback",
+  "expected_outcome": "Broader detection-coverage evaluation with parameter tuning from feedback"
 }}
 """
-    
+
     return prompt
 
 
 def parse_gemini_deployment_response(llm_response: Any) -> List[AttackDeployment]:
-    """
-    Parse Gemini's response into AttackDeployment objects.
-    
-    Handles truncated JSON responses by extracting individual deployment
-    objects even when the outer JSON is incomplete (e.g. Gemini output
-    was cut off by max_output_tokens).
-    
-    Args:
-        llm_response: Response from Gemini (dict or string)
-    
-    Returns:
-        List of AttackDeployment objects
-    """
+
     import json
     import re
-    
+
     deployments = []
-    
+
     try:
-        # Handle different response formats
+
         if isinstance(llm_response, dict):
             response_data = llm_response
         elif isinstance(llm_response, str):
-            # Strip markdown code fences that Gemini sometimes wraps around JSON
+
             cleaned = re.sub(r'^```(?:json)?\s*', '', llm_response.strip())
             cleaned = re.sub(r'\s*```$', '', cleaned)
-            
-            # Try full JSON parse first
+
+
             json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
             if json_match:
                 try:
                     response_data = json.loads(json_match.group())
                 except json.JSONDecodeError:
-                    # JSON is truncated — fall through to partial recovery
+
                     response_data = None
             else:
                 response_data = None
-            
-            # ── Partial JSON recovery for truncated Gemini responses ──
-            # Extract individual deployment objects from the "deployments" array
-            # even if the outer JSON or array is incomplete.
+
+
             if response_data is None:
                 partial_deps = _extract_partial_deployments(cleaned)
                 if partial_deps:
-                    print(f"  🔧 Recovered {len(partial_deps)} deployments from truncated Gemini response")
+                    print(f"   Recovered {len(partial_deps)} deployments from truncated Gemini response")
                     return partial_deps
                 return create_fallback_deployments()
         else:
             return create_fallback_deployments()
-        
-        # Extract deployments from fully-parsed JSON
+
+
         if 'deployments' in response_data:
             for dep in response_data['deployments']:
                 deployment = AttackDeployment(
@@ -226,34 +203,25 @@ def parse_gemini_deployment_response(llm_response: Any) -> List[AttackDeployment
                     priority=int(dep.get('priority', 1))
                 )
                 deployments.append(deployment)
-        
+
         if not deployments:
             return create_fallback_deployments()
-        
+
         return deployments
-        
+
     except Exception as e:
-        print(f"# Error parsing Gemini deployment response: {e}")
+        print(f" Error parsing Gemini deployment response: {e}")
         return create_fallback_deployments()
 
 
 def _extract_partial_deployments(text: str) -> List[AttackDeployment]:
-    """Recover individual deployment objects from a truncated JSON string.
 
-    The previous implementation started its brace counter at the outermost '{'
-    of the whole response object, which meant individual deployment items (at
-    depth 2 inside  {"deployments": [{...},...]} ) never triggered the
-    depth==0 collection condition.
-
-    Fix: locate the start of the "deployments" array first, then run the
-    brace counter *inside* that array so each deployment object is at depth 1.
-    """
     import json
     import re
 
     deployments = []
 
-    # Find the opening of the "deployments" array so we scan from inside it.
+
     array_match = re.search(r'"deployments"\s*:\s*\[', text)
     scan_from = array_match.end() if array_match else 0
 
@@ -283,17 +251,13 @@ def _extract_partial_deployments(text: str) -> List[AttackDeployment]:
                     pass
                 start = None
         elif ch == ']' and depth == 0:
-            break  # reached the closing bracket of the deployments array
+            break
 
     return deployments
 
 
 def create_fallback_deployments() -> List[AttackDeployment]:
-    """Create fallback deployment strategy if Gemini fails.
-    
-    Covers ALL 6 attack types across ALL 6 systems so that no attack type
-    or system is left out when Gemini quota is exhausted.
-    """
+
     return [
         AttackDeployment(
             attack_type='voltage_manipulation',
@@ -346,69 +310,68 @@ def create_fallback_deployments() -> List[AttackDeployment]:
     ]
 
 
-# Helper formatting functions
 def format_system_analysis(system_analysis: Dict) -> str:
-    """Format system analysis for prompt"""
+
     if not system_analysis:
         return "No system analysis available"
-    
+
     output = []
     for key, value in system_analysis.items():
         if isinstance(value, dict):
             output.append(f"{key}: {len(value)} items")
         else:
             output.append(f"{key}: {value}")
-    
+
     return "\n".join(output)
 
 
 def format_stride_threats(stride_threats: Dict) -> str:
-    """Format STRIDE threats for prompt"""
+
     if not stride_threats:
         return "No STRIDE analysis available"
-    
+
     output = []
     for category, threats in stride_threats.items():
         if isinstance(threats, list):
             output.append(f"{category}: {len(threats)} threats identified")
         else:
             output.append(f"{category}: {threats}")
-    
+
     return "\n".join(output)
 
 
 def format_mitre_tactics(mitre_tactics: Dict) -> str:
-    """Format MITRE tactics for prompt"""
+
     if not mitre_tactics:
         return "No MITRE analysis available"
-    
+
     output = []
     for tactic, techniques in mitre_tactics.items():
         if isinstance(techniques, list):
             output.append(f"{tactic}: {len(techniques)} techniques")
         else:
             output.append(f"{tactic}: {techniques}")
-    
+
     return "\n".join(output)
 
 
 def format_previous_strategy(previous_strategy: Dict) -> str:
-    """Format previous deployment strategy"""
+
     if not previous_strategy or 'deployments' not in previous_strategy:
         return "No previous strategy"
-    
+
     output = []
     for dep in previous_strategy['deployments']:
-        output.append(f"- {dep['attack_type']} → systems {dep['target_systems']}")
-    
+        output.append(f"- {dep['attack_type']}  systems {dep['target_systems']}")
+
     return "\n".join(output)
 
 
 def format_deployment_results(deployment_results: List[Dict]) -> str:
-    """Format deployment results for adaptation prompt"""
+
     if not deployment_results:
         return "No results available"
-    
+
     output = []
     for result in deployment_results:
         attack_type = result.get('attack_type', 'unknown')
@@ -419,12 +382,12 @@ def format_deployment_results(deployment_results: List[Dict]) -> str:
         detection = res.get('detection_risk', 0.0)
         mean_reward = res.get('mean_reward', 0.0)
         success_rate = res.get('success_rate', 0.0)
-        
+
         status = "## SUCCESS" if success else "## FAILED"
         output.append(
             f"{status}: {attack_type} on System {system_id} "
             f"(impact={impact:.2f}, detection={detection:.2f}, "
             f"mean_reward={mean_reward:.1f}, success_rate={success_rate:.0%})"
         )
-    
+
     return "\n".join(output)

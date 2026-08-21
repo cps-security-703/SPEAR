@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Federated PINN Evaluation Script
 
-"""
 
 import os
 import sys
@@ -21,7 +18,7 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 warnings.filterwarnings('ignore')
 
-# Import project modules (same config as federated_pinn_manager.py)
+
 try:
     from pinn_optimizer import (
         LSTMPINNChargingOptimizer,
@@ -43,9 +40,7 @@ except ImportError as exc:
     print(f" Import error: {exc}")
     sys.exit(1)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Colour palette & style
-# ─────────────────────────────────────────────────────────────────────────────
+
 SYSTEM_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
 LOSS_COLORS   = {'total': '#e41a1c', 'physics': '#377eb8',
                  'boundary': '#4daf4a', 'data': '#984ea3', 'temporal': '#ff7f00'}
@@ -64,16 +59,12 @@ NUM_SYSTEMS = 6
 PINN_BOUNDS = dict(v_min=300.0, v_max=500.0, i_min=50.0, i_max=150.0,
                    p_min=15.0, p_max=75.0)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: manually load a saved .pth into LSTMPINNChargingOptimizer
-# (load_model() in the class is disabled intentionally – we bypass it)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_pth_into_optimizer(
     optimizer: LSTMPINNChargingOptimizer,
     pth_path: str,
 ) -> bool:
-    """Load saved model weights; return True on success."""
+
     if not os.path.exists(pth_path):
         print(f"  {pth_path} not found – using untrained weights.")
         return False
@@ -88,17 +79,13 @@ def load_pth_into_optimizer(
         return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Section 1 – Load pre-trained federated models
-# ─────────────────────────────────────────────────────────────────────────────
-
 def load_federated_models() -> Tuple[FederatedPINNManager, Dict[int, bool]]:
-    """Instantiate FederatedPINNManager and load saved weights."""
+
     print("\n" + "="*60)
     print("SECTION 1 – Loading Pre-trained Federated PINN Models")
     print("="*60)
 
-    fed_cfg   = FederatedPINNConfig()       # exactly the same config as the main system
+    fed_cfg   = FederatedPINNConfig()
     manager   = FederatedPINNManager(fed_cfg)
     loaded_ok = {}
 
@@ -109,7 +96,7 @@ def load_federated_models() -> Tuple[FederatedPINNManager, Dict[int, bool]]:
         status = " loaded" if ok else " untrained weights"
         print(f"  System {sys_id}: {status}")
 
-    # Sync global model using FedAvg over loaded local models
+
     try:
         manager.federated_averaging()
         print("  # Global model updated via FedAvg from loaded weights.")
@@ -119,22 +106,12 @@ def load_federated_models() -> Tuple[FederatedPINNManager, Dict[int, bool]]:
     return manager, loaded_ok
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Section 2 – Training-curve extraction (mini re-train, collect loss history)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def extract_training_curves(
     manager: FederatedPINNManager,
     n_samples: int = 600,
     n_epochs: int  = 120,
 ) -> Dict[int, Dict[str, List[float]]]:
-    """
-    Train each local model from a FRESH random initialisation using the
-    corrected data pipeline, collect loss curves, then write the trained
-    weights back into *manager* so that all downstream evaluation steps
-    (test metrics, EVCS sweep, divergence analysis) use properly trained
-    models.  Also re-runs FedAvg and saves updated .pth checkpoints.
-    """
+
     print("\n" + "="*60)
     print("SECTION 2 – Fresh Training with Corrected Pipeline")
     print(f"           ({n_samples} samples · {n_epochs} epochs per system)")
@@ -146,9 +123,8 @@ def extract_training_curves(
     all_histories: Dict[int, Dict] = {}
 
     for sys_id in range(1, NUM_SYSTEMS + 1):
-        print(f"\n  System {sys_id}: fresh init → training for {n_epochs} epochs …")
+        print(f"\n  System {sys_id}: fresh init  training for {n_epochs} epochs …")
 
-        # ── Fresh trainer – NO old weights copied in.  The previous .pth files
 
         trainer = LSTMPINNTrainer(pinn_cfg)
 
@@ -199,14 +175,13 @@ def extract_training_curves(
                           f"loss={hist['total'][-1]:.4f}  "
                           f"data={hist['data'][-1]:.4f}")
 
-            # ── Write freshly trained weights back into the manager so that
-            #    evaluate_test_performance() etc. use these models.
+
             manager.local_models[sys_id].model.load_state_dict(
                 copy.deepcopy(trainer.model.state_dict()))
             manager.local_models[sys_id].is_trained = True
             manager.local_models[sys_id].model.eval()
 
-            # ── Persist updated checkpoint so future runs benefit too.
+
             pth_path = f'federated_pinn_system_{sys_id}.pth'
             torch.save({
                 'model_state_dict': trainer.model.state_dict(),
@@ -216,14 +191,14 @@ def extract_training_curves(
 
             all_histories[sys_id] = hist
             final_loss = hist['total'][-1] if hist['total'] else float('nan')
-            print(f"    # Final loss: {final_loss:.4f}  →  saved {pth_path}")
+            print(f"    # Final loss: {final_loss:.4f}    saved {pth_path}")
 
         except Exception as exc:
             print(f"    # Training failed for system {sys_id}: {exc}")
             all_histories[sys_id] = {k: [] for k in
                                      ['total', 'physics', 'boundary', 'data', 'temporal']}
 
-    # ── Update global model via FedAvg over newly trained local models.
+
     try:
         manager.federated_averaging()
         print("\n  # Global model refreshed via FedAvg over retrained local models.")
@@ -232,8 +207,6 @@ def extract_training_curves(
 
     return all_histories
 
-
-# Section 3 – Testing / Generalisation Metrics
 
 def _r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     ss_res = np.sum((y_true - y_pred)**2)
@@ -245,7 +218,7 @@ def evaluate_test_performance(
     manager: FederatedPINNManager,
     n_test: int = 400,
 ) -> Dict:
-    """Compute MSE, MAE, RMSE, R² for V/I/P on a held-out test set."""
+
     print("\n" + "="*60)
     print("SECTION 3 – Test / Generalisation Performance")
     print("="*60)
@@ -256,17 +229,16 @@ def evaluate_test_performance(
     print(f"  Generating {n_test}-sample held-out test set …")
     seqs, tgts = data_gen.generate_realistic_evcs_scenarios(n_test)
 
-    # De-normalize targets from [0,1] back to physical units using the same
 
-    V_MIN, V_RNG = pinn_cfg.min_voltage, pinn_cfg.max_voltage - pinn_cfg.min_voltage  # 300, 200
-    I_MIN, I_RNG = pinn_cfg.min_current, pinn_cfg.max_current - pinn_cfg.min_current  # 50, 100
-    P_MIN, P_RNG = pinn_cfg.min_power,   pinn_cfg.max_power   - pinn_cfg.min_power    # 15, 60
+    V_MIN, V_RNG = pinn_cfg.min_voltage, pinn_cfg.max_voltage - pinn_cfg.min_voltage
+    I_MIN, I_RNG = pinn_cfg.min_current, pinn_cfg.max_current - pinn_cfg.min_current
+    P_MIN, P_RNG = pinn_cfg.min_power,   pinn_cfg.max_power   - pinn_cfg.min_power
 
     tgts_np = tgts.cpu().numpy()
     tgts_phys = np.column_stack([
-        tgts_np[:, 0] * V_RNG + V_MIN,   # Voltage  [300, 500] V
-        tgts_np[:, 1] * I_RNG + I_MIN,   # Current  [ 50, 150] A
-        tgts_np[:, 2] * P_RNG + P_MIN,   # Power    [ 15,  75] kW
+        tgts_np[:, 0] * V_RNG + V_MIN,
+        tgts_np[:, 1] * I_RNG + I_MIN,
+        tgts_np[:, 2] * P_RNG + P_MIN,
     ])
 
     results = {}
@@ -275,8 +247,8 @@ def evaluate_test_performance(
     def _metrics_for(model, name):
         model.eval()
         with torch.no_grad():
-            preds = model(seqs).cpu().numpy()   # (N, 3) – physical units from forward()
-        true = tgts_phys                        # (N, 3) – de-normalised physical units
+            preds = model(seqs).cpu().numpy()
+        true = tgts_phys
 
         out = {}
         for j, lbl in enumerate(labels):
@@ -301,11 +273,8 @@ def evaluate_test_performance(
     return results
 
 
-# Section 4 – EVCS Output Dynamics
-
 def evaluate_evcs_outputs(manager: FederatedPINNManager) -> Dict:
-    """Sweep SOC x time-of-day; call optimize_references() for each local
-    """
+
     print("\n" + "="*60)
     print("SECTION 4 – EVCS Output Dynamics (V / I / P sweep)")
     print("="*60)
@@ -340,7 +309,7 @@ def evaluate_evcs_outputs(manager: FederatedPINNManager) -> Dict:
                 try:
                     _v_ref, i_ref, _p_ref = manager.local_models[sys_id].optimize_references(
                         station_data)
-                    # Convert PINN current reference → actual terminal quantities
+
 
                     ss = _evcs_steady_state(float(soc), float(i_ref), params)
                     voltages.append(ss['v_term'])
@@ -368,15 +337,10 @@ def evaluate_evcs_outputs(manager: FederatedPINNManager) -> Dict:
     return output_data
 
 
-
-# Section 4b – Actual EVCS Physical Outputs (measured, not PINN references)
-
-
-# IEEE 34-bus assignments for each EVCS system
 _EVCS_BUS_MAP = {1: '890', 2: '844', 3: '860', 4: '840', 5: '848', 6: '830'}
-_GRID_V_LN    = 7200.0   # V line-to-neutral (12.47 kV L-L / √3)
-_DT_S         = 360.0    # 6-minute time step in seconds
-_N_STEPS      = 20       # 2 h × (60 min / 6 min) = 20 steps
+_GRID_V_LN    = 7200.0
+_DT_S         = 360.0
+_N_STEPS      = 20
 
 
 def _evcs_steady_state(
@@ -384,10 +348,8 @@ def _evcs_steady_state(
     i_ref: float,
     params: 'EVCSParameters',
 ) -> Dict:
-    """Compute the quasi-static EVCS operating point for a 6-minute timestep.
 
-    """
-    R_int      = 0.1           # Ω
+    R_int      = 0.1
     eta_acdc   = 0.98
     eta_dcdc   = 0.96
     eta_charge = 0.95
@@ -396,14 +358,14 @@ def _evcs_steady_state(
     ocv = params.min_voltage + soc * (params.max_voltage - params.min_voltage)
 
     if soc < 0.8:
-        # CC phase — charger enforces rated current; PINN i_ref is irrelevant here
+
         i_act = float(params.rated_current)
     else:
-        # CV phase — taper from rated to min as SOC rises 0.8 → 0.9
-        taper    = (soc - 0.8) / 0.2          # 0 at SOC=0.8, 1 at SOC=0.9
+
+        taper    = (soc - 0.8) / 0.2
         i_cv_max = (params.rated_current
                     - taper * (params.rated_current - params.min_current))
-        # PINN may request lower current (demand response), honour if below taper limit
+
         i_act = float(np.clip(min(float(i_ref), i_cv_max),
                                params.min_current, i_cv_max))
 
@@ -427,10 +389,7 @@ def _evcs_steady_state(
 
 
 def _try_load_opendss_voltages(dss_file: str) -> Optional[Dict[str, float]]:
-    """Load OpenDSS model and return per-bus RMS line-neutral voltage (V).
 
-    Returns None if opendssdirect is unavailable or the file cannot be parsed.
-    """
     try:
         import opendssdirect as dss   # type: ignore
         dss.run_command('Clear')
@@ -439,9 +398,9 @@ def _try_load_opendss_voltages(dss_file: str) -> Optional[Dict[str, float]]:
         bus_voltages: Dict[str, float] = {}
         for bus_name in dss.Circuit.AllBusNames():
             dss.Circuit.SetActiveBus(bus_name)
-            vmag = dss.Bus.VMagAngle()          # alternating (Vmag, angle, …)
+            vmag = dss.Bus.VMagAngle()
             if vmag:
-                bus_voltages[bus_name.lower()] = float(vmag[0])   # first phase L-N
+                bus_voltages[bus_name.lower()] = float(vmag[0])
         return bus_voltages if bus_voltages else None
     except Exception:
         return None
@@ -451,13 +410,12 @@ def plot_actual_evcs_outputs(
     manager,
     output_png: str = 'federated_pinn_evcs_actual_outputs.png',
 ) -> Dict:
-    """Simulate a 2-hour CC-CV charging window per system and plot the *actual*
-    """
+
     print("\n" + "=" * 60)
     print("SECTION 4b – Actual EVCS Physical Outputs (Converter Dynamics)")
     print("=" * 60)
 
-    # ── Try to get real bus voltages from OpenDSS ────────────────────────────
+
     dss_file = os.path.join(os.path.dirname(__file__), 'ieee34Mod1.dss')
     if not os.path.isfile(dss_file):
         dss_file = 'ieee34Mod1.dss'
@@ -470,7 +428,7 @@ def plot_actual_evcs_outputs(
     params = EVCSParameters()
     SOC_START = 0.30
 
-    # Time axis (hours)
+
     hours = np.array([step * (_DT_S / 3600.0) for step in range(_N_STEPS)])
 
     all_data: Dict[int, Dict] = {}
@@ -478,7 +436,7 @@ def plot_actual_evcs_outputs(
     for sys_id in range(1, NUM_SYSTEMS + 1):
         bus_name = _EVCS_BUS_MAP[sys_id].lower()
 
-        # Bus voltage from OpenDSS if available, else nominal
+
         if opendss_bus_v:
             grid_v = opendss_bus_v.get(bus_name, _GRID_V_LN)
         else:
@@ -486,7 +444,7 @@ def plot_actual_evcs_outputs(
 
         local_optimizer = manager.local_models[sys_id]
 
-        # --- Recording arrays ---
+
         rec_soc   = np.zeros(_N_STEPS)
         rec_v     = np.zeros(_N_STEPS)
         rec_i     = np.zeros(_N_STEPS)
@@ -498,21 +456,20 @@ def plot_actual_evcs_outputs(
         rec_i_ref = np.zeros(_N_STEPS)
         rec_p_ref = np.zeros(_N_STEPS)
 
-        session_hours: List[float] = []   # hour of each new-EV arrival
+        session_hours: List[float] = []
         n_sessions   = 0
         soc          = SOC_START
 
         for step in range(_N_STEPS):
             hour = hours[step]
 
-            # ── New EV arrives when previous finishes (SOC ≥ disconnect) ─────
 
             if soc >= params.disconnect_soc:
                 n_sessions += 1
                 session_hours.append(hour)
                 soc = float(np.random.uniform(0.20, 0.35))
 
-            # Demand / urgency factors for PINN input
+
             demand_factor  = 0.3 + 0.7 * np.exp(-((hour - 18.0) ** 2) / 8.0)
             urgency_factor = max(0.5, 2.0 - soc * 2.0)
 
@@ -545,7 +502,6 @@ def plot_actual_evcs_outputs(
                              - taper * (params.rated_current - params.min_current))
                 p_ref = v_ref * i_ref / 1000.0
 
-            # ── Steady-state physics (bypasses unstable PI Euler integration) ─
 
             ss = _evcs_steady_state(soc, float(i_ref), params)
 
@@ -583,13 +539,13 @@ def plot_actual_evcs_outputs(
               f"Avg I={rec_i.mean():.1f} A  "
               f"Avg P_dc={rec_p_dc.mean():.2f} kW")
 
-    # ── Generate 3 × 2 figure ───────────────────────────────────────────────
+
     fig, axes = plt.subplots(3, 2, figsize=(14, 12))
 
 
     soc_fine = np.linspace(0.10, params.disconnect_soc, 200)
     ocv_fine = params.min_voltage + soc_fine * (params.max_voltage - params.min_voltage)
-    # terminal voltage at rated current (shows I·R drop from OCV)
+
     vterm_fine = ocv_fine - params.rated_current * 0.1
 
     styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
@@ -600,27 +556,24 @@ def plot_actual_evcs_outputs(
         ls  = styles[sys_id - 1]
         lbl = f'Sys {sys_id}'
 
-        # ── Row 0: Terminal Voltage ──────────────────────────────────────────
-        # Time plot — only measured terminal voltage (v_term = OCV - I·R)
+
         axes[0, 0].plot(d['hours'], d['v'], color=col, ls=ls, lw=4.0, label=lbl)
-        # SOC plot
+
         axes[0, 1].plot(d['soc'], d['v'], color=col, ls=ls, lw=4.0, label=lbl)
 
-        # ── Row 1: Charging Current ──────────────────────────────────────────
-        # Time plot — measured current (CC plateau then CV taper)
+
         axes[1, 0].plot(d['hours'], d['i'], color=col, ls=ls, lw=4.0, label=lbl)
-        # SOC plot
+
         axes[1, 1].plot(d['soc'], d['i'], color=col, ls=ls, lw=4.0, label=lbl)
 
-        # ── Row 2: Power ─────────────────────────────────────────────────────
-        # Time plot — DC power to battery (solid) + AC power from grid (dashed)
+
         axes[2, 0].plot(d['hours'], d['p_dc'], color=col, ls=ls,   lw=4.0, label=lbl)
         axes[2, 0].plot(d['hours'], d['p_ac'], color=col, ls='--', lw=4.0,
                         alpha=0.50, zorder=1)
-        # SOC plot — efficiency
+
         axes[2, 1].plot(d['soc'], d['eff'] * 100, color=col, ls=ls, lw=4.0, label=lbl)
 
-    # ── Session boundary markers on time plots (System 1 only) ──────────────
+
     _first_sh = True
     for sh in all_data[1]['session_hours']:
         _kw = dict(color='#888888', ls=':', lw=1.0, zorder=0)
@@ -629,17 +582,16 @@ def plot_actual_evcs_outputs(
                        label='EV handover' if (_first_sh and ax is axes[0, 0]) else None)
         _first_sh = False
 
-    # ── Reference curves on SOC plots ────────────────────────────────────────
-    # OCV line: open-circuit voltage (no load)
+
     axes[0, 1].plot(soc_fine, ocv_fine,   'k--', lw=4.0, label='OCV (no load)')
-    # Terminal voltage at rated current (shows full I·R drop)
+
     axes[0, 1].plot(soc_fine, vterm_fine, 'k:',  lw=4.0, label='V_term @ I_rated')
 
-    # CC→CV boundary — SOC=0.8 on SOC-axis plots only
-    axes[0, 1].axvline(0.8, color='grey', ls='-.', lw=4.0, label='CC→CV  (SOC=0.8)')
-    axes[1, 1].axvline(0.8, color='grey', ls='-.', lw=4.0, label='CC→CV  (SOC=0.8)')
 
-    # ── Physical bounds ──────────────────────────────────────────────────────
+    axes[0, 1].axvline(0.8, color='grey', ls='-.', lw=4.0, label='CCCV  (SOC=0.8)')
+    axes[1, 1].axvline(0.8, color='grey', ls='-.', lw=4.0, label='CCCV  (SOC=0.8)')
+
+
     for ax in [axes[0, 0], axes[0, 1]]:
         ax.axhline(params.min_voltage, color='grey', ls=':', lw=4.0)
         ax.axhline(params.max_voltage, color='grey', ls=':', lw=4.0)
@@ -647,7 +599,7 @@ def plot_actual_evcs_outputs(
         ax.axhline(params.min_current, color='grey', ls=':', lw=4.0)
         ax.axhline(params.max_current, color='grey', ls=':', lw=4.0)
 
-    # ── Power panel annotation ────────────────────────────────────────────────
+
     axes[2, 0].text(
         0.02, 0.97,
         'Solid = P_dc (to battery)\nDashed = P_ac (from grid)\n'
@@ -657,33 +609,30 @@ def plot_actual_evcs_outputs(
         bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow', alpha=0.85),
     )
 
-    # ── Labels, titles, grids ─────────────────────────────────────────────────
-    # axes[0, 0].set_title('Terminal Voltage vs Time', fontweight='bold')
+
     axes[0, 0].set_xlabel('Time (h)'); axes[0, 0].set_ylabel('Voltage (V)')
     axes[0, 0].legend(ncol=2, fontsize=7); axes[0, 0].grid(True, alpha=0.3)
     axes[0, 0].set_xlim(0, hours[-1])
 
-    # axes[0, 1].set_title('Terminal Voltage vs SOC', fontweight='bold')
+
     axes[0, 1].set_xlabel('SOC'); axes[0, 1].set_ylabel('Voltage (V)')
     axes[0, 1].legend(ncol=2, fontsize=7); axes[0, 1].grid(True, alpha=0.3)
 
-    # axes[1, 0].set_title('Charging Current vs Time', fontweight='bold')
+
     axes[1, 0].set_xlabel('Time (h)'); axes[1, 0].set_ylabel('Current (A)')
     axes[1, 0].legend(ncol=2, fontsize=7); axes[1, 0].grid(True, alpha=0.3)
     axes[1, 0].set_xlim(0, hours[-1])
 
-    # axes[1, 1].set_title('Charging Current vs SOC  (CC→CV taper at SOC=0.8)',
-                        #   fontweight='bold')
+
     axes[1, 1].set_xlabel('SOC'); axes[1, 1].set_ylabel('Current (A)')
     axes[1, 1].legend(ncol=2, fontsize=7); axes[1, 1].grid(True, alpha=0.3)
 
-    # axes[2, 0].set_title('DC Power (solid) and AC Grid Power (dashed) vs Time',
-    #                       fontweight='bold')
+
     axes[2, 0].set_xlabel('Time (h)'); axes[2, 0].set_ylabel('Power (kW)')
     axes[2, 0].legend(ncol=2, fontsize=7); axes[2, 0].grid(True, alpha=0.3)
     axes[2, 0].set_xlim(0, hours[-1])
 
-    # axes[2, 1].set_title('System Efficiency vs SOC', fontweight='bold')
+
     axes[2, 1].set_xlabel('SOC'); axes[2, 1].set_ylabel('Efficiency (%)')
     axes[2, 1].set_ylim(88, 100)
     axes[2, 1].axhline(94.1, color='k', ls='--', lw=4.0,
@@ -693,15 +642,13 @@ def plot_actual_evcs_outputs(
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"\n# Actual EVCS output plots saved → {output_png}")
+    print(f"\n# Actual EVCS output plots saved  {output_png}")
 
     return all_data
 
 
-# Section 5 – Anomaly Detection Layer Evaluation
-
 def evaluate_anomaly_detection(manager: FederatedPINNManager) -> Dict:
-    """Test each 3-layer anomaly detector with known-good and known-bad inputs."""
+
     print("\n" + "="*60)
     print("SECTION 5 – Anomaly Detection Layer Evaluation")
     print("="*60)
@@ -714,11 +661,11 @@ def evaluate_anomaly_detection(manager: FederatedPINNManager) -> Dict:
         {'soc': 0.4,  'grid_voltage': 0.99, 'grid_frequency': 60.0, 'demand_factor': 0.65,'load_factor': 0.85,'urgency_factor': 1.1, 'voltage_priority': 0.01},
     ]
     BAD_INPUTS = [
-        {'soc': -0.1,  'grid_voltage': 0.5,  'grid_frequency': 55.0, 'demand_factor': 3.0, 'load_factor': 2.0, 'urgency_factor': 5.0},  # extreme violations
-        {'soc': 1.2,   'grid_voltage': 1.5,  'grid_frequency': 65.0, 'demand_factor': 0.7, 'load_factor': 0.8, 'urgency_factor': 1.0},  # SOC & voltage high
-        {'soc': 0.5,   'grid_voltage': 0.6,  'grid_frequency': 60.0, 'demand_factor': 0.7, 'load_factor': 2.5, 'urgency_factor': 1.0},  # low V, high load
-        {'soc': 0.5,   'grid_voltage': 1.0,  'grid_frequency': 58.0, 'demand_factor': 0.7, 'load_factor': 0.8, 'urgency_factor': 1.0},  # freq violation
-        {'soc': 0.5,   'grid_voltage': 1.0,  'grid_frequency': 60.0, 'demand_factor': 2.5, 'load_factor': 0.8, 'urgency_factor': 1.0},  # demand violation
+        {'soc': -0.1,  'grid_voltage': 0.5,  'grid_frequency': 55.0, 'demand_factor': 3.0, 'load_factor': 2.0, 'urgency_factor': 5.0},
+        {'soc': 1.2,   'grid_voltage': 1.5,  'grid_frequency': 65.0, 'demand_factor': 0.7, 'load_factor': 0.8, 'urgency_factor': 1.0},
+        {'soc': 0.5,   'grid_voltage': 0.6,  'grid_frequency': 60.0, 'demand_factor': 0.7, 'load_factor': 2.5, 'urgency_factor': 1.0},
+        {'soc': 0.5,   'grid_voltage': 1.0,  'grid_frequency': 58.0, 'demand_factor': 0.7, 'load_factor': 0.8, 'urgency_factor': 1.0},
+        {'soc': 0.5,   'grid_voltage': 1.0,  'grid_frequency': 60.0, 'demand_factor': 2.5, 'load_factor': 0.8, 'urgency_factor': 1.0},
     ]
 
     results = {}
@@ -762,13 +709,11 @@ def evaluate_anomaly_detection(manager: FederatedPINNManager) -> Dict:
     return results
 
 
-# Section 6 – Local vs Global model comparison
-
 def compare_local_vs_global(
     manager: FederatedPINNManager,
     n_test: int = 200,
 ) -> Dict:
-    """Compute parameter divergence and prediction distance between local & global."""
+
     print("\n" + "="*60)
     print("SECTION 6 – Local vs Global Model Comparison")
     print("="*60)
@@ -786,7 +731,7 @@ def compare_local_vs_global(
         local_model = manager.local_models[sys_id].model
         local_state = local_model.state_dict()
 
-        # L2 parameter divergence
+
         param_l2 = 0.0
         for key in global_state:
             if global_state[key].dtype.is_floating_point:
@@ -794,7 +739,7 @@ def compare_local_vs_global(
                 param_l2 += diff
         param_l2 = float(np.sqrt(param_l2))
 
-        # Prediction MAE on shared test set
+
         global_model.eval(); local_model.eval()
         with torch.no_grad():
             g_pred = global_model(seqs).cpu().numpy()
@@ -818,8 +763,6 @@ def compare_local_vs_global(
     return results
 
 
-# Section 7 – Plots
-
 def generate_all_plots(
     train_histories : Dict,
     test_metrics    : Dict,
@@ -828,39 +771,39 @@ def generate_all_plots(
     lglobal_compare : Dict,
     output_png      : str = 'federated_pinn_evaluation_plots.png',
 ):
-    """Produce a 7-panel figure and save to disk."""
+
 
     fig = plt.figure(figsize=(22, 30))
     gs  = gridspec.GridSpec(4, 2, figure=fig, hspace=0.42, wspace=0.35)
 
-    # ── Plot 1: Training loss curves ─────────────────────────────────────────
+
     ax1 = fig.add_subplot(gs[0, 0])
     for sys_id in range(1, NUM_SYSTEMS + 1):
         hist = train_histories.get(sys_id, {})
         if hist.get('total'):
             ax1.plot(hist['total'], color=SYSTEM_COLORS[sys_id - 1],
                      label=f'Sys {sys_id}', lw=4.0)
-    # ax1.set_title('Training Loss Curves (Local Models)', fontweight='bold')
+
     ax1.set_xlabel('Epoch'); ax1.set_ylabel('Total Loss')
     ax1.legend(ncol=2, fontsize=8); ax1.grid(True, alpha=0.3)
     ax1.set_yscale('log') if any(
         (train_histories.get(s, {}).get('total', [0])[0] or 0) > 10
         for s in range(1, NUM_SYSTEMS + 1)) else None
 
-    # ── Plot 2: Loss components for system 1 ──────────────────────────────
+
     ax2 = fig.add_subplot(gs[0, 1])
     hist1 = train_histories.get(1, {})
     for key, color in LOSS_COLORS.items():
         if hist1.get(key):
             ax2.plot(hist1[key], color=color, label=key.capitalize(), lw=4.0)
-    # ax2.set_title('PINN Loss Components – System 1', fontweight='bold')
+
     ax2.set_xlabel('Epoch'); ax2.set_ylabel('Loss')
     ax2.legend(); ax2.grid(True, alpha=0.3)
 
-    # ── Plot 3: Test metrics bar chart (R²) ───────────────────────────────
+
     ax3 = fig.add_subplot(gs[1, 0])
     metric_keys = ['voltage', 'current', 'power']
-    x = np.arange(NUM_SYSTEMS + 1)    # +1 for global
+    x = np.arange(NUM_SYSTEMS + 1)
     bar_w = 0.25
     labels_sys = [f'Sys {s}' for s in range(1, NUM_SYSTEMS + 1)] + ['Global']
     entity_keys = [f'system_{s}' for s in range(1, NUM_SYSTEMS + 1)] + ['global']
@@ -874,14 +817,14 @@ def generate_all_plots(
         ax3.bar(x + k * bar_w, r2_vals, bar_w, label=mkey.capitalize(),
                 color=color, edgecolor='white', lw=4.0)
 
-    # ax3.set_title('Test Performance – R² Score (V / I / P)', fontweight='bold')
+
     ax3.set_xlabel('Model'); ax3.set_ylabel('R²')
     ax3.set_xticks(x + bar_w); ax3.set_xticklabels(labels_sys, rotation=30, ha='right')
     ax3.legend(); ax3.grid(True, alpha=0.3, axis='y')
     ax3.set_ylim(-0.1, 1.05)
     ax3.axhline(0, color='k', lw=0.8, ls='--')
 
-    # ── Plot 4: EVCS V/I/P vs SOC (mean across all systems) ──────────────
+
     ax4a = fig.add_subplot(gs[1, 1])
     soc_grid = np.linspace(0.1, 0.95, 20)
     styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
@@ -890,7 +833,7 @@ def generate_all_plots(
         data = evcs_outputs.get(sys_id, {})
         if len(data.get('soc', [])) == 0:
             continue
-        # Average over hours for each SOC value
+
         v_by_soc = [np.mean(data['voltage'][data['soc'] == s]) if np.any(data['soc'] == s)
                     else np.nan for s in soc_grid]
         v_by_soc_arr = []
@@ -903,11 +846,11 @@ def generate_all_plots(
 
     ax4a.axhline(PINN_BOUNDS['v_min'], color='grey', ls='--', lw=4.0, label='Bounds')
     ax4a.axhline(PINN_BOUNDS['v_max'], color='grey', ls='--', lw=4.0)
-    # ax4a.set_title('EVCS Terminal Voltage vs SOC  (physics-corrected)', fontweight='bold')
+
     ax4a.set_xlabel('State of Charge (SOC)'); ax4a.set_ylabel('Terminal Voltage (V)')
     ax4a.legend(ncol=2, fontsize=7); ax4a.grid(True, alpha=0.3)
 
-    # ── Plot 5: Power & Current vs SOC ────────────────────────────────────
+
     ax5 = fig.add_subplot(gs[2, 0])
     ax5b = ax5.twinx()
     for sys_id in range(1, NUM_SYSTEMS + 1):
@@ -926,13 +869,13 @@ def generate_all_plots(
 
     ax5.axhline(PINN_BOUNDS['p_min'], color='grey', ls=':', lw=4.0)
     ax5.axhline(PINN_BOUNDS['p_max'], color='grey', ls=':', lw=4.0)
-    # ax5.set_title('EVCS DC Power (solid) & Current (dashed) vs SOC  (physics-corrected)',
-    #               fontweight='bold')
+
+
     ax5.set_xlabel('SOC'); ax5.set_ylabel('DC Power (kW)')
     ax5b.set_ylabel('Current (A)')
     ax5.legend(ncol=2, fontsize=7, loc='upper right'); ax5.grid(True, alpha=0.3)
 
-    # ── Plot 6: Physics constraint satisfaction ────────────────────────────
+
     ax6 = fig.add_subplot(gs[2, 1])
     cat_names = ['Voltage', 'Current', 'Power']
     all_sat = {c.lower(): [] for c in cat_names}
@@ -947,12 +890,12 @@ def generate_all_plots(
         ax6.bar(xs + k * bar_w_c, all_sat[cat.lower()], bar_w_c,
                 label=cat, color=color, edgecolor='white' , lw=4.0)
     ax6.axhline(100, color='red', ls='--', lw=4.0, label='100 %')
-    # ax6.set_title('Physics Constraint Satisfaction per System (%)', fontweight='bold')
+
     ax6.set_xlabel('System ID'); ax6.set_ylabel('Satisfaction (%)')
     ax6.set_xticks(xs + bar_w_c); ax6.set_xticklabels([f'Sys {s}' for s in range(1, NUM_SYSTEMS+1)])
     ax6.legend(); ax6.grid(True, alpha=0.3, axis='y'); ax6.set_ylim(0, 110)
 
-    # ── Plot 7: Anomaly detection results & model divergence ──────────────
+
     ax7a = fig.add_subplot(gs[3, 0])
     sys_ids = list(range(1, NUM_SYSTEMS + 1))
     dr_vals  = [anomaly_results.get(s, {}).get('detection_rate', 0) * 100 for s in sys_ids]
@@ -964,7 +907,7 @@ def generate_all_plots(
     ax7a.bar(xd,       dr_vals,  bw2, label='Detection Rate %',  color='#2ca02c', edgecolor='white')
     ax7a.bar(xd + bw2, fpr_vals, bw2, label='False Positive %',  color='#d62728', edgecolor='white')
     ax7a.bar(xd + 2*bw2, f1_vals, bw2, label='F1 score × 100',  color='#1f77b4', edgecolor='white')
-    # ax7a.set_title('3-Layer Anomaly Detection Performance', fontweight='bold')
+
     ax7a.set_xlabel('System'); ax7a.set_ylabel('%')
     ax7a.set_xticks(xd + bw2); ax7a.set_xticklabels([f'Sys {s}' for s in sys_ids])
     ax7a.legend(fontsize=8); ax7a.grid(True, alpha=0.3, axis='y'); ax7a.set_ylim(0, 115)
@@ -975,7 +918,7 @@ def generate_all_plots(
     ax7b2 = ax7b.twinx()
     ax7b.bar(xd,       param_l2s, 0.35, label='Param L₂ divergence', color='#9467bd', edgecolor='white')
     ax7b2.plot(xd, pred_maes, 'o-', color='#e377c2', lw=4.0, label='Pred MAE vs Global')
-    # ax7b.set_title('Local vs Global Model: Divergence', fontweight='bold')
+
     ax7b.set_xlabel('System'); ax7b.set_ylabel('Parameter L₂ Norm')
     ax7b2.set_ylabel('Mean Prediction MAE')
     ax7b.set_xticks(xd); ax7b.set_xticklabels([f'Sys {s}' for s in sys_ids])
@@ -986,12 +929,8 @@ def generate_all_plots(
 
     plt.savefig(output_png, dpi=150, bbox_inches='tight')
     plt.close(fig)
-    print(f"\n# Plots saved → {output_png}")
+    print(f"\n# Plots saved  {output_png}")
 
-
-# 
-# Section 8 – Metrics Report
-# 
 
 def build_metrics_report(
     test_metrics    : Dict,
@@ -1000,7 +939,7 @@ def build_metrics_report(
     lglobal_compare : Dict,
     output_json     : str = 'federated_pinn_metrics.json',
 ) -> Dict:
-    """Assemble a JSON-serialisable metrics dictionary and save."""
+
 
     def _np_safe(obj):
         if isinstance(obj, (np.float32, np.float64, np.floating)):
@@ -1036,15 +975,15 @@ def build_metrics_report(
 
     with open(output_json, 'w') as f:
         json.dump(summary, f, indent=2)
-    print(f"# Metrics saved → {output_json}")
+    print(f"# Metrics saved  {output_json}")
 
-    # Console summary table
-    print("\n" + "─"*70)
+
+    print("\n" + ""*70)
     print(f"{'EVALUATION SUMMARY':^70}")
-    print("─"*70)
+    print(""*70)
     print(f"{'Model':<15} {'V-RMSE':>8} {'I-RMSE':>8} {'P-RMSE':>8} "
           f"{'V-R²':>6} {'I-R²':>6} {'P-R²':>6}")
-    print("─"*70)
+    print(""*70)
     for ekey in [f'system_{s}' for s in range(1, NUM_SYSTEMS+1)] + ['global']:
         m   = test_metrics.get(ekey, {})
         label = ekey.replace('system_', 'Sys ').replace('global', 'GLOBAL').upper()
@@ -1055,7 +994,7 @@ def build_metrics_report(
               f"{m.get('voltage', {}).get('r2',   0):>6.3f} "
               f"{m.get('current', {}).get('r2',   0):>6.3f} "
               f"{m.get('power',   {}).get('r2',   0):>6.3f} ")
-    print("─"*70)
+    print(""*70)
 
     print("\nConstraint Satisfaction Summary:")
     for sys_id in range(1, NUM_SYSTEMS + 1):
@@ -1076,10 +1015,6 @@ def build_metrics_report(
     return summary
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Section 9 – Individual Publication Sub-figures
-# ─────────────────────────────────────────────────────────────────────────────
-
 def save_publication_subplots(
     train_histories : Dict,
     test_metrics    : Dict,
@@ -1089,30 +1024,21 @@ def save_publication_subplots(
     actual_evcs_data: Dict,
     out_dir         : str = 'federated_pinn_results',
 ) -> None:
-    """Save every panel from both evaluation figures as individual PDF files.
 
-    Publication format:
-      figsize          = (10, 8)
-      xlabel / ylabel  fontsize = 20
-      xtick  / ytick   fontsize = 20
-      legend           fontsize = 18
-      grid on
-      Saved as PDF in <out_dir>/
-    """
     os.makedirs(out_dir, exist_ok=True)
     print(f"\n{'='*60}")
-    print(f"SECTION 9 – Publication Sub-figures  →  {out_dir}/")
+    print(f"SECTION 9 – Publication Sub-figures    {out_dir}/")
     print(f"{'='*60}")
 
     FIG  = (10, 8)
-    FS_L = 24       # axis-label font size
-    FS_T = 24        # tick font size
-    FS_G = 24        # legend font size
+    FS_L = 24
+    FS_T = 24
+    FS_G = 24
 
     soc_grid = np.linspace(0.1, 0.95, 20)
     styles   = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 1))]
 
-    # ── Formatting helper ────────────────────────────────────────────────────
+
     def _fmt(ax, xlabel='', ylabel='', legend=True, grid=True,
              twin=None, twin_ylabel=''):
         if xlabel:
@@ -1137,9 +1063,7 @@ def save_publication_subplots(
         plt.close(fig)
         print(f"  Saved: {name}")
 
-    # Panels from federated_pinn_evaluation_plots.png  (figures 01-08)
 
-    # ── Fig 01: Training loss curves (all systems) ───────────────────────────
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         hist = train_histories.get(sys_id, {})
@@ -1152,7 +1076,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Epoch', ylabel='Total Loss', legend=True, grid=True)
     _save(fig, 'fig01_training_loss_curves.pdf')
 
-    # ── Fig 02: PINN loss components – System 1 ─────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     hist1 = train_histories.get(1, {})
     for key, color in LOSS_COLORS.items():
@@ -1161,7 +1085,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Epoch', ylabel='Loss', legend=True, grid=True)
     _save(fig, 'fig02_pinn_loss_components.pdf')
 
-    # ── Fig 03: Test R² scores (bar chart) ───────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     metric_keys = ['voltage', 'current', 'power']
     x = np.arange(NUM_SYSTEMS + 1)
@@ -1182,7 +1106,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Model', ylabel='R² Score', grid=False, legend=True)
     _save(fig, 'fig03_test_r2_scores.pdf')
 
-    # ── Fig 04: EVCS terminal voltage vs SOC ─────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         data = evcs_outputs.get(sys_id, {})
@@ -1199,7 +1123,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='State of Charge (SOC)', ylabel='Terminal Voltage (V)', legend=True, grid=True)
     _save(fig, 'fig04_evcs_voltage_vs_soc.pdf')
 
-    # ── Fig 05: DC Power & Current vs SOC (twin y-axis) ──────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     ax2 = ax.twinx()
     for sys_id in range(1, NUM_SYSTEMS + 1):
@@ -1221,7 +1145,7 @@ def save_publication_subplots(
          twin=ax2, twin_ylabel='Current (A)', legend=True, grid=True)
     _save(fig, 'fig05_evcs_power_current_vs_soc.pdf')
 
-    # ── Fig 06: Physics constraint satisfaction ───────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     cat_names = ['Voltage', 'Current', 'Power']
     all_sat = {c.lower(): [] for c in cat_names}
@@ -1244,7 +1168,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='System ID', ylabel='Satisfaction (%)', grid=False, legend=True)
     _save(fig, 'fig06_constraint_satisfaction.pdf')
 
-    # ── Fig 07: Anomaly detection performance ────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     sys_ids  = list(range(1, NUM_SYSTEMS + 1))
     dr_vals  = [anomaly_results.get(s, {}).get('detection_rate', 0) * 100 for s in sys_ids]
@@ -1265,7 +1189,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='System', ylabel='(%)', grid=False, legend=True)
     _save(fig, 'fig07_anomaly_detection.pdf')
 
-    # ── Fig 08: Local vs Global model divergence ─────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     ax_r = ax.twinx()
     param_l2s = [lglobal_compare.get(s, {}).get('param_l2', 0) for s in sys_ids]
@@ -1284,7 +1208,7 @@ def save_publication_subplots(
          grid=False, twin=ax_r, twin_ylabel='Mean Prediction MAE')
     _save(fig, 'fig08_model_divergence.pdf')
 
-    # Panels from federated_pinn_evcs_actual_outputs.png  (figures 09-14)
+
     if not actual_evcs_data:
         print("  (No actual EVCS data — skipping figures 09–14)")
         return
@@ -1294,9 +1218,9 @@ def save_publication_subplots(
     soc_fine  = np.linspace(0.10, params_ev.disconnect_soc, 200)
     ocv_fine  = (params_ev.min_voltage
                  + soc_fine * (params_ev.max_voltage - params_ev.min_voltage))
-    vterm_fine = ocv_fine - params_ev.rated_current * 0.1   # I·R drop at full CC
+    vterm_fine = ocv_fine - params_ev.rated_current * 0.1
 
-    # ── Fig 09: Terminal voltage vs time ─────────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
@@ -1310,7 +1234,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Time (h)', ylabel='Terminal Voltage (V)', legend=True, grid=True)
     _save(fig, 'fig09_actual_voltage_vs_time.pdf')
 
-    # ── Fig 10: Terminal voltage vs SOC ──────────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
@@ -1318,13 +1242,13 @@ def save_publication_subplots(
                 ls=styles[sys_id - 1], lw=4, label=f'Sys {sys_id}')
     ax.plot(soc_fine, ocv_fine,   'k--', lw=4, label='OCV (no load)')
     ax.plot(soc_fine, vterm_fine, 'k:',  lw=4, label='V_term @ I_rated')
-    ax.axvline(0.8, color='grey', ls='-.', lw=4, label='CC→CV  (SOC=0.8)')
+    ax.axvline(0.8, color='grey', ls='-.', lw=4, label='CCCV  (SOC=0.8)')
     ax.axhline(params_ev.min_voltage, color='grey', ls=':', lw=4)
     ax.axhline(params_ev.max_voltage, color='grey', ls=':', lw=4)
     _fmt(ax, xlabel='SOC', ylabel='Terminal Voltage (V)', legend=True, grid=True)
     _save(fig, 'fig10_actual_voltage_vs_soc.pdf')
 
-    # ── Fig 11: Charging current vs time ─────────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
@@ -1338,19 +1262,19 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Time (h)', ylabel='Current (A)', legend=True, grid=True)
     _save(fig, 'fig11_actual_current_vs_time.pdf')
 
-    # ── Fig 12: Charging current vs SOC ──────────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
         ax.plot(d['soc'], d['i'], color=SYSTEM_COLORS[sys_id - 1],
                 ls=styles[sys_id - 1], lw=4, label=f'Sys {sys_id}')
-    ax.axvline(0.8, color='grey', ls='-.', lw=4, label='CC→CV  (SOC=0.8)')
+    ax.axvline(0.8, color='grey', ls='-.', lw=4, label='CCCV  (SOC=0.8)')
     ax.axhline(params_ev.min_current, color='grey', ls=':', lw=4)
     ax.axhline(params_ev.max_current, color='grey', ls=':', lw=4)
     _fmt(ax, xlabel='SOC', ylabel='Current (A)', legend=True, grid=True)
     _save(fig, 'fig12_actual_current_vs_soc.pdf')
 
-    # ── Fig 13: DC power (solid) & AC grid power (dashed) vs time ────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
@@ -1367,7 +1291,7 @@ def save_publication_subplots(
     _fmt(ax, xlabel='Time (h)', ylabel='Power (kW)', legend=True, grid=True)
     _save(fig, 'fig13_actual_power_vs_time.pdf')
 
-    # ── Fig 14: System efficiency vs SOC ─────────────────────────────────────
+
     fig, ax = plt.subplots(figsize=FIG)
     for sys_id in range(1, NUM_SYSTEMS + 1):
         d = actual_evcs_data[sys_id]
@@ -1382,8 +1306,6 @@ def save_publication_subplots(
     print(f"\n  14 PDF sub-figures saved in '{out_dir}/'")
 
 
-# Main
-
 def main():
     t0 = time.time()
     print("="*70)
@@ -1391,47 +1313,46 @@ def main():
     print("  " + datetime.now().strftime("%Y-%m-%d  %H:%M:%S"))
     print("="*70)
 
-    # ── 1. Load models ───────────────────────────────────────────────────────
+
     manager, loaded_ok = load_federated_models()
 
-    # ── 2. Fresh training + write back into manager ──────────────────────────
 
     train_histories = extract_training_curves(manager, n_samples=600, n_epochs=120)
 
-    # ── 3. Test performance ──────────────────────────────────────────────────
+
     test_metrics = evaluate_test_performance(manager, n_test=400)
 
-    # ── 4. EVCS output dynamics (PINN references) ────────────────────────────
+
     evcs_outputs = evaluate_evcs_outputs(manager)
 
-    # ── 4b. Actual EVCS physical outputs from converter dynamics ─────────────
+
     actual_evcs_data = plot_actual_evcs_outputs(manager)
 
-    # ── 5. Anomaly detection ─────────────────────────────────────────────────
+
     anomaly_results = evaluate_anomaly_detection(manager)
 
-    # ── 6. Local vs global comparison ────────────────────────────────────────
+
     lglobal_compare = compare_local_vs_global(manager, n_test=200)
 
-    # ── 7. Plots ─────────────────────────────────────────────────────────────
+
     generate_all_plots(
         train_histories, test_metrics, evcs_outputs,
         anomaly_results, lglobal_compare,
     )
 
-    # ── 8. Metrics report ────────────────────────────────────────────────────
+
     build_metrics_report(
         test_metrics, evcs_outputs, anomaly_results, lglobal_compare,
     )
 
-    # ── 9. Publication sub-figures ────────────────────────────────────────────
+
     save_publication_subplots(
         train_histories, test_metrics, evcs_outputs,
         anomaly_results, lglobal_compare, actual_evcs_data,
     )
 
     elapsed = time.time() - t0
-    print(f"\n🏁 Evaluation complete in {elapsed:.1f} s")
+    print(f"\n Evaluation complete in {elapsed:.1f} s")
     print("   Outputs:")
     print("   • federated_pinn_evaluation_plots.png")
     print("   • federated_pinn_evcs_actual_outputs.png")

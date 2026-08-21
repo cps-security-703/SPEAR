@@ -1,7 +1,4 @@
-"""
-Visualize RAG vs Non-RAG Confidence Scoring Results
-Reads top_rl_actions_for_simulation_v2.json and generates publication-quality plots.
-"""
+
 
 import json
 import numpy as np
@@ -9,12 +6,12 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
 
-# ── Configuration ──────────────────────────────────────────────────────────────
+
 INPUT_FILE = "top_rl_actions_for_simulation.json"
 OUTPUT_DIR = Path("plots")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Color palette
+
 RAG_COLOR = "#2196F3"
 NON_RAG_COLOR = "#FF5722"
 COMPONENT_COLORS = {
@@ -52,7 +49,6 @@ def load_data(filepath):
         return json.load(f)
 
 
-# ── Plot 1: RAG vs Non-RAG Total Confidence (Grouped Bar) ─────────────────────
 def plot_total_confidence(data, save=True):
     results = data["all_results"]
     query_ids = [r["query_id"].replace("_", "\n", 1) for r in results]
@@ -66,7 +62,7 @@ def plot_total_confidence(data, save=True):
     bars_rag = ax.bar(x - width / 2, rag_scores, width, label="RAG", color=RAG_COLOR, edgecolor="white", linewidth=1)
     bars_non = ax.bar(x + width / 2, non_rag_scores, width, label="Non-RAG", color=NON_RAG_COLOR, edgecolor="white", linewidth=1)
 
-    # Add value labels on bars
+
     for bar in bars_rag:
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.8,
                 f"{bar.get_height():.0f}", ha="center", va="bottom", fontsize=14, fontweight="bold", color=RAG_COLOR)
@@ -76,18 +72,18 @@ def plot_total_confidence(data, save=True):
 
     ax.set_xlabel("Query", fontsize=18)
     ax.set_ylabel("Confidence Score", fontsize=18)
-    # ax.set_title("RAG vs Non-RAG: Total Confidence Score per Query")
+
     ax.set_xticks(x)
     ax.tick_params(axis='y', labelsize=18)
     ax.set_xticklabels(query_ids, rotation=45, ha="right", fontsize=12)
     ax.set_ylim(0, max(max(rag_scores), max(non_rag_scores)) + 12)
-    
-    # Add average lines with labels in legend
+
+
     rag_avg_line = ax.axhline(y=data["summary"]["avg_confidence"]["rag"], color=RAG_COLOR, linestyle="--", alpha=0.5, linewidth=1,
                                label=f'RAG avg: {data["summary"]["avg_confidence"]["rag"]:.1f}')
     non_rag_avg_line = ax.axhline(y=data["summary"]["avg_confidence"]["non_rag"], color=NON_RAG_COLOR, linestyle="--", alpha=0.5, linewidth=1,
                                    label=f'Non-RAG avg: {data["summary"]["avg_confidence"]["non_rag"]:.1f}')
-    
+
     ax.legend(loc=  "lower right", fontsize=12)
 
     plt.tight_layout()
@@ -97,7 +93,6 @@ def plot_total_confidence(data, save=True):
     plt.show()
 
 
-# ── Plot 2: Confidence Advantage (Lollipop Chart) ─────────────────────────────
 def plot_confidence_advantage(data, save=True):
     results = data["all_results"]
     query_ids = [r["query_id"] for r in results]
@@ -106,7 +101,7 @@ def plot_confidence_advantage(data, save=True):
         for r in results
     ]
 
-    # Sort by advantage
+
     sorted_pairs = sorted(zip(query_ids, advantages), key=lambda x: x[1])
     query_ids_sorted, advantages_sorted = zip(*sorted_pairs)
 
@@ -120,7 +115,7 @@ def plot_confidence_advantage(data, save=True):
     ax.set_yticks(y)
     ax.set_yticklabels(query_ids_sorted, fontsize=15)
     ax.set_xlabel("Confidence Advantage (RAG − Non-RAG)", fontsize=15, fontweight="bold")
-    # ax.set_title("RAG Confidence Advantage per Query")
+
     ax.axvline(x=0, color="gray", linestyle="-", linewidth=0.8)
 
     avg_adv = data["summary"]["avg_confidence"]["advantage"]
@@ -137,12 +132,11 @@ def plot_confidence_advantage(data, save=True):
     plt.show()
 
 
-# ── Plot 3: Component Breakdown (Stacked Bar - RAG vs Non-RAG side by side) ───
 def plot_component_breakdown(data, save=True):
     results = data["all_results"]
     components = ["cve_score", "mitre_score", "rl_action_score", "protocol_score", "context_score", "structure_score"]
 
-    # Average components across all queries
+
     rag_avg = {c: np.mean([r["rag"]["confidence"]["components"][c] for r in results]) for c in components}
     non_rag_avg = {c: np.mean([r["non_rag"]["confidence"]["components"][c] for r in results]) for c in components}
     rag_penalty = np.mean([r["rag"]["confidence"]["components"]["hallucination_penalty"] for r in results])
@@ -150,7 +144,7 @@ def plot_component_breakdown(data, save=True):
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
-    # Left: Stacked bar for RAG and Non-RAG averages
+
     categories = ["RAG", "Non-RAG"]
     bottoms = [0, 0]
     for comp in components:
@@ -162,7 +156,7 @@ def plot_component_breakdown(data, save=True):
                 axes[0].text(i, b + v / 2, f"{v:.1f}", ha="center", va="center", fontsize=8, fontweight="bold", color="white")
         bottoms = [b + v for b, v in zip(bottoms, vals)]
 
-    # Add penalty as negative bar
+
     penalty_vals = [rag_penalty, non_rag_penalty]
     axes[0].bar(categories, penalty_vals, bottom=0, label=COMPONENT_LABELS["hallucination_penalty"],
                 color=COMPONENT_COLORS["hallucination_penalty"], edgecolor="white", linewidth=0.5, alpha=0.7)
@@ -171,11 +165,11 @@ def plot_component_breakdown(data, save=True):
             axes[0].text(i, v / 2, f"{v:.1f}", ha="center", va="center", fontsize=8, fontweight="bold", color="white")
 
     axes[0].set_ylabel("Score Points")
-    # axes[0].set_title("Average Score Component Breakdown")
+
     axes[0].legend(loc="upper right", fontsize=8)
     axes[0].axhline(y=0, color="black", linewidth=0.5)
 
-    # Right: Per-query component heatmap for RAG
+
     query_ids = [r["query_id"] for r in results]
     all_components = components + ["hallucination_penalty"]
     matrix = np.array([
@@ -188,9 +182,8 @@ def plot_component_breakdown(data, save=True):
     axes[1].set_xticklabels([q.split("_", 1)[0] for q in query_ids], rotation=45, ha="right", fontsize=18)
     axes[1].set_yticks(range(len(all_components)))
     axes[1].set_yticklabels([COMPONENT_LABELS[c] for c in all_components], fontsize=18)
-    # axes[1].set_title("RAG Component Scores per Query (Heatmap)")
 
-    # Add text annotations
+
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             val = matrix[i, j]
@@ -204,13 +197,12 @@ def plot_component_breakdown(data, save=True):
     plt.show()
 
 
-# ── Plot 4: Radar Chart (Average Component Comparison) ────────────────────────
 def plot_radar_comparison(data, save=True):
     results = data["all_results"]
     components = ["cve_score", "mitre_score", "rl_action_score", "protocol_score", "context_score", "structure_score"]
     max_scores = {"cve_score": 25, "mitre_score": 20, "rl_action_score": 15, "protocol_score": 10, "context_score": 20, "structure_score": 5}
 
-    # Normalize to percentage of max
+
     rag_vals = [np.mean([r["rag"]["confidence"]["components"][c] for r in results]) / max_scores[c] * 100 for c in components]
     non_rag_vals = [np.mean([r["non_rag"]["confidence"]["components"][c] for r in results]) / max_scores[c] * 100 for c in components]
 
@@ -233,7 +225,7 @@ def plot_radar_comparison(data, save=True):
     ax.set_ylim(0, 110)
     ax.set_yticks([25, 50, 75, 100])
     ax.set_yticklabels(["25%", "50%", "75%", "100%"], fontsize=18, color="gray")
-    # ax.set_title("RAG vs Non-RAG: Normalized Component Scores (%)", pad=20)
+
     ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
 
     plt.tight_layout()
@@ -243,7 +235,6 @@ def plot_radar_comparison(data, save=True):
     plt.show()
 
 
-# ── Plot 5: Hallucination Analysis ────────────────────────────────────────────
 def plot_hallucination_analysis(data, save=True):
     results = data["all_results"]
     query_ids = [r["query_id"] for r in results]
@@ -258,15 +249,15 @@ def plot_hallucination_analysis(data, save=True):
     total_rag_halluc = sum(rag_unverified)
     total_non_rag_halluc = sum(non_rag_unverified)
 
-    # ── Figure A: RAG CVE breakdown ──────────────────────────────────────────────
+
     fig_a, ax_a = plt.subplots(figsize=(10, 8))
     ax_a.bar(x, rag_verified, width, label="Verified CVEs", color="#4CAF50", edgecolor="white")
     ax_a.bar(x, rag_unverified, width, bottom=rag_verified, label="Unverified (Hallucinated)", color="#F44336", edgecolor="white")
     ax_a.set_xticks(x)
     ax_a.set_xticklabels([q.split("_", 1)[0] for q in query_ids], rotation=45, ha="right", fontsize=24)
     ax_a.set_ylabel("Number of CVEs", fontsize=24)
-    
-    # Add empty plot for total hallucinated in legend
+
+
     ax_a.plot([], [], ' ', label=f"Total hallucinated: {total_rag_halluc}")
     ax_a.legend(fontsize=24, loc="upper right")
     fig_a.tight_layout()
@@ -275,15 +266,15 @@ def plot_hallucination_analysis(data, save=True):
         fig_a.savefig(OUTPUT_DIR / "5a_hallucination_rag.pdf", bbox_inches="tight")
     plt.show()
 
-    # ── Figure B: Non-RAG CVE breakdown ─────────────────────────────────────────
+
     fig_b, ax_b = plt.subplots(figsize=(10, 8))
     ax_b.bar(x, non_rag_verified, width, label="Verified CVEs", color="#4CAF50", edgecolor="white")
     ax_b.bar(x, non_rag_unverified, width, bottom=non_rag_verified, label="Unverified (Hallucinated)", color="#F44336", edgecolor="white")
     ax_b.set_xticks(x)
     ax_b.set_xticklabels([q.split("_", 1)[0] for q in query_ids], rotation=45, ha="right", fontsize=24)
     ax_b.set_ylabel("Number of CVEs", fontsize=24)
-    
-    # Add empty plot for total hallucinated in legend
+
+
     ax_b.plot([], [], ' ', label=f"Total hallucinated: {total_non_rag_halluc}")
     ax_b.legend(fontsize=24, loc="upper right")
     fig_b.tight_layout()
@@ -293,7 +284,6 @@ def plot_hallucination_analysis(data, save=True):
     plt.show()
 
 
-# ── Plot 6: Top Selected Actions Summary ──────────────────────────────────────
 def plot_top_actions(data, save=True):
     top_actions = data.get("top_rl_actions", [])
     if not top_actions:
@@ -302,7 +292,7 @@ def plot_top_actions(data, save=True):
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Left: Confidence scores of top actions
+
     action_labels = [f"Action {i+1}\n({a['query_id']})" for i, a in enumerate(top_actions)]
     confidences = [a["confidence_score"] for a in top_actions]
     colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(top_actions)))
@@ -312,11 +302,11 @@ def plot_top_actions(data, save=True):
         axes[0].text(bar.get_width() + 0.5, bar.get_y() + bar.get_height() / 2,
                      f"{conf:.0f}", va="center", fontsize=18, fontweight="bold")
     axes[0].set_xlabel("Confidence Score", fontsize=18)
-    # axes[0].set_title("Top 6 Selected RL Actions")
+
     axes[0].set_xlim(0, max(confidences) + 10)
     axes[0].invert_yaxis()
 
-    # Right: STRIDE and Protocol coverage pie charts
+
     stride_cats = {}
     protocol_cats = {}
     for a in top_actions:
@@ -325,7 +315,7 @@ def plot_top_actions(data, save=True):
         for p in a.get("protocols", []):
             protocol_cats[p] = protocol_cats.get(p, 0) + 1
 
-    # STRIDE coverage
+
     if stride_cats:
         stride_colors = plt.cm.Set2(np.linspace(0, 1, len(stride_cats)))
         wedges, texts, autotexts = axes[1].pie(
@@ -334,9 +324,8 @@ def plot_top_actions(data, save=True):
         )
         centre_circle = plt.Circle((0, 0), 0.55, fc="white")
         axes[1].add_artist(centre_circle)
-        # axes[1].set_title("STRIDE Category Coverage\n(Top Actions)")
 
-        # Protocol coverage as text inside donut
+
         proto_text = "Protocols:\n" + "\n".join(f"  {p} ({c})" for p, c in protocol_cats.items())
         axes[1].text(0, 0, proto_text, ha="center", va="center", fontsize=7, fontweight="bold")
 
@@ -346,15 +335,13 @@ def plot_top_actions(data, save=True):
     plt.show()
 
 
-# ── Plot 7: Summary Dashboard ─────────────────────────────────────────────────
 def plot_summary_dashboard(data, save=True):
     summary = data["summary"]
     results = data["all_results"]
 
     fig = plt.figure(figsize=(16, 10))
-    # fig.suptitle("Confidence-Based RL Action Selection — Evaluation Dashboard", fontsize=16, fontweight="bold", y=0.98)
 
-    # Metric cards at top
+
     ax_cards = fig.add_axes([0.05, 0.85, 0.9, 0.1])
     ax_cards.axis("off")
     metrics = [
@@ -369,7 +356,7 @@ def plot_summary_dashboard(data, save=True):
         ax_cards.text(x_pos, 0.7, value, fontsize=20, fontweight="bold", color=color, ha="center", va="center")
         ax_cards.text(x_pos, 0.15, label, fontsize=10, color="gray", ha="center", va="center")
 
-    # Bottom left: Grouped bar
+
     ax1 = fig.add_axes([0.06, 0.08, 0.55, 0.7])
     query_ids = [r["query_id"].replace("_", "\n", 1) for r in results]
     rag_scores = [r["rag"]["confidence"]["total_confidence"] for r in results]
@@ -381,10 +368,10 @@ def plot_summary_dashboard(data, save=True):
     ax1.set_xticks(x)
     ax1.set_xticklabels(query_ids, rotation=45, ha="right", fontsize=18)
     ax1.set_ylabel("Confidence Score", fontsize=18)
-    # ax1.set_title("Per-Query Confidence Comparison", fontsize=11)
+
     ax1.legend(fontsize=18)
 
-    # Bottom right: Radar
+
     components = ["cve_score", "mitre_score", "rl_action_score", "protocol_score", "context_score", "structure_score"]
     max_scores = {"cve_score": 25, "mitre_score": 20, "rl_action_score": 15, "protocol_score": 10, "context_score": 20, "structure_score": 5}
     rag_vals = [np.mean([r["rag"]["confidence"]["components"][c] for r in results]) / max_scores[c] * 100 for c in components]
@@ -406,7 +393,7 @@ def plot_summary_dashboard(data, save=True):
     ax2.set_ylim(0, 110)
     ax2.set_yticks([25, 50, 75, 100])
     ax2.set_yticklabels(["25%", "50%", "75%", "100%"], fontsize=18, color="gray")
-    # ax2.set_title("Normalized Components", fontsize=11, pad=15)
+
     ax2.legend(fontsize=18, loc="upper right", bbox_to_anchor=(1.3, 1.1))
 
     if save:
@@ -414,7 +401,6 @@ def plot_summary_dashboard(data, save=True):
     plt.show()
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     print(f"Loading data from {INPUT_FILE}...")
     data = load_data(INPUT_FILE)

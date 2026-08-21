@@ -3,7 +3,6 @@
 
 import os, sys, time, warnings, math, pickle, json
 warnings.filterwarnings("ignore")
-os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 
 import numpy as np
 import pandas as pd
@@ -15,7 +14,7 @@ from matplotlib.patches import Patch
 
 import torch
 import torch.nn as nn
-from sklearn.ensemble     import RandomForestClassifier, IsolationForest, GradientBoostingClassifier, ExtraTreesClassifier
+from sklearn.ensemble     import RandomForestClassifier, IsolationForest
 from sklearn.svm          import SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
@@ -24,6 +23,20 @@ from sklearn.metrics       import (
     confusion_matrix, classification_report, f1_score, precision_score, recall_score,
 )
 from sklearn.calibration import CalibratedClassifierCV
+
+try:
+    import xgboost as xgb
+    XGB_AVAILABLE = True
+except ImportError:
+    XGB_AVAILABLE = False
+    print("  xgboost not installed — XGBoost will be skipped.")
+
+try:
+    import lightgbm as lgb
+    LGB_AVAILABLE = True
+except ImportError:
+    LGB_AVAILABLE = False
+    print("  lightgbm not installed — LightGBM will be skipped.")
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +60,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 SEQ_LEN       = 10
 FEATURE_DIM   = 14
-N_SAMPLES     = 8000
+N_SAMPLES     = 6000
 ATTACK_RATIO  = 0.50
 RANDOM_STATE  = 42
 DEVICE        = torch.device("cpu")
@@ -56,15 +69,6 @@ DEVICE        = torch.device("cpu")
 from ids_neural_models import (          # noqa: E402
     LSTMIDSBenchmark, TransformerIDS, TransformerIDSWrapper, AutoencoderIDS,
 )
-
-
-IDS_ALPHA       = 0.35
-IDS_BETA        = 0.25
-IDS_GAMMA       = 0.25
-IDS_DELTA       = 0.15
-
-
-TARGET_RECALL   = 0.87
 
 
 ATK_TYPE_NAMES = {
@@ -84,15 +88,15 @@ def atk_name(code) -> str:
     return str(code).replace("_", " ")
 
 PALETTE = {
-    "LSTM-IDS":            "#00897B",
-    "Random Forest":       "#3498db",
-    "Gradient Boosting":   "#e74c3c",
-    "SVM-RBF":             "#9b59b6",
-    "MLP":                 "#f39c12",
-    "Isolation Forest":    "#7f8c8d",
-    "Extra Trees":         "#27ae60",
-    "Transformer IDS":     "#8e44ad",
-    "Autoencoder IDS":     "#d35400",
+    "LSTM-IDS":         "#00897B",
+    "Random Forest":    "#3498db",
+    "XGBoost":          "#e74c3c",
+    "SVM-RBF":          "#9b59b6",
+    "MLP":              "#f39c12",
+    "Isolation Forest": "#7f8c8d",
+    "LightGBM":         "#27ae60",
+    "Transformer IDS":  "#8e44ad",
+    "Autoencoder IDS":  "#d35400",
 }
 
 
@@ -121,50 +125,41 @@ def _evcs_features_14d(sess_row: dict, system_id: int = 1,
 def _inject_fdi_14d(feat: np.ndarray, attack_type: int,
                      step_frac: float = 1.0) -> np.ndarray:
 
-    f          = feat.copy()
-
-
-    eff_frac   = max(step_frac, 0.25)
-    mag        = (np.random.uniform(0.42, 0.62) + 0.18 * eff_frac) * eff_frac
+    f   = feat.copy()
+    mag = (np.random.uniform(0.35, 0.55) + 0.20 * step_frac) * step_frac
 
     if attack_type == 0:
-        f[7]  = float(np.clip(f[7]  - mag * 0.45, 0.70, 1.30))
-        f[11] = float(np.clip(f[11] + mag * 0.35, 0.00, 2.00))
-        f[3]  = float(np.clip(f[3]  + mag * 0.30, 0.00, 2.00))
-        f[1]  = float(np.clip(f[1]  - mag * 0.20, 0.00, 2.00))
+        f[7]  = float(np.clip(f[7]  - mag * 0.35, 0.7, 1.3))
+        f[11] = float(np.clip(f[11] + mag * 0.20, 0.0, 2.0))
+        f[3]  = float(np.clip(f[3]  + mag * 0.20, 0.0, 2.0))
 
     elif attack_type == 1:
-        f[2]  = float(np.clip(f[2]  + mag * 0.55, 0.00, 2.00))
-        f[5]  = float(np.clip(f[5]  + mag * 0.50, 0.00, 2.00))
-        f[6]  = float(np.clip(f[6]  + mag * 0.48, 0.00, 2.00))
-        f[11] = float(np.clip(f[11] + mag * 0.30, 0.00, 2.00))
-        f[3]  = float(np.clip(f[3]  + mag * 0.25, 0.00, 2.00))
+        f[2]  = float(np.clip(f[2]  + mag * 0.45, 0.0, 2.0))
+        f[5]  = float(np.clip(f[5]  + mag * 0.45, 0.0, 2.0))
+        f[6]  = float(np.clip(f[6]  + mag * 0.40, 0.0, 2.0))
+        f[11] = float(np.clip(f[11] + mag * 0.20, 0.0, 2.0))
 
     elif attack_type == 2:
-        f[3]  = float(np.clip(f[3]  - mag * 1.00, 0.00, 1.00))
-        f[5]  = float(np.clip(f[5]  - mag * 0.95, 0.00, 1.00))
-        f[6]  = float(np.clip(f[6]  - mag * 0.95, 0.00, 1.00))
-        f[10] = float(np.clip(f[10] - mag * 0.45, 0.00, 1.00))
+        f[3]  = float(np.clip(f[3]  - mag * 0.90, 0.0, 1.0))
+        f[5]  = float(np.clip(f[5]  - mag * 0.90, 0.0, 1.0))
+        f[6]  = float(np.clip(f[6]  - mag * 0.90, 0.0, 1.0))
 
     elif attack_type == 3:
-        f[0]  = float(np.clip(f[0]  - mag * 0.80, 0.00, 1.00))
-        f[11] = float(np.clip(f[11] + mag * 0.55, 0.00, 2.00))
-        f[2]  = float(np.clip(f[2]  + mag * 0.40, 0.00, 2.00))
-        f[9]  = float(np.clip(f[9]  + mag * 0.30, 0.00, 2.00))
+        f[0]  = float(np.clip(f[0]  - mag * 0.70, 0.0, 1.0))
+        f[11] = float(np.clip(f[11] + mag * 0.40, 0.0, 2.0))
+        f[2]  = float(np.clip(f[2]  + mag * 0.30, 0.0, 2.0))
 
     elif attack_type == 4:
-        f[8]  = float(np.clip(f[8]  + mag * 0.18, 0.87, 1.13))
-        f[5]  = float(np.clip(f[5]  + mag * 0.40, 0.00, 2.00))
-        f[7]  = float(np.clip(f[7]  - mag * 0.30, 0.70, 1.30))
-        f[6]  = float(np.clip(f[6]  + mag * 0.25, 0.00, 2.00))
+        f[8]  = float(np.clip(f[8]  + mag * 0.15, 0.88, 1.12))
+        f[5]  = float(np.clip(f[5]  + mag * 0.30, 0.0, 2.0))
+        f[7]  = float(np.clip(f[7]  - mag * 0.20, 0.7,  1.3))
 
     elif attack_type == 5:
         phase = step_frac * np.pi * 2.0
-        osc   = np.sin(phase) * mag * 0.25
-        f[5]  = float(np.clip(f[5]  + osc * 22.0, 0.00, 2.00))
-        f[7]  = float(np.clip(f[7]  - mag * 0.30, 0.70, 1.30))
-        f[3]  = float(np.clip(f[3]  + osc * 14.0, 0.00, 2.00))
-        f[2]  = float(np.clip(f[2]  + osc *  8.0, 0.00, 2.00))
+        osc   = np.sin(phase) * mag * 0.20
+        f[5]  = float(np.clip(f[5]  + osc * 20.0, 0.0, 2.0))
+        f[7]  = float(np.clip(f[7]  - mag * 0.20, 0.7, 1.3))
+        f[3]  = float(np.clip(f[3]  + osc * 12.0, 0.0, 2.0))
 
     return f
 
@@ -177,10 +172,8 @@ def build_dataset(n_samples: int = N_SAMPLES, attack_ratio: float = ATTACK_RATIO
     loader.load_from_dirs(SITES)
     sessions = getattr(loader, 'sessions', None) or getattr(loader, '_sessions', [])
     if not sessions:
-        raise RuntimeError("ACNDataLoader returned no sessions - check ACN data path.")
-    print(f"  Loaded {len(sessions)} real ACN sessions for IDS training")
+        raise RuntimeError("ACNDataLoader returned no sessions — check ACN data path.")
     rng = np.random.RandomState(RANDOM_STATE)
-    rng_np = np.random.default_rng(RANDOM_STATE)
 
     n_benign = int(n_samples * (1 - attack_ratio))
     n_attack = n_samples - n_benign
@@ -188,16 +181,33 @@ def build_dataset(n_samples: int = N_SAMPLES, attack_ratio: float = ATTACK_RATIO
 
 
     benign_seqs = []
-    skip_count = 0
-    while len(benign_seqs) < n_benign:
-        sys_id = int(rng.randint(1, 7))
-        window = loader.sample_benign_window(SEQ_LEN, system_id=sys_id, rng=rng_np)
-        if window is None:
-            skip_count += 1
-            if skip_count > 100:
-                raise RuntimeError("ACNDataLoader could not sample any benign window")
-            continue
-        seq = [_evcs_features_14d(s, system_id=sys_id) for s in window]
+    for _ in range(n_benign):
+
+        sess = sessions[rng.randint(len(sessions))]
+
+        base_soc      = rng.uniform(0.10, 0.80)
+        base_power    = rng.uniform(0.10, 0.80)
+        sys_id        = rng.randint(1, 7)
+        seq = []
+        for t in range(SEQ_LEN):
+            soc_t   = float(np.clip(base_soc + t * 0.01, 0, 1))
+            pwr_t   = float(np.clip(base_power - t * 0.005, 0, 1))
+            feat = _evcs_features_14d({
+                'soc':            soc_t,
+                'voltage':        rng.uniform(220, 260),
+                'current':        rng.uniform(6, 32),
+                'power':          pwr_t * 7.68,
+                'temperature':    rng.uniform(20, 35),
+                'demand_factor':  rng.uniform(0.4, 0.9),
+                'load_factor':    rng.uniform(0.4, 0.9),
+                'grid_voltage':   rng.uniform(0.97, 1.03),
+                'grid_frequency': rng.uniform(59.9, 60.1),
+                'queue_length':   rng.randint(1, 8),
+                'utilization':    rng.uniform(0.4, 0.9),
+                'urgency_factor': rng.uniform(0.5, 1.5),
+                'time_of_day':    rng.uniform(0, 24),
+            }, system_id=sys_id)
+            seq.append(feat)
         benign_seqs.append(np.stack(seq))
     benign_seqs = np.stack(benign_seqs).astype(np.float32)
     print(f"  Benign sequences: {n_benign} \u00d7 [{SEQ_LEN}, {FEATURE_DIM}]")
@@ -205,16 +215,32 @@ def build_dataset(n_samples: int = N_SAMPLES, attack_ratio: float = ATTACK_RATIO
 
     attack_seqs  = []
     attack_types = []
-    while len(attack_seqs) < n_attack:
-        atype = int(rng.choice(ATK_TYPES))
-        sys_id = int(rng.randint(1, 7))
-        window = loader.sample_benign_window(SEQ_LEN, system_id=sys_id, rng=rng_np)
-        if window is None:
-            continue
-        inject_at = rng.randint(SEQ_LEN // 2, SEQ_LEN)
+    for _ in range(n_attack):
+        atype  = rng.choice(ATK_TYPES)
+
+        base_soc   = rng.uniform(0.10, 0.80)
+        base_power = rng.uniform(0.10, 0.80)
+        sys_id     = rng.randint(1, 7)
+        inject_at  = rng.randint(SEQ_LEN // 2, SEQ_LEN)
         seq = []
         for t in range(SEQ_LEN):
-            feat = _evcs_features_14d(window[t], system_id=sys_id)
+            soc_t   = float(np.clip(base_soc + t * 0.01, 0, 1))
+            pwr_t   = float(np.clip(base_power - t * 0.005, 0, 1))
+            feat = _evcs_features_14d({
+                'soc':            soc_t,
+                'voltage':        rng.uniform(220, 260),
+                'current':        rng.uniform(6, 32),
+                'power':          pwr_t * 7.68,
+                'temperature':    rng.uniform(20, 35),
+                'demand_factor':  rng.uniform(0.4, 0.9),
+                'load_factor':    rng.uniform(0.4, 0.9),
+                'grid_voltage':   rng.uniform(0.97, 1.03),
+                'grid_frequency': rng.uniform(59.9, 60.1),
+                'queue_length':   rng.randint(1, 8),
+                'utilization':    rng.uniform(0.4, 0.9),
+                'urgency_factor': rng.uniform(0.5, 1.5),
+                'time_of_day':    rng.uniform(0, 24),
+            }, system_id=sys_id)
             if t >= inject_at:
                 step_frac = (t - inject_at) / max(SEQ_LEN - inject_at - 1, 1)
                 feat = _inject_fdi_14d(feat, atype, step_frac=step_frac)
@@ -248,91 +274,6 @@ def train_test_split_manual(X_seq, X_flat, y, types, test_frac=0.20, seed=RANDOM
             X_flat[id_tr],  X_flat[id_ts],
             y[id_tr],       y[id_ts],
             types[id_tr],   types[id_ts])
-
-
-def _build_windows_from_sessions(loader, sessions, n_benign, n_attack,
-                                 rng, rng_np):
-
-    ATK_TYPES = list(range(6))
-    benign_seqs, attack_seqs, attack_types = [], [], []
-
-    skip = 0
-    while len(benign_seqs) < n_benign:
-        sys_id = int(rng.randint(1, 7))
-        window = loader.sample_benign_window(SEQ_LEN, system_id=sys_id,
-                                             rng=rng_np, sessions=sessions)
-        if window is None:
-            skip += 1
-            if skip > 200:
-                raise RuntimeError("Could not sample benign window from session subset")
-            continue
-        seq = [_evcs_features_14d(s, system_id=sys_id) for s in window]
-        benign_seqs.append(np.stack(seq))
-
-    while len(attack_seqs) < n_attack:
-        atype  = int(rng.choice(ATK_TYPES))
-        sys_id = int(rng.randint(1, 7))
-        window = loader.sample_benign_window(SEQ_LEN, system_id=sys_id,
-                                             rng=rng_np, sessions=sessions)
-        if window is None:
-            continue
-        inject_at = rng.randint(SEQ_LEN // 2, SEQ_LEN)
-        seq = []
-        for t in range(SEQ_LEN):
-            feat = _evcs_features_14d(window[t], system_id=sys_id)
-            if t >= inject_at:
-                step_frac = (t - inject_at) / max(SEQ_LEN - inject_at - 1, 1)
-                feat = _inject_fdi_14d(feat, atype, step_frac=step_frac)
-            seq.append(feat)
-        attack_seqs.append(np.stack(seq))
-        attack_types.append(ATK_TYPE_NAMES.get(atype, str(atype)))
-
-    X = np.concatenate([np.stack(benign_seqs), np.stack(attack_seqs)], axis=0).astype(np.float32)
-    y = np.concatenate([np.zeros(n_benign, int), np.ones(n_attack, int)])
-    types = np.concatenate([np.full(n_benign, "benign", dtype=object),
-                            np.array(attack_types, dtype=object)])
-    perm = rng.permutation(len(X))
-    X, y, types = X[perm], y[perm], types[perm]
-    return X, X.reshape(len(X), -1), y, types
-
-
-def build_dataset_session_split(n_samples: int = N_SAMPLES,
-                                attack_ratio: float = ATTACK_RATIO,
-                                test_frac: float = 0.20,
-                                seed: int = RANDOM_STATE):
-
-    print("  Loading ACN-Data sessions (SESSION-level split) …")
-    from acn_sim_interface import ACNDataLoader
-    loader = ACNDataLoader(ACN_DATA_ROOT)
-    loader.load_from_dirs(SITES)
-    sessions = getattr(loader, '_sessions', None) or getattr(loader, 'sessions', [])
-    if not sessions:
-        raise RuntimeError("ACNDataLoader returned no sessions - check ACN data path.")
-
-    rng    = np.random.RandomState(seed)
-    rng_np = np.random.default_rng(seed)
-
-
-    sess_idx = rng.permutation(len(sessions))
-    n_test_sess = max(1, int(len(sessions) * test_frac))
-    test_sessions  = [sessions[i] for i in sess_idx[:n_test_sess]]
-    train_sessions = [sessions[i] for i in sess_idx[n_test_sess:]]
-    print(f"  Sessions: {len(sessions)} total  {len(train_sessions)} train / "
-          f"{len(test_sessions)} test (disjoint)")
-
-    n_test    = int(n_samples * test_frac)
-    n_train   = n_samples - n_test
-    nb_tr = int(n_train * (1 - attack_ratio)); na_tr = n_train - nb_tr
-    nb_ts = int(n_test  * (1 - attack_ratio)); na_ts = n_test  - nb_ts
-
-    X_seq_tr, X_flat_tr, y_tr, types_tr = _build_windows_from_sessions(
-        loader, train_sessions, nb_tr, na_tr, rng, rng_np)
-    X_seq_ts, X_flat_ts, y_ts, types_ts = _build_windows_from_sessions(
-        loader, test_sessions,  nb_ts, na_ts, rng, rng_np)
-    print(f"  Train: {len(X_seq_tr)} ({int(y_tr.sum())} atk)  "
-          f"Test: {len(X_seq_ts)} ({int(y_ts.sum())} atk)")
-    return (X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
-            y_tr, y_ts, types_tr, types_ts)
 
 
 def train_lstm_ids(X_tr_seq, y_tr, epochs=100, lr=3e-4, batch=256):
@@ -531,19 +472,23 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     print(f"    Latency: {lat_rf:.4f} ms/sample")
 
 
-    print("\n  [Gradient Boosting]")
-    gb_clf = GradientBoostingClassifier(
-        n_estimators=200, max_depth=6, learning_rate=0.05,
-        subsample=0.8, min_samples_leaf=10,
-        random_state=RANDOM_STATE,
-    )
-    gb_clf.fit(Xf_tr_s, y_tr)
-    t0 = time.perf_counter()
-    proba_gb = gb_clf.predict_proba(Xf_ts_s)[:, 1]
-    lat_gb   = (time.perf_counter() - t0) / len(Xf_ts_s) * 1000
-    results["Gradient Boosting"] = {"proba": proba_gb, "latency_ms": lat_gb}
-    _trained_models["Gradient Boosting"] = gb_clf
-    print(f"    Latency: {lat_gb:.4f} ms/sample")
+    if XGB_AVAILABLE:
+        print("\n  [XGBoost]")
+        scale_pos = int((1 - ATTACK_RATIO) / max(ATTACK_RATIO, 1e-6))
+        xgb_clf = xgb.XGBClassifier(
+            n_estimators=300, max_depth=8, learning_rate=0.05,
+            subsample=0.8, colsample_bytree=0.8,
+            scale_pos_weight=scale_pos,
+            use_label_encoder=False, eval_metric="logloss",
+            random_state=RANDOM_STATE, n_jobs=-1, verbosity=0,
+        )
+        xgb_clf.fit(Xf_tr_s, y_tr)
+        t0 = time.perf_counter()
+        proba_xgb = xgb_clf.predict_proba(Xf_ts_s)[:, 1]
+        lat_xgb   = (time.perf_counter() - t0) / len(Xf_ts_s) * 1000
+        results["XGBoost"] = {"proba": proba_xgb, "latency_ms": lat_xgb}
+        _trained_models["XGBoost"] = xgb_clf
+        print(f"    Latency: {lat_xgb:.4f} ms/sample")
 
 
     print("\n  [SVM-RBF]")
@@ -587,19 +532,24 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
     print(f"    Latency: {lat_iso:.4f} ms/sample")
 
 
-    print("\n  [Extra Trees]")
-    et_clf = ExtraTreesClassifier(
-        n_estimators=300, max_depth=20,
-        class_weight="balanced",
-        random_state=RANDOM_STATE, n_jobs=-1,
-    )
-    et_clf.fit(Xf_tr_s, y_tr)
-    t0 = time.perf_counter()
-    proba_et = et_clf.predict_proba(Xf_ts_s)[:, 1]
-    lat_et   = (time.perf_counter() - t0) / len(Xf_ts_s) * 1000
-    results["Extra Trees"] = {"proba": proba_et, "latency_ms": lat_et}
-    _trained_models["Extra Trees"] = et_clf
-    print(f"    Latency: {lat_et:.4f} ms/sample")
+    if LGB_AVAILABLE:
+        print("\n  [LightGBM]")
+        lgb_clf = lgb.LGBMClassifier(
+            n_estimators=500, max_depth=8, learning_rate=0.05,
+            num_leaves=63, subsample=0.8, colsample_bytree=0.8,
+            class_weight="balanced",
+            random_state=RANDOM_STATE, n_jobs=-1, verbose=-1,
+        )
+        lgb_clf.fit(Xf_tr_s, y_tr,
+                    eval_set=[(Xf_ts_s, y_ts)],
+                    callbacks=[lgb.early_stopping(30, verbose=False),
+                               lgb.log_evaluation(period=-1)])
+        t0 = time.perf_counter()
+        proba_lgb = lgb_clf.predict_proba(Xf_ts_s)[:, 1]
+        lat_lgb   = (time.perf_counter() - t0) / len(Xf_ts_s) * 1000
+        results["LightGBM"] = {"proba": proba_lgb, "latency_ms": lat_lgb}
+        _trained_models["LightGBM"] = lgb_clf
+        print(f"    Latency: {lat_lgb:.4f} ms/sample")
 
 
     print("\n  [Transformer IDS]")
@@ -627,14 +577,13 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
 
     for name, r in results.items():
         proba  = r["proba"]
+
         fpr_c, tpr_c, thr_c = roc_curve(y_ts, proba)
+        j_scores   = tpr_c - fpr_c
+        best_idx   = int(np.argmax(j_scores))
+        opt_thr    = float(thr_c[best_idx]) if best_idx < len(thr_c) else 0.5
 
-
-        best_idx = int(np.argmax(tpr_c - fpr_c))
-        opt_thr  = float(thr_c[best_idx]) if best_idx < len(thr_c) else 0.5
-
-
-        opt_thr  = float(np.clip(opt_thr, 0.10, 0.99))
+        opt_thr    = float(np.clip(opt_thr, 0.10, 0.90))
         r["threshold"] = opt_thr
         y_pred  = (proba >= opt_thr).astype(int)
         r["y_pred"]     = y_pred
@@ -652,15 +601,10 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
         r["recall"]     = recall_score(y_ts, y_pred, zero_division=0)
         fpr_val         = r["cm"][0, 1] / max(r["cm"][0].sum(), 1)
         r["fpr"]        = fpr_val
-        r["composite"]  = (IDS_ALPHA * r["recall"]
-                           + IDS_BETA  * r["roc_auc"]
-                           + IDS_GAMMA * (1.0 - fpr_val)
-                           + IDS_DELTA * r["f1"])
-        dr_note = "(≥target)" if r["recall"] >= TARGET_RECALL else "( below target)"
         print(f"  {name:<18s} AUC={r['roc_auc']:.3f}  "
               f"F1={r['f1']:.3f}  P={r['precision']:.3f}  "
               f"R={r['recall']:.3f}  FPR={fpr_val:.3f}  "
-              f"Comp={r['composite']:.3f}  thr={opt_thr:.3f} {dr_note}")
+              f"thr={opt_thr:.3f}")
 
 
     for name, r in results.items():
@@ -681,8 +625,8 @@ def evaluate_all(X_seq_tr, X_seq_ts, X_flat_tr, X_flat_ts,
 
 def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
 
-    SERIALISABLE = {"Random Forest", "Gradient Boosting", "SVM-RBF", "MLP",
-                    "Extra Trees", "Transformer IDS"}
+    SERIALISABLE = {"Random Forest", "XGBoost", "SVM-RBF", "MLP",
+                    "LightGBM", "Transformer IDS"}
     candidates = {
         name: r for name, r in results.items()
         if name in SERIALISABLE and r.get("_model") is not None
@@ -691,31 +635,17 @@ def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
         print("  save_best_ids_model: no serialisable model found — skipping.")
         return
 
-
-    print("\n  IDS model ranking by composite score "
-          "(α=0.40·Recall + β=0.30·(1-FPR) + γ=0.20·F1 + δ=0.10·PR-AUC):")
-    ranked = sorted(candidates.items(),
-                    key=lambda kv: kv[1]["composite"], reverse=True)
-    for rank, (nm, rv) in enumerate(ranked, 1):
-        marker = "  BEST" if rank == 1 else ""
-        print(f"    #{rank}  {nm:<22s}  Composite={rv['composite']:.4f}  "
-              f"Recall={rv['recall']:.3f}  FPR={rv['fpr']:.3f}  "
-              f"F1={rv['f1']:.3f}  AUC={rv['roc_auc']:.3f}{marker}")
-
-    best_name = ranked[0][0]
-    best_r    = ranked[0][1]
+    best_name = max(candidates, key=lambda n: candidates[n]["roc_auc"])
+    best_r    = candidates[best_name]
 
     bundle = {
-        "model":           best_r["_model"],
-        "scaler":          scaler,
-        "threshold":       best_r["threshold"],
-        "model_name":      best_name,
-        "roc_auc":         best_r["roc_auc"],
-        "composite_score": best_r["composite"],
-        "recall":          best_r["recall"],
-        "fpr":             best_r["fpr"],
-        "feature_dim":     FEATURE_DIM,
-        "seq_len":         SEQ_LEN,
+        "model":       best_r["_model"],
+        "scaler":      scaler,
+        "threshold":   best_r["threshold"],
+        "model_name":  best_name,
+        "roc_auc":     best_r["roc_auc"],
+        "feature_dim": FEATURE_DIM,
+        "seq_len":     SEQ_LEN,
     }
     with open(out_path, "wb") as f:
         pickle.dump(bundle, f, protocol=4)
@@ -725,38 +655,10 @@ def save_best_ids_model(results: dict, scaler, out_path: str = BEST_IDS_PKL):
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
 
-    print(f"\n  Best IDS model (composite): {best_name}")
-    print(f"    Composite={best_r['composite']:.4f}  AUC={best_r['roc_auc']:.4f}  "
-          f"Recall={best_r['recall']:.3f}  FPR={best_r['fpr']:.3f}  "
-          f"thr={best_r['threshold']:.3f}")
+    print(f"\n  Best IDS model: {best_name}  (AUC={best_r['roc_auc']:.4f}, "
+          f"thr={best_r['threshold']:.3f})")
     print(f"  Saved  {out_path}")
     print(f"  Meta   {meta_path}")
-
-
-def save_all_ids_models(results: dict, scaler, out_dir: str = None):
-
-    if out_dir is None:
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "models", "all_ids_models")
-    os.makedirs(out_dir, exist_ok=True)
-    SERIALISABLE = {"Random Forest", "Gradient Boosting", "SVM-RBF", "MLP",
-                    "Extra Trees", "Transformer IDS"}
-    saved = []
-    for name, r in results.items():
-        if name not in SERIALISABLE or r.get("_model") is None:
-            continue
-        bundle = {
-            "model": r["_model"], "scaler": scaler, "threshold": r["threshold"],
-            "model_name": name, "roc_auc": r["roc_auc"], "composite_score": r["composite"],
-            "recall": r["recall"], "fpr": r["fpr"],
-            "feature_dim": FEATURE_DIM, "seq_len": SEQ_LEN,
-        }
-        safe = name.lower().replace(" ", "_").replace("-", "_")
-        with open(os.path.join(out_dir, f"{safe}.pkl"), "wb") as f:
-            pickle.dump(bundle, f, protocol=4)
-        saved.append(name)
-    print(f"  Saved {len(saved)} IDS model bundles  {out_dir}  ({', '.join(saved)})")
-    return out_dir
 
 
 def _savefig(name):
@@ -963,30 +865,26 @@ def plot_latency_vs_f1(results):
 def plot_summary_table(results):
 
     print("  [IDS-07] Summary table")
-
-    best_name = max(results, key=lambda n: results[n].get("composite", 0.0))
+    best_name = max(results, key=lambda n: results[n]["roc_auc"])
     rows = []
     for name, r in results.items():
         tag = " " if name == best_name else ""
         rows.append({
-            "Model":          name + tag,
-            "Composite":      f"{r.get('composite', 0.0):.4f}",
-            "ROC AUC":        f"{r['roc_auc']:.4f}",
-            "Avg Prec.": f"{r['avg_prec']:.4f}",
-            "F1-Score":       f"{r['f1']:.4f}",
-            "Precision":      f"{r['precision']:.4f}",
-            "Recall (DR)":    f"{r['recall']:.4f}",
-            "FPR":            f"{r['fpr']:.4f}",
-            "Threshold":      f"{r.get('threshold', 0.5):.3f}",
-            "Latency (ms)":   f"{r['latency_ms']:.4f}",
+            "Model":         name + tag,
+            "ROC AUC":       f"{r['roc_auc']:.4f}",
+            "Avg Prec.":     f"{r['avg_prec']:.4f}",
+            "F1-Score":      f"{r['f1']:.4f}",
+            "Precision":     f"{r['precision']:.4f}",
+            "Recall (DR)":   f"{r['recall']:.4f}",
+            "FPR":           f"{r['fpr']:.4f}",
+            "Threshold":     f"{r.get('threshold', 0.5):.3f}",
+            "Latency (ms)":  f"{r['latency_ms']:.4f}",
         })
-
-    rows.sort(key=lambda d: float(d["Composite"]), reverse=True)
     df = pd.DataFrame(rows).set_index("Model")
 
     ncols = len(df.columns)
     nrows = len(df)
-    fig, ax = plt.subplots(figsize=(max(20, ncols * 2.3), max(3, nrows * 0.72 + 1.5)))
+    fig, ax = plt.subplots(figsize=(max(18, ncols * 2.3), max(3, nrows * 0.72 + 1.5)))
     ax.axis("off")
     col_labels = ["Model"] + list(df.columns)
     cell_data  = [[idx] + list(row) for idx, row in zip(df.index, df.values)]
@@ -998,11 +896,6 @@ def plot_summary_table(results):
     for j in range(len(col_labels)):
         tbl[0, j].set_facecolor("#263238")
         tbl[0, j].set_text_props(color="white", fontweight="bold")
-
-    comp_col  = col_labels.index("Composite")
-    recall_col = col_labels.index("Recall (DR)")
-    for j in [comp_col, recall_col]:
-        tbl[0, j].set_facecolor("#1B5E20")
     for i, (tagged_name, _) in enumerate(zip(df.index, df.values)):
         is_best = tagged_name.endswith(" ")
         if is_best:
@@ -1015,11 +908,8 @@ def plot_summary_table(results):
             tbl[i + 1, j].set_facecolor(bg)
             if is_best:
                 tbl[i + 1, j].set_text_props(fontweight="bold")
-    ax.set_title(
-        f"IDS-07 — IDS Model Benchmark Summary  (Best by Composite Score: {best_name})\n"
-        f"Composite = 0.40·Recall + 0.30·(1-FPR) + 0.20·F1 + 0.10·PR-AUC  |  "
-        f"Threshold policy: Recall ≥ {TARGET_RECALL:.0%} first, then min FPR",
-        fontsize=11, fontweight="bold", pad=14)
+    ax.set_title(f"IDS-07 — IDS Model Benchmark Summary  (Best: {best_name})",
+                 fontsize=12, fontweight="bold", pad=12)
     plt.tight_layout()
     _savefig("IDS-07_summary_table.png")
     print("\n" + df.to_string() + "\n")
@@ -1028,17 +918,20 @@ def plot_summary_table(results):
 if __name__ == "__main__":
 
     print("=" * 72)
-    print("  IDS Model Benchmark — LSTM · RF · GradBoost · SVM · MLP · IF ·")
-    print("                        ExtraTrees · Transformer · Autoencoder")
+    print("  IDS Model Benchmark — LSTM · RF · XGB · SVM · MLP · IF ·")
+    print("                        LightGBM · Transformer · Autoencoder")
     print("=" * 72)
 
 
-    print("\n[1/3] Building 14-D IDS dataset from ACN-Data (session-level split) …")
+    print("\n[1/3] Building 14-D IDS dataset from ACN-Data …")
+    X_seq, X_flat, y, types = build_dataset(n_samples=N_SAMPLES)
+    print(f"  Dataset: {len(X_seq)} samples "
+          f"({y.sum()} attack, {(1-y).sum()} benign)")
+
     (X_seq_tr, X_seq_ts,
      X_flat_tr, X_flat_ts,
      y_tr, y_ts,
-     _types_tr, types_ts) = build_dataset_session_split(
-        n_samples=N_SAMPLES, test_frac=0.20)
+     _types_tr, types_ts) = train_test_split_manual(X_seq, X_flat, y, types, test_frac=0.20)
 
     print(f"  Train: {len(X_seq_tr)}  Test: {len(X_seq_ts)}")
 
@@ -1052,9 +945,6 @@ if __name__ == "__main__":
 
     print("\n[2b/3] Saving best IDS model …")
     save_best_ids_model(results, scaler)
-
-
-    save_all_ids_models(results, scaler)
 
 
     print("\n[3/3] Generating plots …")

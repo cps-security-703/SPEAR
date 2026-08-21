@@ -6,28 +6,25 @@ from config import config
 from vector_db import ChromaDBManager, DocumentEmbedder
 
 class GeminiRAG:
-    """
-    RAG system using Gemini for vulnerability analysis
-    Integrates with the vector database for context retrieval
-    """
-    
+
+
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.GOOGLE_API_KEY
-        
+
         if not self.api_key:
             logger.warning("No Gemini API key provided. Set GOOGLE_API_KEY in .env file")
         else:
             genai.configure(api_key=self.api_key)
             logger.info("Gemini API configured")
-        
+
         self.db_manager = ChromaDBManager()
         self.embedder = DocumentEmbedder()
-        
-        # Use Gemini 1.5 Flash (gemini-pro is deprecated)
+
+
         model_name = config.GEMINI_MODEL
         self.model = genai.GenerativeModel(model_name)
         logger.info(f"Initialized Gemini RAG system with {model_name}")
-    
+
     def retrieve_context(
         self,
         query: str,
@@ -35,34 +32,23 @@ class GeminiRAG:
         severity_filter: Optional[str] = None,
         doc_type_filter: Optional[str] = None
     ) -> List[Dict]:
-        """
-        Retrieve relevant context from vector database
-        
-        Args:
-            query: Query string
-            n_results: Number of results to retrieve
-            severity_filter: Filter by severity
-            doc_type_filter: Filter by document type
-            
-        Returns:
-            List of relevant documents
-        """
+
         logger.info(f"Retrieving context for query: {query[:100]}...")
-        
+
         query_embedding = self.embedder.embed_text(query)
-        
+
         where_filter = {}
         if severity_filter:
             where_filter["severity"] = severity_filter
         if doc_type_filter:
             where_filter["type"] = doc_type_filter
-        
+
         results = self.db_manager.query(
             query_embedding=query_embedding,
             n_results=n_results,
             where=where_filter if where_filter else None
         )
-        
+
         context_docs = []
         if results['ids']:
             for i in range(len(results['ids'][0])):
@@ -73,26 +59,18 @@ class GeminiRAG:
                     'content': results['documents'][0][i]
                 }
                 context_docs.append(doc)
-        
+
         logger.info(f"Retrieved {len(context_docs)} context documents")
         return context_docs
-    
+
     def format_context(self, context_docs: List[Dict]) -> str:
-        """
-        Format context documents for Gemini prompt
-        
-        Args:
-            context_docs: List of context documents
-            
-        Returns:
-            Formatted context string
-        """
+
         context_parts = []
-        
+
         for i, doc in enumerate(context_docs, 1):
             metadata = doc['metadata']
             content = doc['content']
-            
+
             context_part = f"""
 Document {i}:
 - ID: {doc['id']}
@@ -106,93 +84,73 @@ Document {i}:
 - Content: {content[:500]}...
 """
             context_parts.append(context_part)
-        
+
         return "\n".join(context_parts)
-    
+
     def analyze_vulnerability(
         self,
         system_description: str,
         attack_scenario: Optional[str] = None,
         n_context_docs: int = 10
     ) -> str:
-        """
-        Analyze vulnerabilities for a given system using RAG
-        
-        Args:
-            system_description: Description of the system to analyze
-            attack_scenario: Optional specific attack scenario
-            n_context_docs: Number of context documents to retrieve
-            
-        Returns:
-            Gemini's vulnerability analysis
-        """
+
         logger.info("Performing vulnerability analysis with RAG")
-        
+
         query = system_description
         if attack_scenario:
             query += f" {attack_scenario}"
-        
+
         context_docs = self.retrieve_context(query, n_results=n_context_docs)
         context_text = self.format_context(context_docs)
-        
+
         prompt = self._create_vulnerability_analysis_prompt(
             system_description,
             attack_scenario,
             context_text
         )
-        
+
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
             logger.error(f"Gemini API error: {e}")
             return f"Error generating analysis: {e}"
-    
+
     def suggest_rl_attack_strategies(
         self,
         system_description: str,
         objective: str,
         n_context_docs: int = 10
     ) -> str:
-        """
-        Suggest attack strategies for RL agents
-        
-        Args:
-            system_description: Description of the target system
-            objective: Attack objective
-            n_context_docs: Number of context documents to retrieve
-            
-        Returns:
-            Attack strategy suggestions
-        """
+
         logger.info("Generating RL attack strategy suggestions")
-        
+
         query = f"{system_description} {objective} attack strategies"
-        
+
         context_docs = self.retrieve_context(query, n_results=n_context_docs)
         context_text = self.format_context(context_docs)
-        
+
         prompt = self._create_rl_attack_prompt(
             system_description,
             objective,
             context_text
         )
-        
+
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
             logger.error(f"Gemini API error: {e}")
             return f"Error generating strategies: {e}"
-    
+
     def _create_vulnerability_analysis_prompt(
         self,
         system_description: str,
         attack_scenario: Optional[str],
         context: str
     ) -> str:
-        """Create prompt for vulnerability analysis"""
-        prompt = f"""You are a cybersecurity expert specializing in critical infrastructure security, 
+
+        prompt = f"""You are a cybersecurity expert specializing in critical infrastructure security,
 particularly Electric Vehicle Supply Equipment (EVSE), power grid systems, and industrial control systems.
 
 System to Analyze:
@@ -220,7 +178,7 @@ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
 10. Reference industry STANDARDS (IEC 62443, NIST, ISO 15118) where applicable
 11. When citing ICS-CERT advisories, ALWAYS extract and mention the CVE IDs contained within them
 
-Based on the provided context, perform a COMPREHENSIVE vulnerability analysis using both MITRE ATT&CK for ICS 
+Based on the provided context, perform a COMPREHENSIVE vulnerability analysis using both MITRE ATT&CK for ICS
 and STRIDE threat modeling frameworks. Your analysis MUST include:
 
 1. **Identified Vulnerabilities**:
@@ -288,19 +246,19 @@ and STRIDE threat modeling frameworks. Your analysis MUST include:
    - List all MITRE ATT&CK technique IDs used
    - Include any other relevant references from context
 
-Provide a DETAILED, COMPREHENSIVE, and ACTIONABLE analysis with specific technical details that security 
+Provide a DETAILED, COMPREHENSIVE, and ACTIONABLE analysis with specific technical details that security
 professionals can immediately use to improve system security and respond to threats.
 """
         return prompt
-    
+
     def _create_rl_attack_prompt(
         self,
         system_description: str,
         objective: str,
         context: str
     ) -> str:
-        """Create prompt for RL attack strategy suggestions"""
-        prompt = f"""You are a cybersecurity researcher designing attack scenarios for reinforcement learning (RL) 
+
+        prompt = f"""You are a cybersecurity researcher designing attack scenarios for reinforcement learning (RL)
 agents to test the security of critical infrastructure systems.
 
 Target System:
@@ -323,7 +281,7 @@ CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:
 8. Include technical details that can be directly coded into an RL agent
 9. Prioritize attacks by feasibility and impact based on context evidence
 
-Based on the provided context, design COMPREHENSIVE attack strategies for an RL agent. 
+Based on the provided context, design COMPREHENSIVE attack strategies for an RL agent.
 Your response MUST include:
 
 1. **Attack Types and Techniques**:
@@ -402,28 +360,19 @@ Your response MUST include:
     - Provide hyperparameter starting points
     - Include evaluation methodology
 
-Provide DETAILED, TECHNICAL, and IMPLEMENTABLE specifications that an RL researcher can directly use 
+Provide DETAILED, TECHNICAL, and IMPLEMENTABLE specifications that an RL researcher can directly use
 to develop and train attack agents for security testing purposes.
 """
         return prompt
-    
+
     def interactive_query(self, query: str, n_context_docs: int = 5) -> str:
-        """
-        Interactive query with RAG
-        
-        Args:
-            query: User query
-            n_context_docs: Number of context documents
-            
-        Returns:
-            Response from Gemini
-        """
+
         logger.info(f"Processing interactive query: {query[:100]}...")
-        
+
         context_docs = self.retrieve_context(query, n_results=n_context_docs)
         context_text = self.format_context(context_docs)
-        
-        prompt = f"""You are a cybersecurity expert assistant with access to a comprehensive knowledge base 
+
+        prompt = f"""You are a cybersecurity expert assistant with access to a comprehensive knowledge base
 about EVSE, power grid systems, and industrial control system security.
 
 User Query:
@@ -462,7 +411,7 @@ If the context doesn't contain sufficient information, clearly state:
 - General guidance based on cybersecurity best practices
 Always prioritize accuracy over completeness.
 """
-        
+
         try:
             response = self.model.generate_content(prompt)
             return response.text

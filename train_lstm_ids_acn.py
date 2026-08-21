@@ -1,42 +1,5 @@
 #!/usr/bin/env python3
-"""
-================================================================================
-ACN-aligned LSTM IDS trainer — shares feature pipeline with the PINN controller.
-================================================================================
 
-Why this file exists
---------------------
-The previous `train_lstm_ids.py` trained the IDS on purely-synthetic benign
-sequences from `EVCSBenignDataGenerator`, while the PINN controller trained on
-real ACN-Data CSVs via `ACNDataLoader`.  Although both produced 14-feature
-vectors, the *feature schemas* and *data distributions* differed, so the IDS
-and PINN were effectively looking at unrelated spaces.
-
-This trainer fixes that by:
-  1. Using `ACNDataLoader.build_training_sequences()` — the **same** pipeline
-     `PhysicsDataGenerator._try_generate_acn_data_scenarios()` uses to build
-     PINN inputs.  → IDS and PINN see identical feature engineering.
-  2. Injecting synthetic FDI attacks on the resulting 14-feature sequences
-     using perturbations that mirror `_apply_input_attacks()` in
-     hierarchical_cosimulation.py — so the attacks the IDS learns to detect
-     are the same ones the hierarchical sim actually injects at runtime.
-  3. Training the existing `LSTMIDSModel(input_size=14, sequence_length=10)`
-     so no runtime code has to change — just point the eager-loader at the
-     new checkpoint.
-
-Output
-------
-    models/lstm_ids_pretrained.pth       ← drop-in replacement; the eager-load
-                                            path in enhanced_integrated_evcs_system
-                                            already picks this up.
-    models/lstm_ids_acn_trained.pth       ← additional ACN-specific checkpoint
-    lstm_ids_acn_training_history.png     ← loss / accuracy curves
-
-Usage
------
-    $ python train_lstm_ids_acn.py --n-samples 8000 --epochs 40
-================================================================================
-"""
 from __future__ import annotations
 
 import argparse
@@ -51,13 +14,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-# Local imports
+
 from lstm_anomaly_detector import LSTMIDSDetector, LSTMIDSModel
 from acn_sim_interface import ACNDataLoader
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Config
-# ──────────────────────────────────────────────────────────────────────────────
 
 SEED = 42
 torch.manual_seed(SEED)
@@ -65,9 +25,7 @@ np.random.seed(SEED)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ACNDataLoader PINN features (14-D) plus the 6 grid-level features (14-19)
-# that are added by build_ids_sequences() to make the 20-D IDS space.
-# PINN indices (indices 0-13) — kept in sync with acn_sim_interface.ACNDataLoader:
+
 IDX_SOC           = 0
 IDX_VPU           = 1
 IDX_FREQ          = 2
@@ -78,7 +36,7 @@ IDX_TOD           = 6
 IDX_LOAD          = 8
 IDX_PREV_P        = 9
 IDX_AC_P_IN       = 10
-# Grid-level indices (14-19)
+
 IDX_FREQ_DEV      = 14
 IDX_AGG_P_PU      = 15
 IDX_AGG_Q_PU      = 16
@@ -86,54 +44,28 @@ IDX_V_MIN_PU      = 17
 IDX_V_MAX_PU      = 18
 IDX_ATTACK_FLAG   = 19
 
-# IDS input feature dimension (PINN 14-D + grid 6-D)
+
 IDS_FEATURE_DIM = 20
 
-# Eight STRIDE-mapped FDI attack types (6 EVCS + 2 grid-level RL attacks)
+
 FDI_TYPES = [
-    "energy_delivered_inflate",   # 0
-    "remaining_demand_inflate",   # 1
-    "remaining_time_extend",      # 2
-    "dos_pilot",                  # 3
-    "id_spoof",                   # 4
-    "time_shift",                 # 5
-    "grid_frequency_attack",      # 6 — RL agent falsifies frequency reading
-    "load_injection_attack",      # 7 — RL agent inflates/deflates aggregate load
+    "energy_delivered_inflate",
+    "remaining_demand_inflate",
+    "remaining_time_extend",
+    "dos_pilot",
+    "id_spoof",
+    "time_shift",
+    "grid_frequency_attack",
+    "load_injection_attack",
 ]
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# FDI injection on PINN-aligned 14-feature sequences
-# ──────────────────────────────────────────────────────────────────────────────
 
 def inject_fdi_on_abstract_features(
     clean_sequences: np.ndarray,
     attack_ratio: float = 0.5,
     magnitude_range: Tuple[float, float] = (0.05, 0.30),
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Inject synthetic FDI perturbations on the 14-feature PINN-aligned space.
 
-    Each attack type maps the raw OCPP wire-field falsification to the
-    corresponding abstract-feature deltas seen by the PINN controller.
-    This mirrors `HierarchicalCoSimulation._apply_input_attacks()` so the
-    IDS learns the *exact* perturbation patterns the hierarchical sim
-    injects at simulation-time.
-
-    Parameters
-    ----------
-    clean_sequences : (N, seq_len, 14) float32
-        ACN-derived benign feature sequences from ACNDataLoader.
-    attack_ratio : float in [0, 1]
-        Fraction of sequences to corrupt.
-    magnitude_range : (lo, hi)
-        Random per-sequence magnitude sampled uniformly.
-
-    Returns
-    -------
-    attacked : (N, seq_len, 14) float32
-    labels   : (N,) int64   (0=benign, 1=attacked)
-    atk_types: (N,) int64   (-1=benign, 0..5=FDI_TYPES index; for stratified eval)
-    """
     N, T, F = clean_sequences.shape
     attacked = clean_sequences.copy()
     labels = np.zeros(N, dtype=np.int64)
@@ -144,7 +76,7 @@ def inject_fdi_on_abstract_features(
 
     for k, i in enumerate(atk_idx):
         mag = np.random.uniform(*magnitude_range)
-        # Round-robin attack types so every class is well-represented
+
         atype = k % len(FDI_TYPES)
         atk_types[i] = atype
         labels[i] = 1
@@ -152,35 +84,35 @@ def inject_fdi_on_abstract_features(
         seq = attacked[i]
 
         if FDI_TYPES[atype] == "energy_delivered_inflate":
-            # Fake higher delivered energy → CMS thinks SOC is higher → lowers current
-            # Abstract effect: SOC↑, demand_factor↓, urgency↓
+
+
             seq[:, IDX_SOC]      = np.clip(seq[:, IDX_SOC] + mag,      0.0, 1.0)
             seq[:, IDX_DEMAND]   = np.clip(seq[:, IDX_DEMAND] - mag * 0.5, 0.0, 1.0)
             seq[:, IDX_URGENCY]  = np.clip(seq[:, IDX_URGENCY] - mag * 0.3, 0.0, 1.0)
 
         elif FDI_TYPES[atype] == "remaining_demand_inflate":
-            # Fake higher remaining demand → CMS over-allocates power
-            # Abstract effect: demand_factor↑, load↑, ac_power_in↑
+
+
             seq[:, IDX_DEMAND]   = np.clip(seq[:, IDX_DEMAND] + mag,   0.0, 1.5)
             seq[:, IDX_LOAD]     = np.clip(seq[:, IDX_LOAD] + mag,     0.0, 1.5)
             seq[:, IDX_AC_P_IN]  = np.clip(seq[:, IDX_AC_P_IN] + mag,  0.0, 1.5)
 
         elif FDI_TYPES[atype] == "remaining_time_extend":
-            # Fake later departure → CMS thinks it has more time → reduces urgency
-            # Abstract effect: urgency↓, voltage_priority↓
+
+
             seq[:, IDX_URGENCY]  = np.clip(seq[:, IDX_URGENCY] - mag * 0.8, 0.0, 1.0)
             seq[:, IDX_V_PRIO]   = np.clip(seq[:, IDX_V_PRIO]  - mag * 0.3, 0.0, 1.0)
 
         elif FDI_TYPES[atype] == "dos_pilot":
-            # Zero max pilot → CMS commands 0 A
-            # Abstract effect: prev_power=0, ac_power_in=0, demand_factor→0
+
+
             seq[:, IDX_PREV_P]   = 0.0
             seq[:, IDX_AC_P_IN]  = 0.0
-            seq[:, IDX_DEMAND]   *= (1.0 - mag)   # partial-DoS is realistic
+            seq[:, IDX_DEMAND]   *= (1.0 - mag)
 
         elif FDI_TYPES[atype] == "id_spoof":
-            # Replace requested_energy (session hijack) → SOC & demand become inconsistent
-            # Abstract effect: SOC randomised, demand_factor perturbed
+
+
             spoof_soc = np.random.uniform(0.0, 1.0)
             seq[:, IDX_SOC]      = np.clip(spoof_soc + np.random.normal(0, 0.05, T),
                                            0.0, 1.0)
@@ -189,9 +121,9 @@ def inject_fdi_on_abstract_features(
                                            0.0, 1.5)
 
         elif FDI_TYPES[atype] == "time_shift":
-            # Falsify scheduler clock → time_of_day shifted
-            # Abstract effect: TOD offset, urgency drift
-            shift_hr = np.random.uniform(-6.0, 6.0) * mag   # up to ±6 h × mag
+
+
+            shift_hr = np.random.uniform(-6.0, 6.0) * mag
             seq[:, IDX_TOD]      = np.clip((seq[:, IDX_TOD] + shift_hr / 24.0) % 1.0,
                                            0.0, 1.0)
             seq[:, IDX_URGENCY]  = np.clip(seq[:, IDX_URGENCY] +
@@ -199,8 +131,8 @@ def inject_fdi_on_abstract_features(
                                            0.0, 1.0)
 
         elif FDI_TYPES[atype] == "grid_frequency_attack":
-            # RL agent falsifies frequency measurement to mislead CMS scheduling.
-            # Abstract effect: large freq_dev (feat 14), small urgency drift
+
+
             freq_shift = np.random.choice([-1, 1]) * np.random.uniform(0.3, 1.0) * mag
             if seq.shape[1] > IDX_FREQ_DEV:
                 seq[:, IDX_FREQ_DEV] = np.clip(
@@ -209,20 +141,19 @@ def inject_fdi_on_abstract_features(
                 seq[:, IDX_URGENCY] + np.random.normal(0, mag * 0.3, T), 0.0, 1.0)
 
         elif FDI_TYPES[atype] == "load_injection_attack":
-            # RL agent injects false aggregate load to manipulate dispatch.
-            # Abstract effect: agg_active_power_pu (feat 15) inflated or deflated,
-            # bus voltage bounds shifted accordingly.
+
+
             load_delta = np.random.choice([-1, 1]) * mag
             if seq.shape[1] > IDX_AGG_P_PU:
                 seq[:, IDX_AGG_P_PU] = np.clip(
                     seq[:, IDX_AGG_P_PU] + load_delta, -0.5, 1.5)
                 seq[:, IDX_AGG_Q_PU] = np.clip(
                     seq[:, IDX_AGG_Q_PU] + load_delta * 0.3, -0.3, 0.5)
-            if load_delta > 0:   # Overload → voltage sag
+            if load_delta > 0:
                 if seq.shape[1] > IDX_V_MIN_PU:
                     seq[:, IDX_V_MIN_PU] = np.clip(
                         seq[:, IDX_V_MIN_PU] - mag * 0.1, 0.85, 1.05)
-            else:                # Under-load → voltage rise
+            else:
                 if seq.shape[1] > IDX_V_MAX_PU:
                     seq[:, IDX_V_MAX_PU] = np.clip(
                         seq[:, IDX_V_MAX_PU] + mag * 0.1, 0.95, 1.10)
@@ -232,16 +163,12 @@ def inject_fdi_on_abstract_features(
     return attacked, labels, atk_types
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Training loop
-# ──────────────────────────────────────────────────────────────────────────────
-
 def focal_loss(logits: torch.Tensor, targets: torch.Tensor,
                alpha: float = 0.75, gamma: float = 2.0) -> torch.Tensor:
-    """Binary focal loss for class-imbalance-robust training."""
+
     ce = nn.functional.cross_entropy(logits, targets, reduction="none")
     pt = torch.exp(-ce)
-    # class-weighted alpha: higher weight for attacks (class=1)
+
     alpha_t = torch.where(targets == 1,
                           torch.tensor(alpha,     device=logits.device),
                           torch.tensor(1 - alpha, device=logits.device))
@@ -249,7 +176,7 @@ def focal_loss(logits: torch.Tensor, targets: torch.Tensor,
 
 
 def run_epoch(model, loader, optimiser=None):
-    """Run one train or eval epoch; return (loss, accuracy, recall_attack)."""
+
     is_train = optimiser is not None
     model.train(is_train)
 
@@ -325,7 +252,7 @@ def main():
     print(f"  attack_ratio    : {args.attack_ratio}")
     print()
 
-    # ── 1. Load ACN data via the PINN's loader ─────────────────────────────
+
     if not os.path.isdir(args.acn_data_dir):
         print(f"# ACN data dir not found: {args.acn_data_dir}")
         sys.exit(1)
@@ -340,9 +267,7 @@ def main():
         print("# No ACN sessions loaded — check --acn-data-dir / --sites")
         sys.exit(1)
 
-    # Build clean IDS sequences (20-D): (N, seq_len, 20)
-    # Uses build_ids_sequences() so grid features are included as neutral values
-    # for benign data; FDI injection will then perturb both EVCS + grid features.
+
     clean_tensor = loader.build_ids_sequences(
         seq_len=args.seq_len, n_samples=args.n_samples)
     if clean_tensor is None:
@@ -351,14 +276,14 @@ def main():
     clean_seq = clean_tensor.numpy().astype(np.float32)
     print(f"# Built clean 20-D sequences of shape {clean_seq.shape}")
 
-    # ── 2. Inject FDI attacks (50 % of sequences) ─────────────────────────
+
     attacked_seq, labels, atk_types = inject_fdi_on_abstract_features(
         clean_seq, attack_ratio=args.attack_ratio)
     print(f"# Injected FDI attacks: "
           f"{labels.sum()} / {len(labels)} sequences "
           f"(types: {[(t, int((atk_types == i).sum())) for i, t in enumerate(FDI_TYPES)]})")
 
-    # ── 3. Train/val split ────────────────────────────────────────────────
+
     n_val = int(len(attacked_seq) * args.val_split)
     perm = np.random.permutation(len(attacked_seq))
     val_idx = perm[:n_val]
@@ -374,7 +299,7 @@ def main():
     val_loader = DataLoader(TensorDataset(X_val, y_val),
                             batch_size=args.batch_size, shuffle=False)
 
-    # ── 4. Model + optimiser ──────────────────────────────────────────────────
+
     model = LSTMIDSModel(input_size=IDS_FEATURE_DIM, hidden_size=128, num_layers=2,
                          dropout=0.2).to(DEVICE)
     optimiser = torch.optim.Adam(model.parameters(), lr=args.lr,
@@ -384,7 +309,7 @@ def main():
 
     print(f"# Model: LSTMIDSModel({IDS_FEATURE_DIM}-dim input, 128-hidden, 2-layer)")
 
-    # ── 5. Training loop ──────────────────────────────────────────────────
+
     hist = {"train_loss": [], "val_loss": [],
             "train_acc": [], "val_acc": [],
             "val_recall": []}
@@ -409,7 +334,7 @@ def main():
 
         if vl_acc > best_val_acc:
             best_val_acc = vl_acc
-            # Save best model with LSTMIDSDetector-compatible checkpoint
+
             best_path = os.path.join(args.output_dir, "lstm_ids_acn_trained.pth")
             torch.save({
                 "model_state_dict": model.state_dict(),
@@ -433,15 +358,15 @@ def main():
     print(f"\n# Training complete in {elapsed:.1f}s   "
           f"best val_acc={best_val_acc:.3f}")
 
-    # Also write drop-in replacement for the hierarchical sim's eager loader
+
     drop_in = os.path.join(args.output_dir, "lstm_ids_pretrained.pth")
     import shutil
     shutil.copyfile(best_path, drop_in)
-    print(f"# Saved drop-in checkpoint → {drop_in}")
+    print(f"# Saved drop-in checkpoint  {drop_in}")
 
-    # ── 6. Quick per-attack-type evaluation on val set ───────────────────
+
     model.eval()
-    print("\n── Per-attack-type recall on validation set ────────────────")
+    print("\n Per-attack-type recall on validation set ")
     with torch.no_grad():
         X_val_d = X_val.to(DEVICE)
         logits, _ = model(X_val_d)
@@ -462,7 +387,7 @@ def main():
         print(f"    {'(benign)':27s}: {fp:4d}/{total_b:4d}  "
               f"FPR     ={fp / total_b:.3f}")
 
-    # ── 7. Training history plot ─────────────────────────────────────────
+
     try:
         import matplotlib
         matplotlib.use("Agg")

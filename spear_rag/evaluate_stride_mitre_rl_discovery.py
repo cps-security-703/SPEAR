@@ -1,5 +1,4 @@
-"""
-"""
+
 
 import json
 import re
@@ -8,7 +7,7 @@ from loguru import logger
 from datetime import datetime
 from evaluation.rag_evaluator import RAGEvaluator
 
-# Queries WITHOUT ground truth - just the questions
+
 DISCOVERY_QUERIES = [
     {
         "query_id": "Q1_SPOOFING_EVCS_CMS",
@@ -103,18 +102,17 @@ DISCOVERY_QUERIES = [
 ]
 
 class DiscoveryModeEvaluator:
-    """Compare RAG vs Non-RAG generated mappings without pre-defined ground truth"""
-    
+
+
     def __init__(self):
         self.rag_evaluator = RAGEvaluator()
-    
+
     def extract_mappings(self, response: str) -> Dict:
-        """Extract STRIDE-MITRE-RL mappings from response"""
-        
-        # Extract MITRE techniques
+
+
         mitre_techniques = set(re.findall(r'T\d{4}', response.upper()))
-        
-        # Extract STRIDE categories
+
+
         stride_categories = []
         stride_keywords = {
             "Spoofing": ["spoof", "impersonat", "fake identity"],
@@ -124,35 +122,35 @@ class DiscoveryModeEvaluator:
             "Denial of Service": ["denial", "dos", "disrupt", "unavailable"],
             "Elevation of Privilege": ["privilege", "escalat", "unauthorized access"]
         }
-        
+
         response_lower = response.lower()
         for category, keywords in stride_keywords.items():
             if any(kw in response_lower for kw in keywords):
                 stride_categories.append(category)
-        
-        # Extract RL actions (look for action-oriented phrases)
+
+
         rl_action_patterns = [
             r'rl action[s]?:?\s*([^\n\.]+)',
             r'attack action[s]?:?\s*([^\n\.]+)',
             r'suggested action[s]?:?\s*([^\n\.]+)',
             r'projected action[s]?:?\s*([^\n\.]+)'
         ]
-        
+
         rl_actions = []
         for pattern in rl_action_patterns:
             matches = re.findall(pattern, response, re.IGNORECASE)
             rl_actions.extend(matches)
-        
-        # Extract CVEs
+
+
         cves = set(re.findall(r'CVE-\d{4}-\d{4,7}', response.upper()))
-        
-        # Extract protocols
+
+
         protocols = []
         protocol_keywords = ["OCPP", "DNP3", "TCP/IP", "Modbus", "HTTPS", "ISO 15118"]
         for protocol in protocol_keywords:
             if protocol.upper() in response.upper():
                 protocols.append(protocol)
-        
+
         return {
             "mitre_techniques": sorted(list(mitre_techniques)),
             "stride_categories": stride_categories,
@@ -162,16 +160,16 @@ class DiscoveryModeEvaluator:
             "response_length": len(response),
             "has_structured_format": self._check_structured_format(response)
         }
-    
+
     def _check_structured_format(self, response: str) -> bool:
-        """Check if response follows structured format"""
+
         required_sections = ["stride", "mitre", "attack"]
         response_lower = response.lower()
         return sum(1 for section in required_sections if section in response_lower) >= 2
-    
+
     def compare_mappings(self, rag_mapping: Dict, non_rag_mapping: Dict) -> Dict:
-        """Compare RAG vs Non-RAG mappings"""
-        
+
+
         comparison = {
             "mitre_techniques": {
                 "rag_count": len(rag_mapping["mitre_techniques"]),
@@ -204,30 +202,30 @@ class DiscoveryModeEvaluator:
                 )
             }
         }
-        
+
         return comparison
-    
+
     def evaluate_query(self, query_data: Dict) -> Dict:
-        """Evaluate single query in discovery mode"""
+
         query = query_data['query']
-        
+
         logger.info(f"Evaluating: {query_data['query_id']}")
-        
-        # Get RAG response
+
+
         logger.info("Getting RAG response...")
         rag_response = self.rag_evaluator.get_rag_response(query)
-        
-        # Get non-RAG response
+
+
         logger.info("Getting non-RAG response...")
         non_rag_response = self.rag_evaluator.get_non_rag_response(query)
-        
-        # Extract mappings
+
+
         rag_mapping = self.extract_mappings(rag_response)
         non_rag_mapping = self.extract_mappings(non_rag_response)
-        
-        # Compare
+
+
         comparison = self.compare_mappings(rag_mapping, non_rag_mapping)
-        
+
         return {
             "query_id": query_data["query_id"],
             "query": query,
@@ -239,11 +237,11 @@ class DiscoveryModeEvaluator:
             "non_rag_mapping": non_rag_mapping,
             "comparison": comparison
         }
-    
+
     def evaluate_all(self) -> Dict:
-        """Evaluate all queries"""
+
         results = []
-        
+
         for query_data in DISCOVERY_QUERIES:
             try:
                 result = self.evaluate_query(query_data)
@@ -251,10 +249,10 @@ class DiscoveryModeEvaluator:
             except Exception as e:
                 logger.error(f"Failed to evaluate {query_data['query_id']}: {e}")
                 continue
-        
-        # Calculate summary statistics
+
+
         summary = self.calculate_summary(results)
-        
+
         return {
             "timestamp": datetime.now().isoformat(),
             "mode": "discovery",
@@ -262,18 +260,18 @@ class DiscoveryModeEvaluator:
             "summary": summary,
             "individual_results": results
         }
-    
+
     def calculate_summary(self, results: List[Dict]) -> Dict:
-        """Calculate summary statistics"""
-        
+
+
         total_rag_mitre = sum(r["comparison"]["mitre_techniques"]["rag_count"] for r in results)
         total_non_rag_mitre = sum(r["comparison"]["mitre_techniques"]["non_rag_count"] for r in results)
-        
+
         total_rag_cves = sum(r["comparison"]["cves"]["rag_count"] for r in results)
         total_non_rag_cves = sum(r["comparison"]["cves"]["non_rag_count"] for r in results)
-        
+
         rag_more_comprehensive = sum(1 for r in results if r["comparison"]["quality_indicators"]["rag_more_comprehensive"])
-        
+
         return {
             "avg_mitre_per_query": {
                 "rag": round(total_rag_mitre / len(results), 2) if results else 0,
@@ -289,15 +287,15 @@ class DiscoveryModeEvaluator:
 
 def main():
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Discovery Mode: Compare RAG vs Non-RAG STRIDE-MITRE-RL mappings')
     parser.add_argument('--query-id', type=str, help='Evaluate specific query')
     parser.add_argument('--output', type=str, default='stride_mitre_rl_discovery_results.json')
-    
+
     args = parser.parse_args()
-    
+
     evaluator = DiscoveryModeEvaluator()
-    
+
     if args.query_id:
         queries = [q for q in DISCOVERY_QUERIES if q['query_id'] == args.query_id]
         if not queries:
@@ -307,14 +305,14 @@ def main():
         results = {"individual_results": [result]}
     else:
         results = evaluator.evaluate_all()
-    
-    # Save results
+
+
     with open(args.output, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    
+
     logger.info(f"Results saved to {args.output}")
-    
-    # Print summary
+
+
     if "summary" in results:
         print("\n" + "="*80)
         print("DISCOVERY MODE EVALUATION SUMMARY")

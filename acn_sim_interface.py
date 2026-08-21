@@ -1,6 +1,4 @@
-"""acn_sim_interface.py
-ACN-Sim integration for the EVCS hierarchical co-simulation.
-"""
+
 
 import os
 import glob
@@ -10,7 +8,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any
 
-# ── acnportal imports (graceful fallback) ─────────────────────────────────────
+
 ACN_SIM_AVAILABLE = False
 try:
     from acnportal.acnsim import (
@@ -27,7 +25,7 @@ except Exception:
         ImportWarning, stacklevel=2
     )
 
-    class BaseAlgorithm:                             # minimal stub
+    class BaseAlgorithm:
         interface = None
         def schedule(self, active_evs):
             return {}
@@ -35,34 +33,27 @@ except Exception:
             self.interface = interface
 
 
-# ── Constants matching Caltech ACN site ───────────────────────────────────────
-CALTECH_EVSE_VOLTAGE_V  = 240.0    # L2 single-phase EVSE voltage (V)
-CALTECH_MAX_PILOT_A     = 32.0     # Maximum pilot signal (A)
-CALTECH_MIN_PILOT_A     = 0.0      # Minimum pilot signal (A)
-DEFAULT_BATTERY_KWH     = 60.0     # Assumed EV battery capacity (kWh)
-DEFAULT_MAX_SOC         = 0.80     # Disconnect / target SOC
-ACN_PERIOD_MIN          = 5.0      # ACN-Sim scheduling period (minutes)
-ACN_PERIOD_S            = ACN_PERIOD_MIN * 60.0   # = 300 s
-
-# ── IDS feature dimension constants ───────────────────────────────────────────
-PINN_FEATURE_DIM = 14   # 14-D feature space used by PINN training
-IDS_FEATURE_DIM  = 20   # 20-D feature space used by IDS (14 EVCS + 6 grid)
+CALTECH_EVSE_VOLTAGE_V  = 240.0
+CALTECH_MAX_PILOT_A     = 32.0
+CALTECH_MIN_PILOT_A     = 0.0
+DEFAULT_BATTERY_KWH     = 60.0
+DEFAULT_MAX_SOC         = 0.80
+ACN_PERIOD_MIN          = 5.0
+ACN_PERIOD_S            = ACN_PERIOD_MIN * 60.0
 
 
-# ACNDataLoader — loads real ACN-Data CSVs for PINN and IDS training
+PINN_FEATURE_DIM = 14
+IDS_FEATURE_DIM  = 20
+
 
 class ACNDataLoader:
-    """
-    Loads ACN-Data time-series CSVs (.csv and .csv.gz) and builds training
-    sequences for the PINN controller and LSTM IDS.
-    """
 
-    # --- PINN target names ---
+
     TARGET_NAMES = ["voltage_V", "current_A", "power_kW"]
 
-    V_NOMINAL   = 240.0                                  # L2 EVSE nominal V
-    I_MAX       = CALTECH_MAX_PILOT_A                    # 32 A
-    P_MAX_KW    = CALTECH_EVSE_VOLTAGE_V * 32.0 / 1000.0  # ≈ 7.68 kW
+    V_NOMINAL   = 240.0
+    I_MAX       = CALTECH_MAX_PILOT_A
+    P_MAX_KW    = CALTECH_EVSE_VOLTAGE_V * 32.0 / 1000.0
     BATT_KWH    = DEFAULT_BATTERY_KWH
     TARGET_SOC  = DEFAULT_MAX_SOC
 
@@ -71,10 +62,9 @@ class ACNDataLoader:
         self._sessions: List[pd.DataFrame] = []
         self._loaded = False
 
-    # ── Low-level loaders ─────────────────────────────────────────────────────
 
     def _read_csv_file(self, filepath: str) -> Optional[pd.DataFrame]:
-        """Read a single CSV or CSV.GZ session file; return None if invalid."""
+
         try:
             if filepath.endswith('.gz'):
                 with gzip.open(filepath, 'rt', encoding='utf-8', errors='replace') as fh:
@@ -84,18 +74,18 @@ class ACNDataLoader:
 
             df.columns = [c.strip() for c in df.columns]
 
-            # Require at minimum current and energy columns
+
             required = {"Charging Current (A)", "Energy Delivered (kWh)"}
             if not required.issubset(df.columns):
                 return None
 
-            # Impute missing Voltage from I × V_nominal
+
             if "Voltage (V)" not in df.columns or df["Voltage (V)"].isna().all():
                 df["Voltage (V)"] = self.V_NOMINAL
             else:
                 df["Voltage (V)"] = df["Voltage (V)"].fillna(self.V_NOMINAL)
 
-            # Impute missing Power from I × V
+
             if "Power (kW)" not in df.columns or df["Power (kW)"].isna().all():
                 df["Power (kW)"] = (
                     df["Charging Current (A)"] * df["Voltage (V)"] / 1000.0
@@ -114,7 +104,7 @@ class ACNDataLoader:
         return None
 
     def load_all_csvs(self) -> int:
-        """Scan data_dir recursively for *.csv and *.csv.gz files; load them."""
+
         plain_pattern = os.path.join(self.data_dir, "*.csv")
         gz_pattern    = os.path.join(self.data_dir, "**", "*.csv.gz")
         csv_pattern   = os.path.join(self.data_dir, "**", "*.csv")
@@ -124,7 +114,7 @@ class ACNDataLoader:
             + sorted(glob.glob(gz_pattern,  recursive=True))
             + sorted(glob.glob(csv_pattern, recursive=True))
         )
-        # Deduplicate (plain_pattern may overlap csv_pattern)
+
         seen = set()
         unique_files = []
         for f in files:
@@ -146,13 +136,7 @@ class ACNDataLoader:
         self,
         site_dirs: List[Tuple[str, int]],
     ) -> int:
-        """
-        Load up to *max_files* CSV/GZ files per site directory.
 
-        Parameters
-        ----------
-        site_dirs : list of (dir_path, max_files) tuples
-        """
         self._sessions = []
         for dir_path, max_files in site_dirs:
             if not os.path.isdir(dir_path):
@@ -168,17 +152,76 @@ class ACNDataLoader:
         self._loaded = True
         return len(self._sessions)
 
-    # ── Feature engineering helpers ───────────────────────────────────────────
 
     def _derive_soc(self, energy_arr: np.ndarray) -> np.ndarray:
-        """Derive SOC from cumulative energy delivered."""
-        capacity_kwh = self.BATT_KWH * self.TARGET_SOC   # usable capacity
+
+        capacity_kwh = self.BATT_KWH * self.TARGET_SOC
         return np.clip(energy_arr / max(capacity_kwh, 1e-6), 0.0, 1.0)
+
+    def sample_benign_window(
+        self, seq_len: int, system_id: int = 1, rng: Optional[np.random.Generator] = None,
+        sessions: Optional[List] = None,
+    ) -> Optional[List[Dict]]:
+
+
+        pool = sessions if sessions is not None else self._sessions
+        if not pool:
+            return None
+        if rng is None:
+            rng = np.random.default_rng()
+
+        eligible = [df for df in pool if len(df) >= seq_len]
+        if not eligible:
+            return None
+
+        df = eligible[int(rng.integers(0, len(eligible)))]
+        n = len(df)
+        start = int(rng.integers(0, n - seq_len + 1))
+        window = df.iloc[start: start + seq_len]
+
+        i_arr = window["Charging Current (A)"].values.astype(float)
+        v_arr = window["Voltage (V)"].values.astype(float)
+        p_arr = window["Power (kW)"].values.astype(float)
+        e_arr = window["Energy Delivered (kWh)"].values.astype(float)
+        soc_arr = self._derive_soc(e_arr)
+
+
+        tod_base = float(rng.uniform(0.0, 24.0))
+
+        out: List[Dict] = []
+        for k in range(seq_len):
+            soc = float(np.clip(soc_arr[k], 0.0, 1.0))
+            voltage = float(np.clip(v_arr[k], 200.0, 270.0))
+            current = float(np.clip(i_arr[k], 0.0, 32.0))
+            power_kw = float(np.clip(p_arr[k], 0.0, 7.68))
+            lf = float(np.clip(power_kw / 7.68, 0.0, 1.3))
+            util = float(np.clip(power_kw / 7.68, 0.0, 1.0))
+            urg = float(np.clip(1.0 + (1.0 - soc) * 0.5, 0.5, 2.0))
+            df_factor = float(np.clip(power_kw / 7.68, 0.0, 1.5))
+            temp = float(np.clip(25.0 + (power_kw / 7.68) * 10.0, 20.0, 45.0))
+            tod = float((tod_base + k * (1.0 / 60.0)) % 24.0)
+            out.append({
+                'soc':            soc,
+                'voltage':        voltage,
+                'current':        current,
+                'power':          power_kw,
+                'temperature':    temp,
+                'demand_factor':  df_factor,
+                'load_factor':    lf,
+                'grid_voltage':   1.0,
+                'grid_frequency': 60.0,
+                'queue_length':   3,
+                'utilization':    util,
+                'urgency_factor': urg,
+                'time_of_day':    tod,
+                'system_id':      int(system_id),
+            })
+        return out
 
     def _session_to_pinn_sequences(
         self, df: pd.DataFrame, seq_len: int
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Convert one session DataFrame to PINN (14-D) sequences."""
+
         n = len(df)
         if n < seq_len + 1:
             return None, None
@@ -196,27 +239,27 @@ class ACNDataLoader:
         p_prev  = np.roll(p_norm, 1); p_prev[0] = 0.0
 
         features = np.stack([
-            soc_arr,                                              # 0 soc
-            v_pu,                                                 # 1 voltage_pu
-            np.full(n, 0.5),                                      # 2 grid_freq
-            p_norm,                                               # 3 demand_factor
-            np.clip(1.0 - v_pu, 0.0, 1.0),                       # 4 voltage_priority
-            1.0 - soc_arr,                                        # 5 urgency
-            t_norm,                                               # 6 time_of_day_norm
-            np.full(n, 0.5),                                      # 7 bus_distance_norm
-            i_norm,                                               # 8 load_factor
-            p_prev,                                               # 9 prev_power_norm
-            p_norm,                                               # 10 ac_power_in_norm
-            np.full(n, 0.95),                                     # 11 efficiency
-            np.zeros(n),                                          # 12 power_balance_err
-            np.zeros(n),                                          # 13 dc_link_dev
-        ], axis=1)  # (n, 14)
+            soc_arr,
+            v_pu,
+            np.full(n, 0.5),
+            p_norm,
+            np.clip(1.0 - v_pu, 0.0, 1.0),
+            1.0 - soc_arr,
+            t_norm,
+            np.full(n, 0.5),
+            i_norm,
+            p_prev,
+            p_norm,
+            np.full(n, 0.95),
+            np.zeros(n),
+            np.zeros(n),
+        ], axis=1)
 
         targets = np.stack([
-            v_arr / self.V_NOMINAL,                               # voltage (normalised)
-            i_arr / self.I_MAX,                                   # current (normalised)
-            p_norm,                                               # power   (normalised)
-        ], axis=1)  # (n, 3)
+            v_arr / self.V_NOMINAL,
+            i_arr / self.I_MAX,
+            p_norm,
+        ], axis=1)
 
         X, y = [], []
         for start in range(n - seq_len):
@@ -227,18 +270,17 @@ class ACNDataLoader:
     def _session_to_ids_sequences(
         self, df: pd.DataFrame, seq_len: int
     ) -> Optional[np.ndarray]:
-        """Return 20-D IDS sequences (benign grid cols = neutral defaults)."""
+
         pinn_seqs, _ = self._session_to_pinn_sequences(df, seq_len)
         if pinn_seqs is None:
             return None
         N, T, _ = pinn_seqs.shape
-        # Grid features — neutral values for real benign ACN data
-        grid_feats = np.zeros((N, T, 6), dtype=np.float32)
-        grid_feats[:, :, 3] = 1.0  # bus_voltage_min_pu = 1.0
-        grid_feats[:, :, 4] = 1.0  # bus_voltage_max_pu = 1.0
-        return np.concatenate([pinn_seqs, grid_feats], axis=2)  # (N, T, 20)
 
-    # ── Public build methods ───────────────────────────────────────────────────
+        grid_feats = np.zeros((N, T, 6), dtype=np.float32)
+        grid_feats[:, :, 3] = 1.0
+        grid_feats[:, :, 4] = 1.0
+        return np.concatenate([pinn_seqs, grid_feats], axis=2)
+
 
     def build_training_sequences(
         self,
@@ -246,11 +288,7 @@ class ACNDataLoader:
         n_samples: Optional[int] = None,
         max_sessions: Optional[int] = None,
     ) -> Tuple[Any, Any]:
-        """
-        Build PINN training sequences (14-D features, 3-D targets).
 
-        Returns torch.FloatTensor or (None, None) on failure.
-        """
         if not self._loaded:
             self.load_all_csvs()
         if not self._sessions:
@@ -291,11 +329,7 @@ class ACNDataLoader:
         n_samples: Optional[int] = None,
         max_sessions: Optional[int] = None,
     ) -> Optional[Any]:
-        """
-        Build IDS training sequences (20-D features).
 
-        Returns torch.FloatTensor of shape (N, seq_len, 20) or None.
-        """
         if not self._loaded:
             self.load_all_csvs()
         if not self._sessions:
@@ -328,14 +362,8 @@ class ACNDataLoader:
         return torch.FloatTensor(X_all)
 
 
-# PINNCMSAlgorithm — ACN-Sim scheduling algorithm wrapping the PINN CMS
-
 class PINNCMSAlgorithm(BaseAlgorithm):
-    """
-    ACN-Sim scheduling algorithm that delegates to the PINN-based CMS.
-    Per §7 of the guideline: only I_ref (clipped) is sent to ACN-Sim.
-    V_ref and P_ref are still used inside the PINN for physics loss.
-    """
+
 
     def __init__(self, cms, station_ids: List[str],
                  evse_voltage: float = CALTECH_EVSE_VOLTAGE_V):
@@ -363,7 +391,7 @@ class PINNCMSAlgorithm(BaseAlgorithm):
             sid = ev.station_id
             station_idx = self._station_idx(sid)
 
-            # v0.3.3: SOC via ev._battery._soc
+
             try:
                 soc = float(ev._battery._soc)
             except Exception:
@@ -394,7 +422,7 @@ class PINNCMSAlgorithm(BaseAlgorithm):
                     {sid: v_pu}, self.system_frequency, dynamics_result,
                 )
             except Exception:
-                # Heuristic fallback: proportional to remaining SOC headroom
+
                 i_ref = CALTECH_MAX_PILOT_A * (1.0 - soc) * 0.8
 
             max_p = CALTECH_MAX_PILOT_A
@@ -420,10 +448,8 @@ class PINNCMSAlgorithm(BaseAlgorithm):
             return int(digits[-2:]) if len(digits) >= 2 else 0
 
 
-# ACNSimZone — one distribution system's ACN-Sim instance
-
 class ACNSimZone:
-    """Manages one ACN-Sim Simulator instance (one DS, 10 EVSEs)."""
+
 
     def __init__(self, ds_id: int, n_evses: int = 10, period_min: float = 5.0,
                  evse_voltage: float = 240.0, sim_duration_s: float = 3600.0,
@@ -457,11 +483,10 @@ class ACNSimZone:
         self._station_state: Dict[str, str] = {s: "IDLE" for s in self.station_ids}
         self._build_initial_cache()
 
-    # ── Initialization ────────────────────────────────────────────────────────
 
     def initialize(self, cms) -> None:
         if not ACN_SIM_AVAILABLE:
-            print(f"#  ACNSimZone DS{self.ds_id}: acnportal unavailable — fallback mode")
+            print(f"  ACNSimZone DS{self.ds_id}: acnportal unavailable — fallback mode")
             return
         self.network   = self._build_network()
         events         = self._build_event_queue()
@@ -473,7 +498,7 @@ class ACNSimZone:
             store_schedule_history=False)
         self.current_period = -1
         self._build_initial_cache()
-        print(f"# ACNSimZone DS{self.ds_id}: {self.n_evses} EVSEs "
+        print(f" ACNSimZone DS{self.ds_id}: {self.n_evses} EVSEs "
               f"@ {self.evse_voltage}V, period={self.period_min} min, "
               f"total_periods={self.total_periods}")
 
@@ -528,18 +553,17 @@ class ACNSimZone:
         }
         self._cached_metrics = metrics
 
-    # ── Simulation step ───────────────────────────────────────────────────────
 
     def step(self, current_time_s: float,
              bus_voltages_pu: Optional[Dict[str, float]] = None,
              system_frequency: float = 60.0) -> Dict:
-        """Advance simulation to current_time_s; return per-EVSE metrics dict."""
+
         if self.simulator is None:
             return self._cached_metrics
 
         new_period = int(current_time_s / self.period_s)
         if new_period <= self.current_period:
-            return self._cached_metrics   # hold pattern between ACN periods
+            return self._cached_metrics
 
         bv = bus_voltages_pu or {}
         if self.algorithm is not None:
@@ -560,7 +584,7 @@ class ACNSimZone:
         return self._cached_metrics
 
     def _acn_step_one_period(self) -> None:
-        """Execute one ACN-Sim iteration for acnportal v0.3.3."""
+
         try:
             from acnportal.acnsim.simulator import _increase_width
         except ImportError:
@@ -572,13 +596,13 @@ class ACNSimZone:
 
         sim = self.simulator
 
-        # 1. Process events
+
         current_events = sim.event_queue.get_current_events(sim._iteration)
         for e in current_events:
             sim.event_history.append(e)
             sim._process_event(e)
 
-        # 2. Get schedule from PINN-CMS
+
         new_schedule = sim.scheduler.run()
         sim._update_schedules(new_schedule)
         if sim.schedule_history is not None:
@@ -586,19 +610,19 @@ class ACNSimZone:
         sim._last_schedule_update = sim._iteration
         sim._resolve = False
 
-        # 3. Expand storage arrays
+
         last_ts = sim.event_queue.get_last_timestamp()
         width = (max(last_ts + 1, sim._iteration + 1)
                  if last_ts is not None else sim._iteration + 1)
         sim.pilot_signals  = _increase_width(sim.pilot_signals,  width)
         sim.charging_rates = _increase_width(sim.charging_rates, width)
 
-        # 4. Update network pilots and collect actual rates
+
         sim.network.update_pilots(sim.pilot_signals, sim._iteration, sim.period)
         sim._store_actual_charging_rates()
         sim.network.post_charging_update()
 
-        # 5. Advance clock
+
         sim._iteration += 1
 
     def _collect_results(self) -> None:
@@ -612,7 +636,7 @@ class ACNSimZone:
         except Exception:
             pass
 
-        # v0.3.3: current_charging_rates is numpy array indexed by station pos
+
         try:
             rates_arr = self.network.current_charging_rates
             net_sids  = list(self.network.station_ids)
@@ -684,10 +708,8 @@ class ACNSimZone:
         return self._cached_metrics
 
 
-# ACNSimFleet — manages all 6 zone instances
-
 class ACNSimFleet:
-    """Manages 6 ACNSimZone instances (Pattern A — one per DS)."""
+
 
     def __init__(self, n_zones: int = 6, n_evses_per_zone: int = 10,
                  acn_data_dir: Optional[str] = None,
@@ -704,7 +726,7 @@ class ACNSimFleet:
 
     def initialize_zones(self, cms_list: List) -> None:
         if not ACN_SIM_AVAILABLE:
-            print("#  ACNSimFleet: acnportal not installed — all zones in fallback mode.")
+            print("  ACNSimFleet: acnportal not installed — all zones in fallback mode.")
         for i in range(self.n_zones):
             ds_id = i + 1
             cms   = cms_list[i] if i < len(cms_list) else None
@@ -715,10 +737,10 @@ class ACNSimFleet:
             if cms is not None:
                 zone.initialize(cms)
             else:
-                zone.initialize(cms=None)   # fallback heuristic inside algorithm
+                zone.initialize(cms=None)
             self._zones[ds_id] = zone
         self._initialized = True
-        print(f"# ACNSimFleet: {self.n_zones} zones × {self.n_evses} EVSEs initialized "
+        print(f" ACNSimFleet: {self.n_zones} zones × {self.n_evses} EVSEs initialized "
               f"(period={self.period_min} min, V={self.evse_voltage} V)")
 
     def step_all(self, current_time_s: float,

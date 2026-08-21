@@ -1,8 +1,4 @@
-"""
-best_ids_model.py
-=================
 
-"""
 
 import os
 import sys
@@ -27,13 +23,12 @@ try:
 except ImportError:
     pass
 
-_SEQ_LEN     = 10   # must match compare_ids_models.SEQ_LEN
-_FEATURE_DIM = 14   # must match compare_ids_models.FEATURE_DIM
+_SEQ_LEN     = 10
+_FEATURE_DIM = 14
 
 
 class BestIDSDetector:
-    """Sliding-window IDS detector backed by the best trained sklearn model.
-    """
+
 
     def __init__(self, model_path: str = _MODEL_PKL):
         self.enabled       = True
@@ -43,12 +38,12 @@ class BestIDSDetector:
         self._model     = None
         self._scaler    = None
         self._threshold = 0.5
-        self._window    = []          # rolling list of np.ndarray[FEATURE_DIM]
+        self._window    = []
         self._roc_auc   = None
 
         self._load(model_path)
 
-    # ------------------------------------------------------------------
+
     def _load(self, path: str) -> None:
         if not os.path.exists(path):
             return
@@ -66,19 +61,17 @@ class BestIDSDetector:
             print(f"[BestIDSDetector] Could not load {path}: {exc}  "
                   f"— falling back to heuristic mode.")
 
-    # ------------------------------------------------------------------
+
     @property
     def is_loaded(self) -> bool:
         return self._model is not None and self._scaler is not None
 
-    # ------------------------------------------------------------------
-    def detect(self, feature_14d) -> tuple:
-        """Feed one 14-D timestep and return (is_attack: bool, confidence: float).
 
-        """
+    def detect(self, feature_14d) -> tuple:
+
         feat = np.asarray(feature_14d, dtype=np.float32).flatten()
 
-        # Pad or truncate to exactly FEATURE_DIM
+
         if len(feat) < _FEATURE_DIM:
             feat = np.pad(feat, (0, _FEATURE_DIM - len(feat)))
         else:
@@ -103,8 +96,8 @@ class BestIDSDetector:
             print(f"[BestIDSDetector] Inference error: {exc}")
             return False, 0.0
 
-    # ------------------------------------------------------------------
+
     def reset(self) -> None:
-        """Clear window and anomaly counter (call between simulation episodes)."""
+
         self._window.clear()
         self.anomaly_count = 0

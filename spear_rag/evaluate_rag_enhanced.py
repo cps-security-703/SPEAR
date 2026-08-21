@@ -1,6 +1,4 @@
-"""
-Enhanced RAG evaluation script with improved metrics and context analysis
-"""
+
 
 import argparse
 from loguru import logger
@@ -12,7 +10,7 @@ from evaluation.enhanced_metrics import EnhancedMetrics
 from evaluation.context_analyzer import ContextAnalyzer
 
 def setup_logging():
-    """Setup logging configuration"""
+
     logger.remove()
     logger.add(
         sys.stderr,
@@ -21,7 +19,7 @@ def setup_logging():
     )
 
 def create_default_test_set():
-    """Create a default test set for evaluation"""
+
     return [
         {
             'query': 'What are the main vulnerabilities in OCPP protocol for EV charging stations?',
@@ -66,45 +64,34 @@ def create_default_test_set():
     ]
 
 def evaluate_single_query_enhanced(evaluator, query, n_context, ground_truth=None):
-    """
-    Evaluate a single query with enhanced metrics
-    
-    Args:
-        evaluator: RAGEvaluator instance
-        query: Query string
-        n_context: Number of context documents
-        ground_truth: Optional ground truth
-        
-    Returns:
-        Enhanced evaluation results
-    """
+
     logger.info(f"Evaluating query: {query}")
-    
-    # Get RAG response with context
+
+
     rag_result = evaluator.get_rag_response(query, n_context)
-    
-    # Get non-RAG response
+
+
     non_rag_result = evaluator.get_non_rag_response(query)
-    
-    # Enhanced comparison
+
+
     enhanced_comparison = EnhancedMetrics.compare_rag_vs_non_rag(
         rag_result['response'],
         non_rag_result['response'],
         rag_result.get('context_docs', []),
         ground_truth
     )
-    
-    # Context usage analysis
+
+
     context_analysis = ContextAnalyzer.analyze_context_utilization(
         rag_result['response'],
         rag_result.get('context_docs', []),
         query
     )
-    
-    # Generate reports
+
+
     enhanced_report = EnhancedMetrics.generate_enhanced_report(enhanced_comparison)
     context_report = ContextAnalyzer.generate_context_usage_report(context_analysis)
-    
+
     return {
         'query': query,
         'rag_result': rag_result,
@@ -119,120 +106,120 @@ def main():
     parser = argparse.ArgumentParser(
         description="Enhanced RAG evaluation with improved metrics and context analysis"
     )
-    
+
     parser.add_argument(
         '--query',
         type=str,
         help='Single query to evaluate'
     )
-    
+
     parser.add_argument(
         '--test-set',
         type=str,
         help='JSON file containing test queries'
     )
-    
+
     parser.add_argument(
         '--use-default-test-set',
         action='store_true',
         help='Use default test set of 5 queries'
     )
-    
+
     parser.add_argument(
         '--n-context',
         type=int,
         default=10,
         help='Number of context documents for RAG'
     )
-    
+
     parser.add_argument(
         '--output',
         type=str,
         default='enhanced_evaluation_results.json',
         help='Output file for results'
     )
-    
+
     parser.add_argument(
         '--show-context-analysis',
         action='store_true',
         help='Show detailed context usage analysis'
     )
-    
+
     args = parser.parse_args()
-    
+
     setup_logging()
-    
+
     try:
         evaluator = RAGEvaluator()
-        
+
         if args.query:
-            # Single query evaluation
+
             logger.info(f"Evaluating single query: {args.query}")
-            
+
             result = evaluate_single_query_enhanced(
                 evaluator,
                 args.query,
                 args.n_context
             )
-            
-            # Print reports
+
+
             print("\n" + result['enhanced_report'])
-            
+
             if args.show_context_analysis:
                 print("\n" + result['context_report'])
-            
-            # Save result
+
+
             with open(args.output, 'w', encoding='utf-8') as f:
-                # Remove report strings for JSON serialization
-                save_result = {k: v for k, v in result.items() 
+
+                save_result = {k: v for k, v in result.items()
                               if k not in ['enhanced_report', 'context_report']}
                 json.dump(save_result, f, indent=2, ensure_ascii=False)
-            
+
             logger.info(f"Results saved to {args.output}")
-        
+
         elif args.test_set:
-            # Load test set from file
+
             logger.info(f"Loading test set from {args.test_set}")
-            
+
             with open(args.test_set, 'r', encoding='utf-8') as f:
                 test_queries = json.load(f)
-            
+
             results = []
             for i, test_case in enumerate(test_queries, 1):
                 logger.info(f"Evaluating query {i}/{len(test_queries)}")
-                
+
                 result = evaluate_single_query_enhanced(
                     evaluator,
                     test_case['query'],
                     test_case.get('n_context_docs', args.n_context),
                     test_case.get('ground_truth')
                 )
-                
+
                 results.append(result)
-                
-                # Print reports
+
+
                 print(f"\n{'='*80}")
                 print(f"Query {i}/{len(test_queries)}")
                 print(f"{'='*80}")
                 print(result['enhanced_report'])
-                
+
                 if args.show_context_analysis:
                     print("\n" + result['context_report'])
-                
-                # Rate limiting
+
+
                 import time
                 time.sleep(2)
-            
-            # Calculate aggregated metrics
+
+
             aggregated = aggregate_enhanced_results(results)
-            
-            # Print summary
+
+
             print("\n" + "="*80)
             print("AGGREGATED ENHANCED RESULTS")
             print("="*80)
             print(json.dumps(aggregated, indent=2))
-            
-            # Save all results
+
+
             save_data = {
                 'aggregated': aggregated,
                 'individual_results': [
@@ -240,54 +227,54 @@ def main():
                     for r in results
                 ]
             }
-            
+
             with open(args.output, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
-            
+
             logger.info(f"Results saved to {args.output}")
-        
+
         elif args.use_default_test_set:
-            # Use default test set
+
             logger.info("Using default test set")
-            
+
             test_queries = create_default_test_set()
             results = []
-            
+
             for i, test_case in enumerate(test_queries, 1):
                 logger.info(f"Evaluating query {i}/{len(test_queries)}")
-                
+
                 result = evaluate_single_query_enhanced(
                     evaluator,
                     test_case['query'],
                     test_case.get('n_context_docs', args.n_context),
                     test_case.get('ground_truth')
                 )
-                
+
                 results.append(result)
-                
-                # Print reports
+
+
                 print(f"\n{'='*80}")
                 print(f"Query {i}/{len(test_queries)}")
                 print(f"{'='*80}")
                 print(result['enhanced_report'])
-                
+
                 if args.show_context_analysis:
                     print("\n" + result['context_report'])
-                
-                # Rate limiting
+
+
                 import time
                 time.sleep(2)
-            
-            # Calculate aggregated metrics
+
+
             aggregated = aggregate_enhanced_results(results)
-            
-            # Print summary
+
+
             print("\n" + "="*80)
             print("AGGREGATED ENHANCED RESULTS")
             print("="*80)
             print(json.dumps(aggregated, indent=2))
-            
-            # Save all results
+
+
             save_data = {
                 'aggregated': aggregated,
                 'individual_results': [
@@ -295,38 +282,38 @@ def main():
                     for r in results
                 ]
             }
-            
+
             with open(args.output, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=2, ensure_ascii=False)
-            
+
             logger.info(f"Results saved to {args.output}")
-        
+
         else:
             parser.print_help()
             print("\nPlease provide --query, --test-set, or --use-default-test-set")
             sys.exit(1)
-    
+
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         logger.exception(e)
         sys.exit(1)
 
 def aggregate_enhanced_results(results: list) -> dict:
-    """Aggregate enhanced evaluation results"""
+
     total = len(results)
-    
-    # Average quality scores
+
+
     avg_rag_quality = sum(r['enhanced_comparison']['rag_quality']['overall_quality_score'] for r in results) / total
     avg_non_rag_quality = sum(r['enhanced_comparison']['non_rag_quality']['overall_quality_score'] for r in results) / total
     avg_improvement = avg_rag_quality - avg_non_rag_quality
-    
-    # Context usage
+
+
     avg_context_usage = sum(r['context_analysis']['utilization_score'] for r in results) / total
     avg_docs_used = sum(r['context_analysis']['documents_used'] for r in results) / total
-    
-    # Count wins
+
+
     quality_wins = sum(1 for r in results if r['enhanced_comparison']['quality_improvement'] > 0)
-    
+
     return {
         'total_queries': total,
         'average_quality_scores': {
@@ -342,7 +329,7 @@ def aggregate_enhanced_results(results: list) -> dict:
         'rag_wins': {
             'quality_wins': f"{quality_wins}/{total} ({quality_wins/total*100:.1f}%)"
         },
-        'verdict': 'RAG significantly improves quality' if avg_improvement > 20 else 
+        'verdict': 'RAG significantly improves quality' if avg_improvement > 20 else
                   'RAG improves quality' if avg_improvement > 5 else
                   'RAG shows marginal improvement' if avg_improvement > -5 else
                   'RAG needs improvement'

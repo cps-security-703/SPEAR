@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-compare_pinn_cms_vs_acn_controllers.py
 
-
-"""
 
 import os, sys, warnings, gzip, glob, csv, math
 warnings.filterwarnings("ignore")
@@ -19,7 +15,7 @@ from matplotlib import cm
 from scipy import stats
 import torch
 
-# ── configuration ─────────────────────────────────────────────────────────────
+
 ACN_DATA_ROOT = os.path.join(
     "evcs_data", "ACN-Data-Static-main", "time series data"
 )
@@ -27,21 +23,21 @@ ACN_SESSION_JSON = os.path.join(
     "evcs_data", "ACN-Data-Static-main", "session data", "caltech_sessions.json"
 )
 
-SITES_TO_USE = [                     # (dir, max_files) pairs
+SITES_TO_USE = [
     (os.path.join(ACN_DATA_ROOT, "caltech", "California_Garage_01"), 80),
     (os.path.join(ACN_DATA_ROOT, "jpl",     "Arroyo_Garage_01"),     50),
     (os.path.join(ACN_DATA_ROOT,),                                    6),
 ]
 
-PERIOD_MIN    = 5          # scheduling period (minutes)
-EVSE_VOLTAGE  = 240.0      # L2 AC EVSE voltage (V)
-MAX_PILOT_A   = 32.0       # maximum pilot signal (A)
-MIN_PILOT_A   = 0.0        # minimum pilot signal (A)
-N_EVSES       = 10         # number of EVSEs per simulated site
-BATTERY_KWH   = 60.0       # assumed battery capacity (kWh)
-TARGET_SOC    = 0.80       # EV departure target SOC
-SIM_PERIODS   = 288        # 24 h × 12 periods/h  (5-min period)
-MAX_POWER_KW  = MAX_PILOT_A * EVSE_VOLTAGE / 1000.0   # ≈ 7.68 kW
+PERIOD_MIN    = 5
+EVSE_VOLTAGE  = 240.0
+MAX_PILOT_A   = 32.0
+MIN_PILOT_A   = 0.0
+N_EVSES       = 10
+BATTERY_KWH   = 60.0
+TARGET_SOC    = 0.80
+SIM_PERIODS   = 288
+MAX_POWER_KW  = MAX_PILOT_A * EVSE_VOLTAGE / 1000.0
 
 OUT_DIR = os.path.join("plots", "cms_comparison")
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -66,15 +62,8 @@ LINE_WIDTHS = {k: 2.0 for k in PALETTE}
 LINE_WIDTHS["PINN-CMS"] = 3.0
 
 
-# =============================================================================
-# 1.  Load real ACN-Data sessions
-# =============================================================================
-
 def load_sessions(sites=SITES_TO_USE, min_rows: int = 8):
-    """
-    Load per-session time-series CSVs via pandas (handles gzip transparently).
-    Returns a list of dicts with: i_arr, v_arr, p_arr, e_arr, n, e_total.
-    """
+
     sessions = []
     for dir_path, max_files in sites:
         if not os.path.isdir(dir_path):
@@ -102,7 +91,7 @@ def load_sessions(sites=SITES_TO_USE, min_rows: int = 8):
                     p_arr = np.where(p_arr > 1e-3, p_arr, i_arr * v_arr / 1000.0)
                 else:
                     p_arr = i_arr * v_arr / 1000.0
-                # Use max energy as total delivered (last row may be 0 when charger stops)
+
                 e_total = float(np.max(e_arr))
                 sessions.append({
                     "i_arr": i_arr, "v_arr": v_arr,
@@ -115,17 +104,15 @@ def load_sessions(sites=SITES_TO_USE, min_rows: int = 8):
     return sessions
 
 
-# 2.  Build EV events (simplified slot-based schedule)
-
 class EVEvent:
-    """Represents one EV charging session."""
+
     def __init__(self, ev_id: int, arrival: int, session_data: dict,
                  battery_kwh: float = BATTERY_KWH, target_soc: float = TARGET_SOC):
         self.ev_id    = ev_id
         self.arrival  = arrival
         n = session_data["n"]
         self.session_data = session_data
-        # actual duration in periods (4 s rows → convert to PERIOD_MIN periods)
+
         dur_periods = max(4, int(round(n * 4.0 / (PERIOD_MIN * 60))))
         self.departure = min(arrival + dur_periods, SIM_PERIODS - 1)
         self.battery_kwh  = battery_kwh
@@ -136,7 +123,7 @@ class EVEvent:
         self.required_kwh = usable * (1.0 - self.initial_soc)
         self.soc          = self.initial_soc
         self.delivered_kwh = 0.0
-        self._current_t   = arrival    # updated each simulation period
+        self._current_t   = arrival
 
     @property
     def remaining_periods(self):
@@ -148,7 +135,7 @@ class EVEvent:
 
     @property
     def laxity(self):
-        """kWh of slack energy (how much over-capacity we have in remaining time)."""
+
         max_del = (MAX_PILOT_A * EVSE_VOLTAGE / 1000.0
                    * max(self.remaining_periods, 1)
                    * PERIOD_MIN / 60.0)
@@ -159,11 +146,11 @@ class EVEvent:
         return self.soc >= self.target_soc - 0.001
 
     def charge(self, pilot_A: float, dt_h: float) -> float:
-        """Apply pilot signal for dt_h hours; return delivered kW."""
+
         if self.soc >= self.target_soc:
             return 0.0
         max_charge_rate_kw = pilot_A * EVSE_VOLTAGE / 1000.0
-        # Limit power to avoid overshooting target SOC in this period
+
         soc_headroom_kwh   = (self.target_soc - self.soc) * self.battery_kwh
         power_kw = min(max_charge_rate_kw,
                        soc_headroom_kwh / max(dt_h, 1e-6))
@@ -175,16 +162,13 @@ class EVEvent:
         return power_kw
 
 
-# 
-# 3.  Controllers
-
 class BaseController:
-    """Schedules pilot signals for active EVs given a budget (kW)."""
+
     name = "Base"
 
     def schedule(self, active_evs: list, cap_kw: float,
                  current_period: int) -> dict:
-        """Return {ev_id: pilot_A}."""
+
         raise NotImplementedError
 
 
@@ -196,7 +180,7 @@ class UncontrolledController(BaseController):
 
 
 class EDFController(BaseController):
-    """Earliest Deadline First — charges EVs with soonest departure first."""
+
     name = "EDF"
 
     def schedule(self, active_evs, cap_kw, current_period):
@@ -211,7 +195,7 @@ class EDFController(BaseController):
 
 
 class MaxRateController(BaseController):
-    """MaxRate — distributes available capacity equally up to max rate."""
+
     name = "MaxRate"
 
     def schedule(self, active_evs, cap_kw, current_period):
@@ -223,7 +207,7 @@ class MaxRateController(BaseController):
 
 
 class SortedStayFirstController(BaseController):
-    """Sorted by total required energy (largest demand first)."""
+
     name = "SortedStayFirst"
 
     def schedule(self, active_evs, cap_kw, current_period):
@@ -238,7 +222,7 @@ class SortedStayFirstController(BaseController):
 
 
 class SortedDeptFirstController(BaseController):
-    """Sorted by departure time (same as EDF but uses least_laxity secondary)."""
+
     name = "SortedDeptFirst"
 
     def schedule(self, active_evs, cap_kw, current_period):
@@ -253,24 +237,19 @@ class SortedDeptFirstController(BaseController):
 
 
 class PINNCMSController(BaseController):
-    """
-    PINN-based CMS using acn_sim_interface.ACNDataLoader-trained model.
-    Uses the existing LSTMPINNChargingOptimizer infrastructure from pinn_optimizer.py.
-    Falls back to LLF if PINN unavailable.
-    """
+
     name = "PINN-CMS"
 
     def __init__(self, cap_kw: float = N_EVSES * MAX_POWER_KW):
         self.cap_kw = cap_kw
-        self._buffers: dict = {}    # ev_id → list of feature vectors
+        self._buffers: dict = {}
         self._seq_len = 8
         self._model   = None
         self._device  = torch.device("cpu")
         self._build_model()
 
     def _build_model(self):
-        """Load or train the PINN model, then fine-tune on ACN-Data.
-        """
+
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from pinn_optimizer import LSTMPINNChargingOptimizer, LSTMPINNConfig
@@ -279,12 +258,12 @@ class PINNCMSController(BaseController):
             pinn_cfg = LSTMPINNConfig()
             pinn_cfg.sequence_length  = self._seq_len
             pinn_cfg.num_evcs_stations = N_EVSES
-            pinn_cfg.epochs           = 300      # increased from default 100
-            pinn_cfg.learning_rate    = 5e-4     # slightly lower for fine-tuning stability
+            pinn_cfg.epochs           = 300
+            pinn_cfg.learning_rate    = 5e-4
 
             self._pinn_opt = LSTMPINNChargingOptimizer(pinn_cfg, always_train=False)
 
-            # Try to load a pre-trained checkpoint as a warm start
+
             candidate_paths = [
                 "federated_pinn_system_1.pth",
                 "pinn_model_system_1.pth",
@@ -300,7 +279,7 @@ class PINNCMSController(BaseController):
                     except Exception:
                         pass
 
-            # Always fine-tune on ACN-Data sequences (adapts to congested scenario)
+
             loader = ACNDataLoader(ACN_DATA_ROOT)
             loader.load_from_dirs(SITES_TO_USE)
             X, y = loader.build_training_sequences(
@@ -311,7 +290,7 @@ class PINNCMSController(BaseController):
                 print(f"  PINN-CMS: {mode} on {len(X)} ACN sequences "
                       f"({pinn_cfg.epochs} epochs) ...")
                 self._pinn_opt._enhanced_training_data = (X, y)
-                self._pinn_opt.train_model()     # uses _enhanced_training_data + 300 epochs
+                self._pinn_opt.train_model()
 
                 print("  PINN-CMS: training complete")
             elif not loaded:
@@ -347,31 +326,30 @@ class PINNCMSController(BaseController):
             return {}
 
         dt_h       = PERIOD_MIN / 60.0
-        budget_A   = cap_kw * 1000.0 / EVSE_VOLTAGE   # total amps available
+        budget_A   = cap_kw * 1000.0 / EVSE_VOLTAGE
 
-        # ── Step 1: compute physics-based urgency for every EV ────────────────
 
         ev_info = {}
         for ev in active_evs:
             rem_periods   = max(ev.departure - current_period, 1)
             max_possible  = MAX_PILOT_A * EVSE_VOLTAGE / 1000.0 * rem_periods * dt_h
-            # Minimum pilot (A) needed to meet demand by departure
+
             min_pilot_A   = min(MAX_PILOT_A, max(0.0,
                 ev.remaining_kwh / max(rem_periods * dt_h, 1e-6)
                 * 1000.0 / EVSE_VOLTAGE
             ))
-            # Laxity ratio: 0 → critical, 1 → fully flexible
+
             lax_ratio     = max(0.0, 1.0 - min_pilot_A / max(MAX_PILOT_A, 1e-6))
-            # Urgency: 1 = critical (no slack), 0 = completely flexible
+
             urgency       = 1.0 - lax_ratio
             ev_info[ev.ev_id] = {
                 "ev":          ev,
                 "urgency":     urgency,
                 "min_pilot_A": min_pilot_A,
-                "pinn_w":      0.5,    # default PINN weight
+                "pinn_w":      0.5,
             }
 
-        # ── Step 2: query PINN model for each EV → pilot confidence weight ────
+
         if self._pinn_opt is not None:
             self._pinn_opt.model.eval()
             with torch.no_grad():
@@ -388,20 +366,18 @@ class PINNCMSController(BaseController):
                         np.array(self._buffers[eid])).unsqueeze(0)
                     try:
                         out = self._pinn_opt.model(seq)
-                        # out[0,1] = normalised I_ref (0-1) = PINN's desired pilot fraction
+
                         pinn_w = float(np.clip(float(out[0, 1]), 0.0, 1.0))
                     except Exception:
                         pinn_w = 0.5
                     ev_info[eid]["pinn_w"] = pinn_w
 
-        # ── Step 3: hybrid priority = 0.65 × urgency + 0.35 × pinn_weight ────
 
-        ALPHA = 0.65    # weight on physics urgency
-        BETA  = 0.35    # weight on PINN prediction
+        ALPHA = 0.65
+        BETA  = 0.35
         for info in ev_info.values():
             info["priority"] = ALPHA * info["urgency"] + BETA * info["pinn_w"]
 
-        # ── Step 4: sorted allocation — most urgent get full pilot first ───────
 
         result   = {ev.ev_id: 0.0 for ev in active_evs}
         rem_A    = budget_A
@@ -409,7 +385,7 @@ class PINNCMSController(BaseController):
         evs_sorted = sorted(active_evs,
                             key=lambda e: -ev_info[e.ev_id]["priority"])
 
-        # Phase A: give mandatory minimum pilot to EVs that will miss deadline
+
         for ev in evs_sorted:
             info    = ev_info[ev.ev_id]
             min_A   = info["min_pilot_A"]
@@ -418,13 +394,13 @@ class PINNCMSController(BaseController):
                 result[ev.ev_id] = alloc
                 rem_A -= alloc
 
-        # Phase B: distribute remaining budget proportional to priority×demand
+
         if rem_A > 0.5:
             weights = {}
             for ev in evs_sorted:
                 info        = ev_info[ev.ev_id]
                 soc_gap     = max(0.0, ev.target_soc - ev.soc)
-                # Want more power if far from target AND high priority
+
                 weights[ev.ev_id] = info["priority"] * soc_gap
             total_w = max(sum(weights.values()), 1e-6)
             for ev in evs_sorted:
@@ -435,7 +411,7 @@ class PINNCMSController(BaseController):
                 extra_A = max(0.0, extra_A)
                 result[ev.ev_id] += extra_A
 
-        # ── Step 5: ensure no EV exceeds max pilot and total respects cap ─────
+
         total_A = sum(result.values())
         if total_A > budget_A + 0.01:
             scale = budget_A / total_A
@@ -444,58 +420,48 @@ class PINNCMSController(BaseController):
         return result
 
 
-# 4.  Realistic congested simulation engine
-
-
-# Time-of-use arrival distribution: two rush peaks
-
 RUSH_PROFILES = [
-    # (center_period, spread_periods, n_evs, mean_duration_periods, mean_batt_kwh, mean_soc)
-    (int(7.5 * 60 / PERIOD_MIN),  int(1.5 * 60 / PERIOD_MIN), 30, 60,  40.0, 0.35),  # morning rush
-    (int(17.5* 60 / PERIOD_MIN),  int(1.5 * 60 / PERIOD_MIN), 30, 72,  55.0, 0.25),  # evening rush
-    (int(12.0* 60 / PERIOD_MIN),  int(2.0 * 60 / PERIOD_MIN), 12, 48,  30.0, 0.50),  # lunch/midday
-    (int(21.0* 60 / PERIOD_MIN),  int(1.0 * 60 / PERIOD_MIN),  8, 120, 60.0, 0.20),  # overnight
+
+    (int(7.5 * 60 / PERIOD_MIN),  int(1.5 * 60 / PERIOD_MIN), 30, 60,  40.0, 0.35),
+    (int(17.5* 60 / PERIOD_MIN),  int(1.5 * 60 / PERIOD_MIN), 30, 72,  55.0, 0.25),
+    (int(12.0* 60 / PERIOD_MIN),  int(2.0 * 60 / PERIOD_MIN), 12, 48,  30.0, 0.50),
+    (int(21.0* 60 / PERIOD_MIN),  int(1.0 * 60 / PERIOD_MIN),  8, 120, 60.0, 0.20),
 ]
 
 
 def build_busy_day(sessions: list, seed: int = 42) -> list:
-    """
-    Build a list of EVEvent objects representing a congested workday at an EV site.
-    Uses real ACN-Data charging profiles to set realistic energy demands,
-    but assigns arrivals/departures from a TOU distribution to create
-    genuine peak-hour congestion.
-    """
+
     rng = np.random.default_rng(seed)
     events = []
     ev_id  = 0
 
-    # Shuffle sessions so we draw a representative mix each time
+
     sess_pool = list(sessions)
     rng.shuffle(sess_pool)
     sess_idx  = 0
 
     for (center, spread, n_evs, dur_mean, batt_mean, soc_mean) in RUSH_PROFILES:
         for _ in range(n_evs):
-            # ── Arrival drawn from truncated Gaussian around rush center ───────
+
             arrival = int(np.clip(
                 rng.normal(center, spread * 0.5), 0, SIM_PERIODS - 30))
 
-            # ── Duration: log-normal so some EVs stay much longer ─────────────
+
             dur = int(np.clip(
                 rng.lognormal(np.log(max(dur_mean, 1)), 0.5),
                 8, SIM_PERIODS - arrival - 2))
             departure = min(arrival + dur, SIM_PERIODS - 1)
 
-            # ── Battery: Gaussian around mean ─────────────────────────────────
+
             batt_kwh = float(np.clip(rng.normal(batt_mean, batt_mean * 0.20),
                                      10.0, 100.0))
 
-            # ── Initial SOC from real session's delivered fraction ─────────────
+
             sess = sess_pool[sess_idx % len(sess_pool)]
             sess_idx += 1
-            # Derive initial SOC from session energy
-            e_real  = max(sess["e_total"], 0.1)      # kWh delivered in real session
-            # Scale to current battery size and perturb around TOU mean
+
+            e_real  = max(sess["e_total"], 0.1)
+
             soc_raw = max(0.0, 1.0 - e_real / max(batt_kwh * TARGET_SOC, 1e-6))
             initial_soc = float(np.clip(
                 rng.normal(soc_mean, 0.08), 0.05, 0.70))
@@ -526,16 +492,13 @@ def build_busy_day(sessions: list, seed: int = 42) -> list:
 
 def simulate(ev_events: list, controller: BaseController,
              cap_kw: float, n_evses: int = N_EVSES) -> dict:
-    """
-    Simulate one day given a pre-built list of EVEvent objects.
-    Resets EV state before each run so controllers see identical inputs.
-    """
+
     import copy
-    # Deep-copy events so each controller gets an independent fresh state
+
     pool = []
     for ev in ev_events:
         e2 = EVEvent.__new__(EVEvent)
-        e2.__dict__.update(ev.__dict__)   # shallow copy of primitives
+        e2.__dict__.update(ev.__dict__)
         e2.soc          = ev.initial_soc
         e2.delivered_kwh = 0.0
         e2._current_t   = ev.arrival
@@ -553,12 +516,12 @@ def simulate(ev_events: list, controller: BaseController,
     departed:   set  = set()
 
     for t in range(SIM_PERIODS):
-        # ── Arrivals ─────────────────────────────────────────────────────────
+
         for ev in pool:
             if ev.arrival == t and ev.ev_id not in departed:
                 active_evs.append(ev)
 
-        # ── Update current_t, remove departed / fully-charged EVs ────────────
+
         new_active = []
         for ev in active_evs:
             ev._current_t = t
@@ -578,10 +541,9 @@ def simulate(ev_events: list, controller: BaseController,
                 new_active.append(ev)
         active_evs = new_active
 
-        # ── Queue: enforce physical EVSE slot limit ───────────────────────────
-        # Sort by arrival time for FIFO plug-in; controller decides charging order
+
         if len(active_evs) > n_evses:
-            # Sort by urgency to preferentially give slots to most urgent EVs
+
             sorted_by_lax = sorted(active_evs, key=lambda e: e.laxity)
             serving_evs   = sorted_by_lax[:n_evses]
             queue_evs     = sorted_by_lax[n_evses:]
@@ -595,10 +557,10 @@ def simulate(ev_events: list, controller: BaseController,
             util_arr[t] = 0.0
             continue
 
-        # ── Controller schedules pilot signals for serving EVs ────────────────
+
         schedule  = controller.schedule(serving_evs, cap_kw, t)
 
-        # ── Apply pilots, accumulate power ────────────────────────────────────
+
         total_kw  = 0.0
         n_charging = 0
         for ev in serving_evs:
@@ -612,7 +574,7 @@ def simulate(ev_events: list, controller: BaseController,
         agg_kw_arr[t] = total_kw
         util_arr[t]   = (n_charging / max(n_evses, 1)) * 100.0
 
-    # Record any EVs still in grid at end-of-day
+
     for ev in active_evs:
         ev_results.append({
             "ev_id":        ev.ev_id,
@@ -646,9 +608,6 @@ def simulate(ev_events: list, controller: BaseController,
     }
 
 
-# 5.  Run all controllers
-
-
 def run_all(ev_events, cap_kw, n_evses):
     controllers = {
         "Uncontrolled":    UncontrolledController(),
@@ -675,15 +634,11 @@ def run_all(ev_events, cap_kw, n_evses):
     return results
 
 
-
-# 6.  Plots
-
-
 def _savefig(name):
     path = os.path.join(OUT_DIR, name)
     plt.savefig(path, bbox_inches="tight", dpi=150)
     plt.close()
-    print(f"    Saved → {path}")
+    print(f"    Saved  {path}")
 
 
 def _style_ax(ax, xlabel="", ylabel="", title=""):
@@ -699,7 +654,7 @@ T_AXIS = np.arange(SIM_PERIODS) * PERIOD_MIN / 60.0
 
 
 def plot_aggregate_power(results, cap_kw):
-    """CMS-01 — Power time-series."""
+
     print("  [CMS-01] Aggregate power time-series")
     fig, ax = plt.subplots(figsize=(14, 5))
     for name, r in results.items():
@@ -716,13 +671,13 @@ def plot_aggregate_power(results, cap_kw):
 
 
 def plot_soc_progression(results, ev_events):
-    """CMS-02 — Mean SOC progression over time (estimated)."""
+
     print("  [CMS-02] SOC progression")
-    # Total energy requested across all EVs (same for all controllers)
+
     fig, ax = plt.subplots(figsize=(14, 5))
     for name, r in results.items():
         total_req  = max(sum(e["required_kwh"] for e in r["ev_results"]), 1e-6)
-        cum_del_kw = np.cumsum(r["agg_kw"]) * PERIOD_MIN / 60.0  # kWh
+        cum_del_kw = np.cumsum(r["agg_kw"]) * PERIOD_MIN / 60.0
         soc_proxy  = np.clip(cum_del_kw / total_req, 0.0, 1.0)
         lw = LINE_WIDTHS[name]
         ax.plot(T_AXIS, soc_proxy * 100.0, color=PALETTE[name],
@@ -735,7 +690,7 @@ def plot_soc_progression(results, ev_events):
 
 
 def plot_peak_and_utilisation(results, cap_kw):
-    """CMS-03 — Peak demand + capacity utilisation vs controller."""
+
     print("  [CMS-03] Peak demand & capacity utilisation")
     names   = list(results.keys())
     peaks   = [results[n]["peak_kw"] for n in names]
@@ -746,7 +701,7 @@ def plot_peak_and_utilisation(results, cap_kw):
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 5))
 
-    # Left: peak demand bar
+
     ax = axes[0]
     bars = ax.bar(x, peaks, width=w*2, color=colors, edgecolor="k",
                   linewidth=0.6, alpha=0.85)
@@ -759,7 +714,7 @@ def plot_peak_and_utilisation(results, cap_kw):
     _style_ax(ax, "", "Peak Power (kW)", "Peak EV Demand by Controller")
     ax.legend(fontsize=9); ax.set_ylim(0)
 
-    # Right: average utilisation bar
+
     ax2 = axes[1]
     bars2 = ax2.bar(x, avg_util, width=w*2, color=colors, edgecolor="k",
                     linewidth=0.6, alpha=0.85)
@@ -778,7 +733,7 @@ def plot_peak_and_utilisation(results, cap_kw):
 
 
 def plot_throughput(results):
-    """CMS-04 — % EVs fully charged + energy delivery rate."""
+
     print("  [CMS-04] Throughput (% EVs satisfied & energy delivery)")
     names   = list(results.keys())
     prop_d  = [results[n]["prop_d"] * 100 for n in names]
@@ -803,7 +758,7 @@ def plot_throughput(results):
 
 
 def plot_queue_depth(results):
-    """CMS-05 — Queue depth over time."""
+
     print("  [CMS-05] Queue depth")
     fig, ax = plt.subplots(figsize=(14, 5))
     for name, r in results.items():
@@ -818,13 +773,13 @@ def plot_queue_depth(results):
 
 
 def plot_pilot_violin(results):
-    """CMS-06 — Pilot signal distribution per controller."""
+
     print("  [CMS-06] Pilot signal distribution (violin)")
     names   = list(results.keys())
     data_nz = [np.array([p for p in results[n]["pilot_signals"] if p > 0.05])
                for n in names]
 
-    # If any controller has no non-zero pilots, fall back to bar chart of mean pilot
+
     if any(len(d) == 0 for d in data_nz):
         fig, ax = plt.subplots(figsize=(14, 5))
         means = [np.mean(results[n]["pilot_signals"]) if results[n]["pilot_signals"]
@@ -859,7 +814,7 @@ def plot_pilot_violin(results):
 
 
 def plot_summary_table(results, cap_kw):
-    """CMS-07 — Summary metrics table."""
+
     print("  [CMS-07] Summary table")
     rows = []
     for name, r in results.items():
@@ -901,9 +856,6 @@ def plot_summary_table(results, cap_kw):
     print("\n" + df.to_string() + "\n")
 
 
-# 7.  Entry point
-
-
 if __name__ == "__main__":
     print("=" * 65)
     print("  PINN-CMS vs ACN Controllers — Comparison")
@@ -916,12 +868,9 @@ if __name__ == "__main__":
         sys.exit(1)
     print(f"     Loaded {len(sessions)} real ACN sessions")
 
-    # ── Build a congested busy-day scenario ────────────────────────────────────
-    # 80 EVs (30+30+12+8) across morning, evening, midday, overnight rush peaks.
-    # Cap is set to 40% of nameplate so demand exceeds capacity at rush hours,
-    # forcing genuine rationing that separates controller strategies.
+
     n_evses  = N_EVSES
-    cap_kw   = N_EVSES * MAX_POWER_KW * 0.40    # 40% → ~30.7 kW tight cap
+    cap_kw   = N_EVSES * MAX_POWER_KW * 0.40
     print(f"\n     Site capacity cap: {cap_kw:.1f} kW  ({n_evses} EVSEs × "
           f"{MAX_POWER_KW:.1f} kW × 40%)")
     print("     [Tight cap creates peak-hour rationing — differentiates controllers]")

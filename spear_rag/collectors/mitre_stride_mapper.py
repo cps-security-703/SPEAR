@@ -6,35 +6,27 @@ from config import config
 from schemas import VulnerabilityDocument, MITRESTRIDEMapping
 
 class MITRESTRIDEMapper:
-    """
-    Creates comprehensive mappings between MITRE ATT&CK for ICS and STRIDE
-    with specific focus on EVSE and Power Systems
-    """
-    
+
+
     def __init__(self):
         logger.info("Initialized MITRESTRIDEMapper")
-    
+
     def create_comprehensive_mappings(self) -> List[VulnerabilityDocument]:
-        """
-        Create comprehensive MITRE-STRIDE mappings for EVSE context
-        
-        Returns:
-            List of VulnerabilityDocument instances
-        """
+
         logger.info("Creating comprehensive MITRE-STRIDE mappings")
-        
+
         mappings = self._define_mitre_stride_mappings()
         documents = []
-        
+
         for mapping in mappings:
             doc = self._create_document_from_mapping(mapping)
             documents.append(doc)
-        
+
         logger.info(f"Created {len(documents)} MITRE-STRIDE mapping documents")
         return documents
-    
+
     def _define_mitre_stride_mappings(self) -> List[Dict]:
-        """Define detailed MITRE-STRIDE mappings for EVSE/Power Systems"""
+
         return [
             {
                 'mitre_id': 'T0866',
@@ -296,23 +288,23 @@ class MITRESTRIDEMapper:
                 ]
             }
         ]
-    
+
     def _create_document_from_mapping(self, mapping: Dict) -> VulnerabilityDocument:
-        """Create VulnerabilityDocument from MITRE-STRIDE mapping"""
+
         doc_id = f"MITRE-STRIDE-{mapping['mitre_id']}"
-        
+
         embedding_text = (
             f"{mapping['mitre_id']} {mapping['mitre_name']} {mapping['description']} "
             f"{mapping['evse_applicability']} {' '.join(mapping['attack_scenarios'])} "
             f"{' '.join(mapping['mitigation'])}"
         )
-        
+
         keywords = [
             mapping['mitre_id'].lower(),
             mapping['mitre_name'].lower().replace(' ', '_'),
             'evse', 'power_systems', 'mitre', 'stride'
         ]
-        
+
         document = VulnerabilityDocument(
             doc_id=doc_id,
             type="mitre_stride_mapping",
@@ -342,11 +334,11 @@ class MITRESTRIDEMapper:
             keywords=keywords,
             relevance_tags=["mitre", "stride", "mapping", "evse", "ics"] + mapping['stride']
         )
-        
+
         return document
-    
+
     def save_processed_documents(self, documents: List[VulnerabilityDocument], filename: str = "mitre_stride_mappings.json"):
-        """Save processed documents to file"""
+
         filepath = config.PROCESSED_DATA_DIR / filename
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump([doc.model_dump() for doc in documents], f, indent=2, ensure_ascii=False)

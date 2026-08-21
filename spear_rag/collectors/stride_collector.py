@@ -6,10 +6,8 @@ from config import config
 from schemas import VulnerabilityDocument
 
 class STRIDECollector:
-    """
-    Collector for STRIDE threat patterns specific to EVSE and Power Systems
-    """
-    
+
+
     def __init__(self):
         self.stride_categories = [
             "Spoofing",
@@ -20,29 +18,24 @@ class STRIDECollector:
             "Elevation of Privilege"
         ]
         logger.info("Initialized STRIDECollector")
-    
+
     def create_evse_stride_patterns(self) -> List[VulnerabilityDocument]:
-        """
-        Create comprehensive STRIDE patterns for EVSE/Power Systems
-        
-        Returns:
-            List of VulnerabilityDocument instances
-        """
+
         logger.info("Creating STRIDE patterns for EVSE and Power Systems")
-        
+
         patterns = self._define_stride_patterns()
         documents = []
-        
+
         for category, scenarios in patterns.items():
             for idx, scenario in enumerate(scenarios):
                 doc = self._create_document_from_scenario(category, idx, scenario)
                 documents.append(doc)
-        
+
         logger.info(f"Created {len(documents)} STRIDE pattern documents")
         return documents
-    
+
     def _define_stride_patterns(self) -> Dict[str, List[Dict]]:
-        """Define STRIDE patterns for EVSE infrastructure"""
+
         return {
             "Spoofing": [
                 {
@@ -397,19 +390,19 @@ class STRIDECollector:
                 }
             ]
         }
-    
+
     def _create_document_from_scenario(self, category: str, idx: int, scenario: Dict) -> VulnerabilityDocument:
-        """Create VulnerabilityDocument from STRIDE scenario"""
+
         doc_id = f"STRIDE-{category.upper().replace(' ', '_')}-{idx+1:03d}"
-        
+
         embedding_text = (
             f"{scenario['scenario']} {scenario['description']} "
             f"{' '.join(scenario['mitigations'])} {' '.join(scenario['detection'])}"
         )
-        
+
         keywords = [category.lower(), "evse", "charging", "power", "grid"]
         keywords.extend([word.lower() for word in scenario['scenario'].split()[:3]])
-        
+
         document = VulnerabilityDocument(
             doc_id=doc_id,
             type="stride_pattern",
@@ -439,11 +432,11 @@ class STRIDECollector:
             keywords=keywords,
             relevance_tags=["stride", "threat_model", category.lower(), "evse", "power_systems"]
         )
-        
+
         return document
-    
+
     def save_processed_documents(self, documents: List[VulnerabilityDocument], filename: str = "stride_documents.json"):
-        """Save processed documents to file"""
+
         filepath = config.PROCESSED_DATA_DIR / filename
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump([doc.model_dump() for doc in documents], f, indent=2, ensure_ascii=False)
