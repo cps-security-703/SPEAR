@@ -1,0 +1,19 @@
+.env
+.pdf
+
+# --- secrets (never commit) ---
+gemini_key.txt
+nvd_key.txt
+**/.env
+**/nvd_key.txt
+
+# --- regenerable data / checkpoints (not shipped) ---
+evcs_data/
+trained_rl_agents/
+data/
+acndata/
+spear_rag/chroma_db/
+spear_rag/chroma_db*/
+spear_rag/vector_db/
+spear_rag/pdf/
+spear_rag/data/

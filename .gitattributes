@@ -1,0 +1,2 @@
+spear_rag/data/CICEVSE2024_NT.csv filter=lfs diff=lfs merge=lfs -text
+evcs_data/CICEVSE2024_NT.csv filter=lfs diff=lfs merge=lfs -text

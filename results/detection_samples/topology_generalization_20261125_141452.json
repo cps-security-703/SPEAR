@@ -1,0 +1,67 @@
+{
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "rows": [
+    {
+      "impact_890_T0": 2.2889658115409506,
+      "impact_890_T1": 0.0,
+      "impact_840_T1": 0.7162679581951483,
+      "blind_retention": 0.0,
+      "aware_retention": 0.3129220867274338,
+      "seed": 0
+    },
+    {
+      "impact_890_T0": 2.2910098929563,
+      "impact_890_T1": 0.0,
+      "impact_840_T1": 0.8136112629922068,
+      "blind_retention": 0.0,
+      "aware_retention": 0.35513214739650456,
+      "seed": 1
+    },
+    {
+      "impact_890_T0": 2.2623948732608623,
+      "impact_890_T1": 0.0,
+      "impact_840_T1": 1.7215174254467207,
+      "blind_retention": 0.0,
+      "aware_retention": 0.7609270361214364,
+      "seed": 2
+    },
+    {
+      "impact_890_T0": 2.087544718103611,
+      "impact_890_T1": 0.0,
+      "impact_840_T1": 0.8420426273557579,
+      "blind_retention": 0.0,
+      "aware_retention": 0.4033650728788674,
+      "seed": 3
+    },
+    {
+      "impact_890_T0": 2.2374783045665034,
+      "impact_890_T1": 0.0,
+      "impact_840_T1": 0.8160484808614615,
+      "blind_retention": 0.0,
+      "aware_retention": 0.36471794126270446,
+      "seed": 4
+    }
+  ],
+  "args": {
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "magnitude": 0.7,
+    "stealth": 0.3,
+    "start": 100.0,
+    "duration": 480.0,
+    "total": 600.0,
+    "dss": "ieee34Mod1.dss"
+  },
+  "timestamp": "2026-11-25T14:14:52"
+}

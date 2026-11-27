@@ -1,0 +1,24 @@
+{
+  "generated_from": "fresh_run",
+  "n_queries": 15,
+  "schemes": [
+    {
+      "scheme": "Primary (operational)",
+      "rag": 69.1,
+      "non_rag": 29.9,
+      "delta": 39.2
+    },
+    {
+      "scheme": "Uniform (w_i = 1/6)",
+      "rag": 72.8,
+      "non_rag": 34.5,
+      "delta": 38.3
+    },
+    {
+      "scheme": "RL-centric (w_RL = w_proto = 0.25)",
+      "rag": 70.5,
+      "non_rag": 34.3,
+      "delta": 36.3
+    }
+  ]
+}
