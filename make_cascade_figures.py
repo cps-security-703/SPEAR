@@ -117,7 +117,7 @@ def _align(tb, yb, ta, ya):
     return t[m], yb[:n][m], ya[:n][m]
 
 
-def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=None, diff=False):
+def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=None, diff=False, ylim=None):
     al = _align(tb, yb, ta, ya)
     if al is None:
         print("## empty data for", fname); return None
@@ -139,6 +139,7 @@ def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=No
         ax.plot(t, attack, color=color_attack, lw=2.0, label=attack_label)
         peak = float(np.nanmax(np.abs(attack - benign))) if attack.size else float("nan")
     ax.set_xlabel("time (s)"); ax.set_ylabel(ylabel)
+    if ylim is not None: ax.set_ylim(*ylim)          # shared across the (a)/(b) pair
     ax.grid(True, alpha=0.3); ax.legend(loc="best", framealpha=0.95)
     fig.tight_layout()
     p = os.path.join(OUT, fname); fig.savefig(p, bbox_inches="tight"); plt.close(fig)
@@ -146,14 +147,17 @@ def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=No
     return peak
 
 
+# shared y-limits so (a) SPEAR and (b) autonomous are directly comparable
+LOAD_YLIM = (-64.0, 4.0)
+FREQ_YLIM = (-0.24, 0.20)
 pl_s = panel(t_b, l_b, t_s, l_s, "Change in transmission\nload (MW)", "SPEAR attack", C_S,
-             "load_comparison_spear.pdf", diff=True)
+             "load_comparison_spear.pdf", diff=True, ylim=LOAD_YLIM)
 pl_a = panel(t_b, l_b, t_a, l_a, "Change in transmission\nload (MW)", "autonomous attack", C_A,
-             "load_comparison_auto.pdf", diff=True)
+             "load_comparison_auto.pdf", diff=True, ylim=LOAD_YLIM)
 pf_s = panel(t_b, f_b, t_s, f_s, "Change in\nfrequency (Hz)", "SPEAR attack",
-             C_S, "frequency_delta_spear.pdf", diff=True)
+             C_S, "frequency_delta_spear.pdf", diff=True, ylim=FREQ_YLIM)
 pf_a = panel(t_b, f_b, t_a, f_a, "Change in\nfrequency (Hz)", "autonomous attack",
-             C_A, "frequency_delta_auto.pdf", diff=True)
+             C_A, "frequency_delta_auto.pdf", diff=True, ylim=FREQ_YLIM)
 
 print("\n=== caption scalars ===")
 print("load peak disturbance:  SPEAR %.1f MW | auto %.1f MW" %
