@@ -16,11 +16,14 @@ or interact with production charging infrastructure.
 attack menu 60 → 6, the hierarchical RL agents (DQN target + SAC parameters)
 select 6-of-10 distribution systems, `power_disruption` is injected into the
 grid digital twin, and the transmission-load and frequency panels plot live as
-the system deviates. SPEAR's coordinated 6-of-10 cascade (≈ −59.4 MW / 0.21 Hz)
-is contrasted against a single-vector autonomous baseline (≈ −10.1 MW /
-0.03 Hz). The curves are an illustrative overview calibrated to the paper's
-reported endpoints; the quantitative result figures come from
-`make_cascade_figures.py`.*
+the system deviates. Both panels show the attack-induced *change* (attack minus
+the no-attack trajectory), so the load axis is base-independent: SPEAR's
+coordinated 6-of-10 cascade reduces transmission load by ≈ 59.4 MW, versus
+≈ 10.1 MW for the single-vector autonomous baseline. Frequency follows the real
+AGC transient — a brief rise as load drops, then a downward overshoot peaking at
+≈ 0.21 Hz (vs ≈ 0.03 Hz autonomous). These are the actual cached co-simulation
+traces plotted by `make_cascade_figures.py` (the same data as the paper's
+cascade figures).*
 
 ## Capabilities
 

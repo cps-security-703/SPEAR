@@ -117,35 +117,43 @@ def _align(tb, yb, ta, ya):
     return t[m], yb[:n][m], ya[:n][m]
 
 
-def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=None):
+def panel(tb, yb, ta, ya, ylabel, attack_label, color_attack, fname, to_delta=None, diff=False):
     al = _align(tb, yb, ta, ya)
     if al is None:
         print("## empty data for", fname); return None
     t, benign, attack = al
-    if to_delta is not None:
-        benign = benign - to_delta; attack = attack - to_delta
     fig, ax = plt.subplots(figsize=(5.5, 4))
     ax.set_xlim(CROP, TOTAL)
     ax.axvspan(START, START + DUR, color=color_attack, alpha=0.06)
-    ax.plot(t, benign, color=C_BEN, lw=2.2, label="benign")
-    ax.plot(t, attack, color=color_attack, lw=2.0, label=attack_label)
+    if diff:
+        # Attack-induced CHANGE (attack - benign). Base-independent: because the
+        # transmission base is constant, d(transmission load) = d(distribution load).
+        d = attack - benign
+        ax.axhline(0.0, color=C_BEN, lw=1.8, ls=(0, (5, 2)), label="no attack")
+        ax.plot(t, d, color=color_attack, lw=2.3, label=attack_label)
+        peak = float(np.nanmax(np.abs(d))) if d.size else float("nan")
+    else:
+        if to_delta is not None:
+            benign = benign - to_delta; attack = attack - to_delta
+        ax.plot(t, benign, color=C_BEN, lw=2.2, label="benign")
+        ax.plot(t, attack, color=color_attack, lw=2.0, label=attack_label)
+        peak = float(np.nanmax(np.abs(attack - benign))) if attack.size else float("nan")
     ax.set_xlabel("time (s)"); ax.set_ylabel(ylabel)
     ax.grid(True, alpha=0.3); ax.legend(loc="best", framealpha=0.95)
     fig.tight_layout()
     p = os.path.join(OUT, fname); fig.savefig(p, bbox_inches="tight"); plt.close(fig)
-    peak = float(np.nanmax(np.abs(attack - benign))) if attack.size else float("nan")
     print("wrote", fname, " peak|attack-benign| = %.3f" % peak)
     return peak
 
 
-pl_s = panel(t_b, l_b, t_s, l_s, "transmission load (MW)", "SPEAR attack", C_S,
-             "load_comparison_spear.pdf")
-pl_a = panel(t_b, l_b, t_a, l_a, "transmission load (MW)", "autonomous attack", C_A,
-             "load_comparison_auto.pdf")
-pf_s = panel(t_b, f_b, t_s, f_s, r"frequency deviation $\Delta f$ (Hz)", "SPEAR attack",
-             C_S, "frequency_delta_spear.pdf", to_delta=F_NOM)
-pf_a = panel(t_b, f_b, t_a, f_a, r"frequency deviation $\Delta f$ (Hz)", "autonomous attack",
-             C_A, "frequency_delta_auto.pdf", to_delta=F_NOM)
+pl_s = panel(t_b, l_b, t_s, l_s, "Change in transmission\nload (MW)", "SPEAR attack", C_S,
+             "load_comparison_spear.pdf", diff=True)
+pl_a = panel(t_b, l_b, t_a, l_a, "Change in transmission\nload (MW)", "autonomous attack", C_A,
+             "load_comparison_auto.pdf", diff=True)
+pf_s = panel(t_b, f_b, t_s, f_s, "Change in\nfrequency (Hz)", "SPEAR attack",
+             C_S, "frequency_delta_spear.pdf", diff=True)
+pf_a = panel(t_b, f_b, t_a, f_a, "Change in\nfrequency (Hz)", "autonomous attack",
+             C_A, "frequency_delta_auto.pdf", diff=True)
 
 print("\n=== caption scalars ===")
 print("load peak disturbance:  SPEAR %.1f MW | auto %.1f MW" %

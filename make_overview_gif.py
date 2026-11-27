@@ -47,42 +47,35 @@ AUT   = "#2e6f95"   # autonomous
 GRN   = "#2e7d5b"   # grid twin
 plt.rcParams.update({"font.family": "serif", "savefig.facecolor": BG})
 
-# ---- illustrative traces calibrated to the paper endpoints ---------------
-Tt, START, DUR = 350.0, 140.0, 150.0
+# ---- REAL cached cascade traces (so the GIF matches the paper exactly) ----
+# make_cascade_figures.py caches the co-simulation output here. We plot the
+# attack-induced CHANGE (attack - benign); because the transmission base is
+# constant, d(transmission load) = d(distribution load), so the change is
+# base-independent and unambiguous.  Frequency is the real AGC response: its
+# largest excursion is a downward overshoot of ~0.21 Hz (matches the paper).
+TOTAL, CROP, START, DUR = 650.0, 190.0, 300.0, 250.0
 END = START + DUR
-L0 = 300.0                      # benign transmission load baseline (MW)
-A_L_S, A_L_A = 59.4, 10.1       # peak load disturbance (MW)
-A_F_S, A_F_A = 0.21, 0.033      # peak |frequency deviation| (Hz)
-N = 700
-t = np.linspace(0.0, Tt, N)
+_CACHE = os.path.join(OUT, "new_cascading_effect", "cascade_traces.npz")
 
-def _dev(t, amp, tau_rise=34.0, tau_fall=95.0, osc=0.09, per=17.0):
-    """Smooth disturbance: rise+saturate during attack, slow persistence after."""
-    d = np.zeros_like(t)
-    inw = (t >= START) & (t <= END)
-    d[inw] = amp * (1 - np.exp(-(t[inw] - START) / tau_rise))
-    aft = t > END
-    tail = amp * (1 - np.exp(-(DUR) / tau_rise))
-    d[aft] = tail * np.exp(-(t[aft] - END) / tau_fall)
-    ripple = amp * osc * np.exp(-np.clip(t - START, 0, None) / 70.0) \
-             * np.sin(2 * np.pi * np.clip(t - START, 0, None) / per)
-    ripple[t < START] = 0.0
-    return d + ripple
+def _load_traces():
+    z = np.load(_CACHE)
+    lb, fb, ls_, fs_, la, fa = (z["l_b"], z["f_b"], z["l_s"], z["f_s"], z["l_a"], z["f_a"])
+    n = min(map(len, (lb, fb, ls_, fs_, la, fa)))
+    tt = np.arange(n) * (TOTAL / n)
+    m = tt >= CROP
+    return (tt[m],
+            (ls_[:n] - lb[:n])[m], (la[:n] - lb[:n])[m],    # load change (MW)
+            (fs_[:n] - fb[:n])[m], (fa[:n] - fb[:n])[m])    # frequency change (Hz)
 
-benign_L = L0 + 1.3 * np.sin(2 * np.pi * t / 73.0) + 0.6 * np.sin(2 * np.pi * t / 29.0)
-benign_F = 0.004 * np.sin(2 * np.pi * t / 61.0)
-spear_L  = benign_L - _dev(t, A_L_S)
-auto_L   = benign_L - _dev(t, A_L_A, tau_fall=48.0)
-spear_F  = benign_F - _dev(t, A_F_S, tau_rise=30.0, tau_fall=80.0)
-auto_F   = benign_F - _dev(t, A_F_A, tau_rise=30.0, tau_fall=42.0)
+t, dL_s, dL_a, dF_s, dF_a = _load_traces()
 
 # ---- animation schedule --------------------------------------------------
 FRAMES = 56
 
 def reveal_t(p):
-    if p < 0.30:  return (p / 0.30) * (START * 0.97)
-    if p < 0.88:  return START + ((p - 0.30) / 0.58) * (Tt - START)
-    return Tt
+    if p < 0.30:  return CROP + (p / 0.30) * (START - CROP - 6)
+    if p < 0.88:  return START + ((p - 0.30) / 0.58) * (TOTAL - START)
+    return TOTAL
 
 def phase(p):
     if p < 0.15:  return 1
@@ -105,7 +98,7 @@ def status_text(ph, lit):
     if ph == 1: return "SPEAR LLM planner  —  pruning the attack menu  60 → 6 CVE-anchored vectors"
     if ph == 2: return f"Hierarchical RL  —  DQN selecting targets  ({lit}/6 of 10 DS)  ·  SAC tuning magnitude"
     if ph == 3: return "Grid digital twin  —  power_disruption injected  ·  coordinated cascade propagating"
-    return "System deviated  —  coordinated 6-of-10 cascade:   −59.4 MW load   ·   0.21 Hz frequency"
+    return "System deviated  —  coordinated 6-of-10 cascade:   transmission load  −59.4 MW   ·   frequency  ±0.21 Hz"
 
 # ---- drawing -------------------------------------------------------------
 def box(ax, x, y, w, h, title, sub, color, active):
@@ -120,25 +113,27 @@ def box(ax, x, y, w, h, title, sub, color, active):
     ax.text(x, y - 2.6, sub, ha="center", va="center",
             color="white" if active else MUTE, fontsize=8.6, zorder=4)
 
-def draw_plot(ax, rv, yb, ys, ya, ylabel, ylim, callout):
-    k = int(np.searchsorted(t, rv))
-    k = max(2, min(k, N))
+def draw_plot(ax, rv, dS, dA, ylabel, ylim, callout, co_dy=0.28):
+    k = int(np.searchsorted(t, rv)); k = max(2, min(k, t.size))
     ax.set_facecolor(PANEL)
     ax.axvspan(START, END, color=SPE, alpha=0.05, zorder=0)
-    ax.plot(t[:k], yb[:k], color=BEN, lw=2.0, label="benign", zorder=2)
-    ax.plot(t[:k], ya[:k], color=AUT, lw=1.8, ls=(0, (4, 2)), label="autonomous", zorder=2)
-    ax.plot(t[:k], ys[:k], color=SPE, lw=2.6, label="SPEAR", zorder=3)
-    ax.axvline(rv, color=INK, lw=1.2, alpha=0.55, zorder=4)          # sweeping "now" cursor
-    ax.scatter([rv], [ys[min(k-1, N-1)]], s=26, color=SPE, zorder=5, edgecolor="white", linewidth=0.8)
-    ax.set_xlim(0, Tt); ax.set_ylim(*ylim)
+    ax.axhline(0.0, color=BEN, lw=1.8, ls=(0, (5, 2)), label="no attack", zorder=1)
+    ax.plot(t[:k], dA[:k], color=AUT, lw=1.9, ls=(0, (4, 2)), label="autonomous", zorder=2)
+    ax.plot(t[:k], dS[:k], color=SPE, lw=2.6, label="SPEAR", zorder=3)
+    ax.axvline(rv, color=INK, lw=1.2, alpha=0.5, zorder=4)           # sweeping "now" cursor
+    ax.scatter([rv], [dS[min(k-1, dS.size-1)]], s=26, color=SPE, zorder=5,
+               edgecolor="white", linewidth=0.8)
+    ax.set_xlim(CROP, TOTAL); ax.set_ylim(*ylim)
     ax.set_ylabel(ylabel, fontsize=11.5)
     ax.tick_params(labelsize=9.5)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
     ax.legend(loc="lower left", fontsize=9, framealpha=0.9, ncol=3,
-              handlelength=1.4, columnspacing=1.1, borderpad=0.35)
-    if callout and rv > END - 8:
-        yv = ys[min(k-1, N-1)]
-        ax.annotate(callout, xy=(rv, yv), xytext=(rv - 96, yv + (ylim[1]-ylim[0])*0.17),
+              handlelength=1.4, columnspacing=1.0, borderpad=0.35)
+    ipk = int(np.nanargmin(dS))        # most-negative excursion = the peak impact
+    if callout and k > ipk:
+        xpk, ypk = t[ipk], dS[ipk]
+        ax.annotate(callout, xy=(xpk, ypk),
+                    xytext=(xpk - 150, ypk + (ylim[1]-ylim[0])*co_dy),
                     fontsize=10.5, fontweight="bold", color=SPE,
                     arrowprops=dict(arrowstyle="->", color=SPE, lw=1.4))
 
@@ -190,10 +185,10 @@ def render_frame(p):
     # ---- right: live dashboards ----
     ax_load = fig.add_axes([0.42, 0.57, 0.545, 0.33])
     ax_freq = fig.add_axes([0.42, 0.155, 0.545, 0.33])
-    draw_plot(ax_load, rv, benign_L, spear_L, auto_L, "transmission load (MW)",
-              (228, 312), "−59.4 MW")
-    draw_plot(ax_freq, rv, benign_F, spear_F, auto_F, "frequency Δf (Hz)",
-              (-0.255, 0.055), "0.21 Hz peak")
+    draw_plot(ax_load, rv, dL_s, dL_a, "Change in transmission\nload (MW)",
+              (-66, 9), "−59.4 MW", co_dy=0.34)
+    draw_plot(ax_freq, rv, dF_s, dF_a, "Change in\nfrequency (Hz)",
+              (-0.24, 0.19), "0.21 Hz peak", co_dy=0.42)
     ax_freq.set_xlabel("time (s)", fontsize=11.5)
 
     # ---- full-width status line at the very bottom ----
