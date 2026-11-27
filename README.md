@@ -1,7 +1,7 @@
 # SPEAR
 
-SPEAR (Semantic Planning and Execution of Adversarial Agentic Reinforcement
-Learning) is a research framework for evaluating cyber-physical security in
+SPEAR (Semantic Planning and Execution for Physics-Aware Red-Teaming of Cyber-Physical 
+Power Systems) is a research framework for evaluating cyber-physical security in
 electric-vehicle charging systems. It combines EV charging data, power-system
 co-simulation, physics-informed neural networks, federated learning,
 reinforcement-learning attack agents, intrusion detection, and LLM-assisted
