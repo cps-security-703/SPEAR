@@ -12,8 +12,7 @@ or interact with production charging infrastructure.
 
 ![SPEAR overview: methodology and results](figures/spear_overview.gif)
 
-*Live-demo overview (regenerate with `python make_overview_gif.py`): a single
-dashboard walks through one attack loop — the SPEAR LLM planner prunes the
+*Live-demo overview : a single dashboard walks through one attack loop — the SPEAR LLM planner prunes the
 attack menu 60 → 6, the hierarchical RL agents (DQN target + SAC parameters)
 select 6-of-10 distribution systems, `power_disruption` is injected into the
 grid digital twin, and the transmission-load and frequency panels plot live as
