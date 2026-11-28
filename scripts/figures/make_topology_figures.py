@@ -22,7 +22,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT  = os.path.join(ROOT, "SPEAR_Paper", "figures", "topology")
+OUT  = os.path.join(ROOT, "figures", "topology")
 os.makedirs(OUT, exist_ok=True)
 
 plt.rcParams.update({

@@ -26,7 +26,7 @@ os.environ.setdefault("SPEAR_HEADLESS", "1")
 os.environ.setdefault("SPEAR_SEED", "0")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT  = os.path.join(ROOT, "SPEAR_Paper", "figures", "evcs_impact")
+OUT  = os.path.join(ROOT, "figures", "evcs_impact")
 os.makedirs(OUT, exist_ok=True)
 from spear_topology_generalization import _build_cosim
 

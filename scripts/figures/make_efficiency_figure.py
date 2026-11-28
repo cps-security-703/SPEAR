@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import spear_sample_efficiency as se   # attack_curve, smooth, plateau, start_level, interactions_to_plateau
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT  = os.path.join(ROOT, "SPEAR_Paper", "figures", "efficiency")
+OUT  = os.path.join(ROOT, "figures", "efficiency")
 os.makedirs(OUT, exist_ok=True)
 
 ATTACKS = ["voltage_manipulation", "current_injection", "power_disruption",

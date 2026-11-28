@@ -170,6 +170,14 @@ co-simulation (10 distribution systems on the IEEE 34-bus feeder) with an
 independent ACN-native controller and write PDFs under `figures/`. Each caches
 its traces so it can be re-plotted quickly with `--cached`.
 
+The cascade and EVCS-impact trace caches are included in this repository
+(`figures/new_cascading_effect/cascade_traces.npz`,
+`figures/evcs_impact/{traces,charging_traces}.npz`), so
+`python scripts/figures/make_cascade_figures.py --cached` reproduces the paper's
+reported cascade values (transmission-load change $\approx\!59.4$ vs
+$\approx\!10.1$\,MW; peak $|\Delta f|\approx0.21$ vs $0.03$\,Hz) without a full
+co-simulation run. Omit `--cached` to regenerate the traces from scratch.
+
 ```bash
 python scripts/figures/make_cascade_figures.py       # transmission load + frequency: SPEAR vs autonomous
 python scripts/figures/make_charging_time_figure.py  # EVCS charging-time service degradation

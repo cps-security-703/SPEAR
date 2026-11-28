@@ -35,7 +35,7 @@ os.environ.setdefault("SPEAR_HEADLESS", "1")
 os.environ.setdefault("SPEAR_SEED", "0")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-OUT  = os.path.join(ROOT, "SPEAR_Paper", "figures", "new_cascading_effect")
+OUT  = os.path.join(ROOT, "figures", "new_cascading_effect")
 os.makedirs(OUT, exist_ok=True)
 from hierarchical_cosimulation import HierarchicalCoSimulation
 
