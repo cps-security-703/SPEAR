@@ -22,7 +22,7 @@ coordinated 6-of-10 cascade reduces transmission load by ≈ 59.4 MW, versus
 ≈ 10.1 MW for the single-vector autonomous baseline. Frequency follows the real
 AGC transient — a brief rise as load drops, then a downward overshoot peaking at
 ≈ 0.21 Hz (vs ≈ 0.03 Hz autonomous). These are the actual cached co-simulation
-traces plotted by `make_cascade_figures.py` (the same data as the paper's
+traces plotted by `scripts/figures/make_cascade_figures.py` (the same data as the paper's
 cascade figures).*
 
 ## Capabilities
@@ -45,12 +45,12 @@ cascade figures).*
 | PINN and federated learning | `pinn_optimizer.py`, `federated_pinn_manager.py`, `federated_evcs_integration.py` |
 | RL attack system | `attack_specific_rl_agents.py`, `central_rl_coordinator.py`, `dqn_sac_security_evasion.py` |
 | LLM orchestration | `gemini_llm_threat_analyzer.py`, `enhanced_llm_rl_coordinator.py`, `langgraph_attack_coordinator.py` |
-| Intrusion detection | `compare_ids_models.py`, `compare_ids_models_update.py`, `best_ids_model.py`, `ids_neural_models.py` |
-| Evaluation | `evaluate_federated_pinn.py`, `evaluate_rl_evasion_comparison.py`, `compare_pinn_cms_vs_acn_controllers.py` |
-| RAG pipeline (current) | `ares_rag/main.py`, `ares_rag/pipeline.py`, `ares_rag/collectors/` |
-| RAG pipeline (legacy) | `spear_rag/main.py`, `spear_rag/pipeline.py`, `spear_rag/collectors/` |
+| Intrusion detection | `compare_ids_models.py`, `best_ids_model.py`, `ids_neural_models.py`, `scripts/evaluation/compare_ids_models_update.py` |
+| Evaluation | `scripts/evaluation/evaluate_federated_pinn.py`, `scripts/evaluation/evaluate_rl_evasion_comparison.py`, `scripts/evaluation/compare_pinn_cms_vs_acn_controllers.py` |
+| RAG pipeline | `spear_rag/main.py`, `spear_rag/pipeline.py`, `spear_rag/collectors/` |
 | Sample efficiency / generalization | `spear_sample_efficiency.py`, `spear_topology_generalization.py`, `spear_seeding.py` |
-| Paper figure generators | `make_cascade_figures.py`, `make_charging_time_figure.py`, `make_efficiency_figure.py`, `make_evcs_impact_figure.py`, `make_topology_figures.py` |
+| Paper figure generators | `scripts/figures/make_cascade_figures.py`, `scripts/figures/make_charging_time_figure.py`, `scripts/figures/make_efficiency_figure.py`, `scripts/figures/make_evcs_impact_figure.py`, `scripts/figures/make_topology_figures.py` |
+| Standalone scripts | `scripts/figures/`, `scripts/evaluation/`, `scripts/analysis/`, `scripts/training/` |
 | Power-system models | `ieee34Mod1.dss`, `ieee34Mod2.dss`, `Run_IEEE34Mod1.dss`, `Run_IEEE34Mod2.dss` |
 | Result figures | `figures/` |
 
@@ -128,7 +128,7 @@ python main.py --skip-nvd --skip-mitre
 
 ```bash
 python train_lstm_ids_acn.py
-python compare_ids_models_update.py
+python scripts/evaluation/compare_ids_models_update.py
 ```
 
 The comparison workflow selects a model and writes the runtime artifact under
@@ -137,19 +137,19 @@ The comparison workflow selects a model and writes the runtime artifact under
 ### Compare charging controllers
 
 ```bash
-python compare_pinn_cms_vs_acn_controllers.py
+python scripts/evaluation/compare_pinn_cms_vs_acn_controllers.py
 ```
 
 ### Evaluate federated PINN models
 
 ```bash
-python evaluate_federated_pinn.py
+python scripts/evaluation/evaluate_federated_pinn.py
 ```
 
 ### Evaluate RL evasion
 
 ```bash
-python evaluate_rl_evasion_comparison.py
+python scripts/evaluation/evaluate_rl_evasion_comparison.py
 ```
 
 ### Run the integrated simulation
@@ -170,11 +170,11 @@ independent ACN-native controller and write PDFs under `figures/`. Each caches
 its traces so it can be re-plotted quickly with `--cached`.
 
 ```bash
-python make_cascade_figures.py       # transmission load + frequency: SPEAR vs autonomous
-python make_charging_time_figure.py  # EVCS charging-time service degradation
-python make_evcs_impact_figure.py    # per-station voltage/charging impact
-python make_efficiency_figure.py     # sample-efficiency panels
-python make_topology_figures.py      # zero-shot topology-adaptation panels
+python scripts/figures/make_cascade_figures.py       # transmission load + frequency: SPEAR vs autonomous
+python scripts/figures/make_charging_time_figure.py  # EVCS charging-time service degradation
+python scripts/figures/make_evcs_impact_figure.py    # per-station voltage/charging impact
+python scripts/figures/make_efficiency_figure.py     # sample-efficiency panels
+python scripts/figures/make_topology_figures.py      # zero-shot topology-adaptation panels
 ```
 
 The SPEAR-versus-autonomous cascade gap is a *coordination* effect: SPEAR

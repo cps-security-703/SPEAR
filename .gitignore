@@ -1,6 +1,10 @@
 .env
 .pdf
 
+# --- python caches ---
+__pycache__/
+*.py[cod]
+
 # --- secrets (never commit) ---
 gemini_key.txt
 nvd_key.txt
