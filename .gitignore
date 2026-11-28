@@ -21,3 +21,8 @@ spear_rag/chroma_db*/
 spear_rag/vector_db/
 spear_rag/pdf/
 spear_rag/data/
+ares_rag/chroma_db/
+ares_rag/chroma_db*/
+ares_rag/pdf/
+ares_rag/data/
+ares_rag/nvd_key.txt

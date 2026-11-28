@@ -47,7 +47,8 @@ cascade figures).*
 | LLM orchestration | `gemini_llm_threat_analyzer.py`, `enhanced_llm_rl_coordinator.py`, `langgraph_attack_coordinator.py` |
 | Intrusion detection | `compare_ids_models.py`, `best_ids_model.py`, `ids_neural_models.py`, `scripts/evaluation/compare_ids_models_update.py` |
 | Evaluation | `scripts/evaluation/evaluate_federated_pinn.py`, `scripts/evaluation/evaluate_rl_evasion_comparison.py`, `scripts/evaluation/compare_pinn_cms_vs_acn_controllers.py` |
-| RAG pipeline | `spear_rag/main.py`, `spear_rag/pipeline.py`, `spear_rag/collectors/` |
+| RAG pipeline (current) | `ares_rag/main.py`, `ares_rag/pipeline.py`, `ares_rag/collectors/` |
+| RAG pipeline (legacy) | `spear_rag/main.py`, `spear_rag/pipeline.py`, `spear_rag/collectors/` |
 | Sample efficiency / generalization | `spear_sample_efficiency.py`, `spear_topology_generalization.py`, `spear_seeding.py` |
 | Paper figure generators | `scripts/figures/make_cascade_figures.py`, `scripts/figures/make_charging_time_figure.py`, `scripts/figures/make_efficiency_figure.py`, `scripts/figures/make_evcs_impact_figure.py`, `scripts/figures/make_topology_figures.py` |
 | Standalone scripts | `scripts/figures/`, `scripts/evaluation/`, `scripts/analysis/`, `scripts/training/` |
